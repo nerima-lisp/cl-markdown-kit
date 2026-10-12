@@ -36,6 +36,29 @@
           (cl-parser-kit:span-end-line span)
           (cl-parser-kit:span-end-column span))))
 
+(defun inline-parser-test-ranges-valid-p (node source)
+  (let* ((span (cl-markdown-kit:node-span node))
+         (start (and span (cl-parser-kit:span-start span)))
+         (end (and span (cl-parser-kit:span-end span)))
+         (children (cl-markdown-kit:node-children node)))
+    (and span
+         (string= (cl-parser-kit:span-source span) source)
+         (<= 0 start end (length source))
+         (loop with previous-end = start
+               for child in children
+               for child-span = (cl-markdown-kit:node-span child)
+               for child-start = (and child-span
+                                      (cl-parser-kit:span-start child-span))
+               for child-end = (and child-span
+                                    (cl-parser-kit:span-end child-span))
+               do (unless (and child-span
+                               (<= start child-start child-end end)
+                               (<= previous-end child-start)
+                               (inline-parser-test-ranges-valid-p child source))
+                    (return-from inline-parser-test-ranges-valid-p nil))
+                  (setf previous-end child-end)
+               finally (return t)))))
+
 (defun inline-parser-test-reference-index ()
   (let ((index (make-hash-table :test #'equal)))
     (setf (gethash "r" index)
@@ -584,8 +607,10 @@
     (let ((examples (append (commonmark-spec-examples)
                             (gfm-extension-examples))))
       (dolist (example examples)
-        (expect (cl-markdown-kit:parse-string (spec-example-markdown example))
-                :to-be-truthy))
+        (let* ((source (spec-example-markdown example))
+               (document (cl-markdown-kit:parse-string source)))
+          (expect (inline-parser-test-ranges-valid-p document source)
+                  :to-be-truthy)))
       (expect (length examples) :to-equal 682))))
 
 (describe "Inline parser edge cases"
