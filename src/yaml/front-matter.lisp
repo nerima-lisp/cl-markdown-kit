@@ -26,48 +26,84 @@
                                   cl-markdown-kit:document)))))
 
 (defun %empty-yaml-content-p (text)
-  (every (lambda (character)
-           (find character '(#\Space #\Tab #\Return #\Newline)))
-         text))
+  (loop with text-length = (length text)
+        with line-start = 0
+        while (< line-start text-length)
+        for line-end = (or (position-if (lambda (character)
+                                          (find character '(#\Return #\Newline)))
+                                        text :start line-start)
+                           text-length)
+        for first-content = (position-if-not (lambda (character)
+                                               (find character '(#\Space #\Tab)))
+                                             text :start line-start :end line-end)
+        unless (or (null first-content)
+                   (char= (char text first-content) #\#))
+          do (return nil)
+        do (setf line-start
+                 (if (< line-end text-length)
+                     (if (and (char= (char text line-end) #\Return)
+                              (< (1+ line-end) text-length)
+                              (char= (char text (1+ line-end)) #\Newline))
+                         (+ line-end 2)
+                         (1+ line-end))
+                     text-length))
+        finally (return t)))
 
 (defun %yaml-error-without-mark-p (condition)
-  (let ((line (yaml-kit:yaml-parse-error-line condition))
-        (column (yaml-kit:yaml-parse-error-column condition)))
-    (or (not (and (integerp line) (integerp column)))
-        (and (= line 1) (= column 1)
-             (zerop (yaml-kit:yaml-parse-error-offset condition))))))
+  (typecase condition
+    (yaml-kit:yaml-parse-error
+     (let ((line (yaml-kit:yaml-parse-error-line condition))
+           (column (yaml-kit:yaml-parse-error-column condition)))
+       (or (not (and (integerp line) (integerp column)))
+           (and (= line 1) (= column 1)
+                (zerop (yaml-kit:yaml-parse-error-offset condition))))))
+    (yaml-kit:yaml-compose-error
+     (null (yaml-kit:yaml-compose-error-mark condition)))
+    (t t)))
+
+(defun %yaml-error-line-column (condition)
+  (typecase condition
+    (yaml-kit:yaml-parse-error
+     (unless (%yaml-error-without-mark-p condition)
+       (values (yaml-kit:yaml-parse-error-line condition)
+               (yaml-kit:yaml-parse-error-column condition))))
+    (yaml-kit:yaml-compose-error
+     (unless (%yaml-error-without-mark-p condition)
+       (let ((mark (yaml-kit:yaml-compose-error-mark condition)))
+         (values (yaml-kit:mark-line mark)
+                 (yaml-kit:mark-column mark)))))))
 
 (defun %markdown-yaml-error-location (front-matter condition)
   (let ((span (cl-markdown-kit:node-span front-matter)))
     (when span
-      (if (%yaml-error-without-mark-p condition)
-          (values (1+ (cl-parser-kit:span-start-line span)) 1)
-          (values (+ 1
-                     (cl-parser-kit:span-start-line span)
-                     (yaml-kit:yaml-parse-error-line condition))
-                  (1+ (yaml-kit:yaml-parse-error-column condition)))))))
+      (multiple-value-bind (line column)
+          (%yaml-error-line-column condition)
+        (if (and (integerp line) (integerp column))
+            (values (+ 1 (cl-parser-kit:span-start-line span) line)
+                    (1+ column))
+            (values (1+ (cl-parser-kit:span-start-line span)) 1))))))
+
+(defun %wrap-markdown-yaml-error (front-matter condition)
+  (multiple-value-bind (line column)
+      (%markdown-yaml-error-location front-matter condition)
+    (error 'markdown-yaml-error
+           :yaml-condition condition
+           :line line
+           :column column)))
 
 (defun parse-front-matter (node-or-document &rest yaml-parse-options)
   "Parse a front-matter node or a document's front matter with YAML-KIT options."
   (let ((front-matter (%front-matter-node node-or-document)))
     (when front-matter
       (let ((raw-text (cl-markdown-kit:front-matter-raw-text front-matter)))
-        (handler-case
-            (apply #'yaml-kit:parse
-                   ;; The YAML scanner requires a character array, not a base string.
-                   (make-array (length raw-text) :element-type 'character
-                                                :initial-contents raw-text)
-                   yaml-parse-options)
-          (yaml-kit:yaml-parse-error (condition)
-            (multiple-value-bind (line column)
-                (%markdown-yaml-error-location front-matter condition)
-              (error 'markdown-yaml-error
-                     :yaml-condition condition
-                     :line line
-                     :column column)))
-          (yaml-kit:yaml-compose-error (condition)
-            (if (and (%empty-yaml-content-p raw-text)
-                     (equal (yaml-kit:yaml-compose-error-cause condition)
-                            "unsupported node type"))
-                nil
-                (error condition))))))))
+        (unless (%empty-yaml-content-p raw-text)
+          (handler-case
+              (apply #'yaml-kit:parse
+                     ;; The YAML scanner requires a character array, not a base string.
+                     (make-array (length raw-text) :element-type 'character
+                                                  :initial-contents raw-text)
+                     yaml-parse-options)
+            (yaml-kit:yaml-parse-error (condition)
+              (%wrap-markdown-yaml-error front-matter condition))
+            (yaml-kit:yaml-compose-error (condition)
+              (%wrap-markdown-yaml-error front-matter condition))))))))

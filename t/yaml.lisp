@@ -31,14 +31,30 @@
 
   (it "returns nil for empty front matter"
     (dolist (source (list (format nil "---~%---~%")
-                          (format nil "---~%~%---~%")))
+                          (format nil "---~%~%---~%")
+                          (format nil "---~%   ~%~C~%---~%" #\Tab)
+                          (format nil "---~%# comment~%---~%")
+                          (format nil "---~%  # comment~%~%# another~%---~%")
+                          (format nil "---~C~%# comment~C~%~C~%---~C~%"
+                                  #\Return #\Return #\Return #\Return)))
       (let* ((document (cl-markdown-kit:parse source))
              (front-matter
                (first (cl-markdown-kit:document-children document))))
         (expect (typep front-matter 'cl-markdown-kit:front-matter)
                 :to-be-truthy)
         (expect (cl-markdown-kit/yaml:parse-front-matter document)
-                :to-equal nil))))
+                :to-equal nil)))
+    (expect (cl-markdown-kit/yaml:parse-front-matter
+             (cl-markdown-kit:make-front-matter :raw-text "  "))
+            :to-equal nil))
+
+  (it "keeps a hash in a YAML value as content"
+    (let* ((document
+             (cl-markdown-kit:parse
+              (format nil "---~%a: b#c~%---~%")))
+           (value (cl-markdown-kit/yaml:parse-front-matter document)))
+      (expect (hash-table-p value) :to-be-truthy)
+      (expect (gethash "a" value) :to-equal "b#c")))
 
   (it "rejects values that are neither front-matter nodes nor documents"
     (let ((caught nil))
@@ -103,7 +119,16 @@
         (expect column :to-equal 1)))
     (expect (cl-markdown-kit/yaml::%yaml-error-without-mark-p
              (make-condition 'yaml-kit:yaml-parse-error))
-            :to-be-truthy))
+            :to-be-truthy)
+    (expect (cl-markdown-kit/yaml::%yaml-error-without-mark-p
+             (make-condition 'yaml-kit:yaml-compose-error))
+            :to-be-truthy)
+    (expect (cl-markdown-kit/yaml::%yaml-error-without-mark-p
+             (make-condition 'type-error :datum nil :expected-type 'integer))
+            :to-be-truthy)
+    (expect (cl-markdown-kit/yaml::%yaml-error-line-column
+             (make-condition 'type-error :datum nil :expected-type 'integer))
+            :to-equal nil))
 
   (it "leaves Markdown positions nil for front-matter nodes without spans"
     (let ((caught nil))
@@ -126,7 +151,7 @@
       (expect (search "Invalid YAML front matter:" report) :to-equal 0)
       (expect (search "Markdown line" report) :to-equal nil)))
 
-  (it "passes non-syntax YAML conditions through unchanged"
+  (it "wraps YAML composition errors and passes resource limits through"
     (let* ((document
              (cl-markdown-kit:parse
               (format nil "---~%title: Example~%---~%")))
@@ -142,12 +167,38 @@
       (handler-case
           (cl-markdown-kit/yaml:parse-front-matter
            document :mapping-type :unsupported)
-        (yaml-kit:yaml-compose-error (condition)
+        (cl-markdown-kit/yaml:markdown-yaml-error (condition)
           (setf caught condition)))
-      (expect (typep caught 'yaml-kit:yaml-compose-error)
+      (expect (typep caught 'cl-markdown-kit/yaml:markdown-yaml-error)
               :to-be-truthy)
-      (expect (yaml-kit:yaml-compose-error-cause caught)
+      (expect (typep
+               (cl-markdown-kit/yaml:markdown-yaml-error-yaml-condition caught)
+               'yaml-kit:yaml-compose-error)
+              :to-be-truthy)
+      (expect (cl-markdown-kit/yaml:markdown-yaml-error-line caught)
+              :to-equal 2)
+      (expect (cl-markdown-kit/yaml:markdown-yaml-error-column caught)
+              :to-equal 1)
+      (expect (yaml-kit:yaml-compose-error-cause
+               (cl-markdown-kit/yaml:markdown-yaml-error-yaml-condition caught))
               :to-equal "invalid mapping type")))
+
+  (it "maps marked YAML composition errors to Markdown positions"
+    (let ((caught nil))
+      (handler-case
+          (cl-markdown-kit/yaml:parse-front-matter
+           (cl-markdown-kit:parse
+            (format nil "---~%value: *missing~%---~%")))
+        (cl-markdown-kit/yaml:markdown-yaml-error (condition)
+          (setf caught condition)))
+      (expect (typep
+               (cl-markdown-kit/yaml:markdown-yaml-error-yaml-condition caught)
+               'yaml-kit:yaml-compose-error)
+              :to-be-truthy)
+      (expect (cl-markdown-kit/yaml:markdown-yaml-error-line caught)
+              :to-equal 2)
+      (expect (cl-markdown-kit/yaml:markdown-yaml-error-column caught)
+              :to-equal 8)))
 
   (it "parses BOM-prefixed CRLF Markdown without passing the BOM to YAML"
     (let* ((source (format nil "~C---~C~%title: CRLF~C~%---~C~%body"
