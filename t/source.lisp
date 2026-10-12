@@ -14,6 +14,11 @@
           (cl-parser-kit:span-start-line span)
           (cl-parser-kit:span-start-column span))))
 
+(defun source-contract-signals-p (function)
+  (handler-case
+      (progn (funcall function) nil)
+    (serious-condition () t)))
+
 (describe "Source buffer contract"
   (it "constructs public source formats and spans"
       (let* ((source-format (cl-markdown-kit:make-source-format
@@ -166,4 +171,56 @@
         (expect (cl-markdown-kit:source-buffer-normalized-text payload-buffer)
                 :to-equal (concatenate (quote string) (string bom) "A"))
         (expect (source-contract-span-coordinates payload-span)
-                :to-equal (list 1 3 1 1 1 3)))))
+                :to-equal (list 1 3 1 1 1 3))))
+
+  (it "validates boundary maps and rejects unsupported source inputs and spans"
+    (let* ((initial (cl-markdown-kit::make-source-boundary))
+           (after-character
+             (cl-markdown-kit::make-source-boundary :offset 1 :column 2))
+           (boundary-map
+             (cl-markdown-kit::make-boundary-map
+              "x" (list initial after-character)))
+           (empty-buffer (cl-markdown-kit:make-source-buffer ""))
+           (trailing-cr-buffer
+             (cl-markdown-kit:make-source-buffer
+              (concatenate 'string "x" (string #\Return))))
+           (default-format (cl-markdown-kit:make-source-format)))
+      (expect (list (cl-markdown-kit::source-boundary-offset initial)
+                    (cl-markdown-kit::source-boundary-line initial)
+                    (cl-markdown-kit::source-boundary-column initial))
+              :to-equal '(0 1 1))
+      (expect (cl-markdown-kit::boundary-map-length boundary-map) :to-equal 1)
+      (expect (cl-markdown-kit::source-boundary-column
+               (cl-markdown-kit::boundary-map-boundary boundary-map 1))
+              :to-equal 2)
+      (expect (list (cl-markdown-kit:source-format-input-kind default-format)
+                    (cl-markdown-kit:source-format-bom-p default-format)
+                    (cl-markdown-kit:source-format-newline-style default-format))
+              :to-equal '(:string nil :none))
+      (expect (cl-markdown-kit:source-buffer-normalized-text empty-buffer)
+              :to-equal "")
+      (expect (source-contract-span-coordinates
+               (cl-markdown-kit:source-buffer-span empty-buffer 0 0))
+              :to-equal '(0 0 1 1 1 1))
+      (expect (cl-markdown-kit:source-format-newline-style
+               (cl-markdown-kit:source-buffer-format trailing-cr-buffer))
+              :to-equal :cr)
+      (expect (source-contract-signals-p
+               (lambda ()
+                 (cl-markdown-kit::make-boundary-map "" #())))
+              :to-be-truthy)
+      (expect (source-contract-signals-p
+               (lambda ()
+                 (cl-markdown-kit::make-boundary-map "x" #(0))))
+              :to-be-truthy)
+      (expect (source-contract-signals-p
+               (lambda () (cl-markdown-kit:make-source-buffer 7)))
+              :to-be-truthy)
+      (expect (source-contract-signals-p
+               (lambda () (cl-markdown-kit:source-buffer-span empty-buffer 1 0)))
+              :to-be-truthy)
+      (with-open-file (stream "/dev/null" :direction :input
+                                       :element-type '(unsigned-byte 8))
+        (expect (source-contract-signals-p
+                 (lambda () (cl-markdown-kit:make-source-buffer stream)))
+                :to-be-truthy)))))

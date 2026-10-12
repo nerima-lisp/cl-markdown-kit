@@ -20,7 +20,8 @@
   :components ((:file "package")
                (:file "conditions")
                (:file "source")
-               (:file "nodes"))
+               (:file "nodes")
+               (:file "parse"))
   :in-order-to ((test-op (test-op "cl-markdown-kit/test"))))
 
 (asdf:defsystem "cl-markdown-kit/test"
@@ -40,7 +41,8 @@
                (:file "conformance-test")
                (:file "helpers")
                (:file "source")
-               (:file "nodes"))
+               (:file "nodes")
+               (:file "parse"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (let* ((condition-class

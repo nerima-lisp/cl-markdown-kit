@@ -1,6 +1,8 @@
 ;;;; src/parse.lisp
 (in-package #:cl-markdown-kit)
 
+(declaim (ftype function parse-blocks parse-inline))
+
 (defstruct (inline-fragment
              (:constructor make-inline-fragment
                  (&key node text boundary-map)))

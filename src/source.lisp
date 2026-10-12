@@ -58,8 +58,10 @@ BOUNDARIES has one entry for each text boundary, including both ends."
   (boundary-map nil :type boundary-map))
 
 (defun %bom-character ()
-  (or (code-char #xfeff)
-      (error "This implementation cannot represent the Unicode BOM.")))
+  #+sb-unicode
+  (code-char #xfeff)
+  #-sb-unicode
+  (error "This implementation cannot represent the Unicode BOM."))
 
 (defun %starts-with-bom-p (string)
   (and (plusp (length string))
