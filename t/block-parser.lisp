@@ -374,7 +374,9 @@
               (length commonmark) (length gfm) matches
               excluded-mismatches stale-exclusions)
       (expect failures :to-equal nil)
-      (expect stale-exclusions :to-equal 0)))
+      (expect excluded-failures :to-equal nil)
+      (expect matches :to-equal 682)
+      (expect stale-exclusions :to-equal 44)))
 
   (it "parses thematic breaks, blank separators, and excludes line endings from spans"
     (let* ((source (format nil "***~%~%---~%"))
@@ -873,6 +875,22 @@
                           '("d" "e")))
               :to-be-truthy)))
 
+  (it "accepts a pipe-less body row in a single-column GFM table"
+    (let* ((source (format nil "| header |~%| --- |~%body~%"))
+           (result (block-parser-test-result source))
+           (table (block-parser-test-only-child
+                   (block-parser-test-document result)))
+           (rows (cl-markdown-kit:table-rows table))
+           (cells (cl-markdown-kit:table-row-cells (second rows))))
+      (expect (and (cl-markdown-kit:table-p table)
+                   (= (length rows) 2)
+                   (= (length cells) 1)
+                   (string= (cl-markdown-kit::inline-fragment-text
+                             (first (block-parser-test-fragments-for
+                                     result (first cells))))
+                            "body"))
+              :to-be-truthy)))
+
   (it "keeps table cells and source text in the GFM interop fixture"
     (let* ((result (block-parser-test-gfm-result "gfm-0027"))
            (table (block-parser-test-only-child
@@ -1061,7 +1079,7 @@
              (multiple-value-list
               (cl-markdown-kit::%bp-parse-destination
                (format nil "<a~C>b>" #\\) 0)))
-           (escaped-space
+           (backslash-before-space
              (multiple-value-list
               (cl-markdown-kit::%bp-parse-destination
                (format nil "/a~C b" #\\) 0)))
@@ -1098,6 +1116,9 @@
            (bad-tail
              (cl-markdown-kit::%bp-link-definition
               (block-parser-test-line "[bad]: /target extra")))
+           (escaped-space-definition
+             (cl-markdown-kit::%bp-link-definition
+              (block-parser-test-line (format nil "[bad]: /a~C b" #\\))))
            (nested-label
              (cl-markdown-kit::%bp-link-definition
               (block-parser-test-line "[a[b]: /target")))
@@ -1148,7 +1169,8 @@
               (format nil "[broken~%~%label"))))
       (expect (and (string= (first angle) "a>b")
                    (= (second angle) 6)
-                   (string= (first escaped-space) "/a b")
+                   (string= (first backslash-before-space) "/a\\")
+                   (= (second backslash-before-space) 3)
                    (string= (first balanced) "/a(b)")
                    (string= (first unmatched-close) "/a")
                    (null invalid-angle)
@@ -1163,6 +1185,7 @@
                    (string= (third valid-definition) "a>b")
                    (string= (fourth valid-definition) "title")
                    (null bad-tail)
+                   (null escaped-space-definition)
                    (null nested-label)
                    (null ordinary-definition)
                    (null footnote-link)
@@ -1282,6 +1305,157 @@
                             source (vector line))))
                 :to-be-truthy))))
 
+  (it "covers block parser helper boundaries and open frame transitions"
+    (let* ((source (cl-markdown-kit:make-source-buffer "plain"))
+           (plain-line (block-parser-test-line "plain"))
+           (decoded-references
+             (cl-markdown-kit::%bp-decode-character-references
+              "&amp;&#66;&#x42;&#X42;&#xZZ;&#x;&#;&; &amp"))
+           (trailing-backslash
+             (multiple-value-list
+              (cl-markdown-kit::%bp-parse-destination
+               (format nil "/a~C" #\\) 0)))
+           (trailing-angle-backslash
+             (cl-markdown-kit::%bp-parse-destination
+              (format nil "<a~C" #\\) 0))
+           (invalid-empty-line
+             (cl-markdown-kit::%bp-link-definition-at
+              (cl-markdown-kit::%bp-split-lines "") 0))
+           (ordinary-definition
+             (cl-markdown-kit::%bp-link-definition-at
+              (cl-markdown-kit::%bp-split-lines "ordinary") 0))
+           (footnote-definition
+             (cl-markdown-kit::%bp-link-definition-at
+              (cl-markdown-kit::%bp-split-lines "[^note]: /url") 0))
+           (blank-reparse
+             (cl-markdown-kit::%bp-link-definition-at
+              (cl-markdown-kit::%bp-split-lines
+               (format nil "[multi]:~%~%  /url"))
+              0))
+           (blank-title
+             (cl-markdown-kit::%bp-link-definition-at
+              (cl-markdown-kit::%bp-split-lines
+               (format nil "[title]: /url \"open~%~%close\""))
+              0))
+           (definition-before-blank
+             (multiple-value-list
+              (cl-markdown-kit::%bp-link-definition-at
+               (cl-markdown-kit::%bp-split-lines
+                (format nil "[valid]: /url~%~%body"))
+               0)))
+           (direct-lines
+             (let ((cl-markdown-kit::*block-inline-fragments* nil)
+                   (cl-markdown-kit::*block-reference-index*
+                     (make-hash-table :test 'equal)))
+               (cl-markdown-kit::%bp-parse-lines
+                source (list plain-line) "" 0 256)))
+           (default-parse
+             (block-parser-test-document
+              (cl-markdown-kit::parse-blocks source)))
+           (vector-body
+             (cl-markdown-kit::%bp-body-from-lines
+              (cl-markdown-kit::%bp-split-lines "body")))
+           (empty-list-marker
+             (cl-markdown-kit::%bp-list-marker
+              (block-parser-test-line "")))
+           (ordinary-link-start
+             (cl-markdown-kit::%bp-link-definition-start-p
+              (block-parser-test-line "ordinary")))
+           (footnote-link-start
+             (cl-markdown-kit::%bp-link-definition-start-p
+              (block-parser-test-line "[^note]: /url")))
+           (root-frame
+             (cl-markdown-kit::%bp-make-open-frame :kind :root))
+           (item-frame
+             (cl-markdown-kit::%bp-make-open-frame
+              :kind :item :content-indent 2 :has-content t
+              :end-line plain-line))
+           (continuation (block-parser-test-line "  continuation"))
+           (blank-item
+             (cl-markdown-kit::%bp-make-open-frame
+              :kind :item :content-indent 2))
+           (blank-line (block-parser-test-line ""))
+           (footnote-frame
+             (cl-markdown-kit::%bp-make-open-frame
+              :kind :footnote :content-indent 4 :end-line plain-line))
+           (footnote-continuation (block-parser-test-line "    body"))
+           (unknown-node
+             (cl-markdown-kit:make-paragraph
+              :span nil :continuation-prefix "" :children nil))
+           (unknown-frame
+             (cl-markdown-kit::%bp-make-open-frame
+              :kind :unknown :node unknown-node
+              :start-line plain-line :start-position 0 :end-line plain-line))
+           (quoted-footnote
+             (block-parser-test-nodes-of-type
+              (block-parser-test-document
+               (block-parser-test-result "> [^quote]: body"))
+              #'cl-markdown-kit:footnote-definition-p))
+           (listed-footnote
+             (block-parser-test-nodes-of-type
+              (block-parser-test-document
+               (block-parser-test-result "- [^list]: body"))
+              #'cl-markdown-kit:footnote-definition-p)))
+      (expect (and (string= decoded-references
+                            "&BBB&#xZZ;&#x;&#;&; &amp")
+                   (string= vector-body "body")
+                   (string= (first trailing-backslash) "/a\\")
+                   (= (second trailing-backslash) 3)
+                   (null trailing-angle-backslash)
+                   (null empty-list-marker)
+                   (not ordinary-link-start)
+                   (not footnote-link-start)
+                   (null invalid-empty-line)
+                   (null ordinary-definition)
+                   (null footnote-definition)
+                   (null blank-reparse)
+                   (null blank-title)
+                   (first definition-before-blank)
+                   (= (length direct-lines) 1)
+                   (cl-markdown-kit:paragraph-p (first direct-lines))
+                   (cl-markdown-kit:paragraph-p
+                    (block-parser-test-only-child default-parse))
+                   (= (length quoted-footnote) 1)
+                   (= (length listed-footnote) 1))
+              :to-be-truthy)
+      (multiple-value-bind (transformed mismatch)
+          (cl-markdown-kit::%bp-container-transform-line
+           continuation (list item-frame root-frame))
+        (expect (and (null mismatch)
+                     (string= (cl-markdown-kit::%block-line-text transformed)
+                              "continuation")
+                     (eq (cl-markdown-kit::%bp-open-frame-end-line item-frame)
+                         plain-line))
+                :to-be-truthy))
+      (multiple-value-bind (transformed mismatch)
+          (cl-markdown-kit::%bp-container-transform-line
+           continuation (list item-frame root-frame) t)
+        (expect (and (null mismatch)
+                     (string= (cl-markdown-kit::%block-line-text transformed)
+                              "continuation")
+                     (eq (cl-markdown-kit::%bp-open-frame-end-line item-frame)
+                         continuation))
+                :to-be-truthy))
+      (cl-markdown-kit::%bp-container-transform-line
+       blank-line (list blank-item root-frame) t)
+      (multiple-value-bind (transformed mismatch)
+          (cl-markdown-kit::%bp-container-transform-line
+           continuation (list blank-item root-frame) t)
+        (declare (ignore transformed))
+        (expect (eq mismatch blank-item) :to-be-truthy))
+      (multiple-value-bind (transformed mismatch)
+          (cl-markdown-kit::%bp-container-transform-line
+           footnote-continuation (list footnote-frame root-frame) t)
+        (expect (and (null mismatch)
+                     (string= (cl-markdown-kit::%block-line-text transformed)
+                              "body")
+                     (eq (cl-markdown-kit::%bp-open-frame-end-line footnote-frame)
+                         footnote-continuation))
+                :to-be-truthy))
+      (expect (eq (cl-markdown-kit::%bp-finish-frame source unknown-frame)
+                  unknown-node)
+              :to-be-truthy)))
+
   (it "covers malformed definitions and parser boundary decisions"
     (let* ((short-label
              (cl-markdown-kit::%bp-link-definition
@@ -1356,30 +1530,38 @@
       (expect (and (null short-label)
                    (null missing-colon)
                    (null no-label-tail)
-                   (null long-label)
-                   (first paren-title)
+                   (null long-label))
+              :to-be-truthy)
+      (expect (and (first paren-title)
                    (string= (fourth (second paren-title))
                             (format nil "open~%  middle~%  close"))
-                   (null (first reparse-failure))
-                   (string= (first escaped-footnote) "escaped]label")
-                   (null empty-footnote)
-                   (null missing-footnote-colon)
-                   (= (first dash-setext) 2)
+                   (null (first reparse-failure)))
+              :to-be-truthy)
+      (expect (and (string= (first escaped-footnote)
+                            (format nil "escaped~C]label" #\\))
+                   (string= (second escaped-footnote) "escaped]label"))
+              :to-be-truthy)
+      (expect (and (null empty-footnote)
+                   (null missing-footnote-colon))
+              :to-be-truthy)
+      (expect (and (= (first dash-setext) 2)
                    (null blank-setext)
                    (null plain-fence)
                    (null empty-fence)
                    (null empty-heading)
-                   (null empty-title-opener)
-                   (null (first empty-tag-name))
-                   (null closing-script)
-                   (null closing-empty-tag)
-                   (= (length (block-parser-test-nodes-of-type
+                   (null empty-title-opener))
+              :to-be-truthy)
+      (expect (and (= (length (block-parser-test-nodes-of-type
                                list-document #'cl-markdown-kit:list-node-p))
                       1)
                    (= (length (block-parser-test-nodes-of-type
                                footnote-document
                                #'cl-markdown-kit:footnote-definition-p))
-                      1)
+                      1))
+              :to-be-truthy)
+      (expect (and (null (first empty-tag-name))
+                   (null closing-script)
+                   (null closing-empty-tag)
                    (null (cl-markdown-kit::%bp-link-title-opener
                           (block-parser-test-line "ordinary")))
                    (not (cl-markdown-kit::%bp-html-terminator-p

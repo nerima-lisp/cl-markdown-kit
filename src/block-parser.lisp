@@ -11,6 +11,26 @@
   (after 0 :type (integer 0 *))
   (column-start 0 :type (integer 0 *)))
 
+(defstruct (%bp-open-frame
+             (:constructor %bp-make-open-frame
+                 (&key kind node context child-context start-line start-position
+                       end-line marker-kind marker-delimiter marker-columns
+                       content-indent children items blank-seen has-content)))
+  kind node context child-context start-line start-position end-line
+  marker-kind marker-delimiter marker-columns content-indent
+  (children nil) (items nil) (blank-seen nil) (has-content nil))
+
+(defstruct (%bp-open-leaf
+             (:constructor %bp-make-open-leaf
+                 (&key kind context start-line start-position lines end-line
+                       fence-character fence-length indentation info-string
+                       html-kind html-terminator pending-lines table-node
+                       table-alignments table-rows)))
+  kind context start-line start-position end-line
+  (lines nil) fence-character fence-length indentation info-string
+  html-kind html-terminator (pending-lines nil) table-node table-alignments
+  (table-rows nil))
+
 (declaim (special *block-inline-fragments* *block-reference-index*))
 (declaim (ftype function %bp-parse-lines %bp-check-depth))
 (declaim (ftype function parse-inline))
@@ -320,7 +340,8 @@
                                        (decode-numeric-character-reference
                                         (subseq reference 1) 10)))
                                   ((plusp (length reference))
-                                   (lookup-html5-entity reference)))))
+                                   (lookup-html5-entity
+                                    (concatenate 'string reference ";"))))))
                          (if decoded
                              (progn (write-string decoded output)
                                     (setf index (1+ semicolon)))
@@ -343,7 +364,10 @@
              for character = (char text index)
              do (cond
                   (escaped (setf escaped nil))
-                  ((char= character #\\) (setf escaped t))
+                  ((char= character #\\)
+                   (setf escaped
+                         (and (< (1+ index) (length text))
+                              (ascii-punctuation-p (char text (1+ index))))))
                   ((char= character #\<) (return-from %bp-parse-destination nil))
                   ((char= character #\>)
                    (return-from %bp-parse-destination
@@ -360,7 +384,10 @@
              for character = (char text index)
              do (cond
                   (escaped (setf escaped nil))
-                  ((char= character #\\) (setf escaped t))
+                  ((char= character #\\)
+                   (setf escaped
+                         (and (< (1+ index) (length text))
+                              (ascii-punctuation-p (char text (1+ index))))))
                   ((char= character #\() (incf depth))
                   ((char= character #\))
                    (if (zerop depth)
@@ -437,6 +464,9 @@
                              length))
                        (title nil)
                        (end destination-end))
+                  (when (and (< after-space length)
+                             (= after-space destination-end))
+                    (return-from %bp-link-definition nil))
                   (when (< after-space length)
                     (if (find (char text after-space) '(#\" #\' #\())
                         (progn
@@ -888,9 +918,10 @@
                            1
                            (%bp-whitespace-width text marker-end space-end
                                                  marker-column)))
-                     (padding (if (<= space-columns 4)
-                                 space-columns
-                                 1))
+                     (padding (if (or (= space-end length)
+                                     (> space-columns 4))
+                                 1
+                                 space-columns))
                      (content-end
                        (if (= space-end marker-end)
                            marker-end
@@ -1102,9 +1133,6 @@
      :header-row-p header-p
      :cells (nreverse cells))))
 
-(defun %bp-prefix-text (line end)
-  (subseq (%block-line-text line) 0 end))
-
 (defun %bp-make-theta (source-buffer line context marker count start)
   (make-thematic-break
    :span (%bp-line-span source-buffer line start
@@ -1136,26 +1164,6 @@
                            (%bp-line-slice line marker-end) 1)))
           (values indent content (subseq text 0 prefix-end) columns))))))
 
-(defstruct (%bp-open-frame
-             (:constructor %bp-make-open-frame
-                 (&key kind node context child-context start-line start-position
-                       end-line marker-kind marker-delimiter marker-columns
-                       content-indent children items blank-seen has-content)))
-  kind node context child-context start-line start-position end-line
-  marker-kind marker-delimiter marker-columns content-indent
-  (children nil) (items nil) (blank-seen nil) (has-content nil))
-
-(defstruct (%bp-open-leaf
-             (:constructor %bp-make-open-leaf
-                 (&key kind context start-line start-position lines end-line
-                       fence-character fence-length indentation info-string
-                       html-kind html-terminator pending-lines table-node
-                       table-alignments table-rows)))
-  kind context start-line start-position end-line
-  (lines nil) fence-character fence-length indentation info-string
-  html-kind html-terminator (pending-lines nil) table-node table-alignments
-  (table-rows nil))
-
 (defun %bp-frame-context (frame)
   (%bp-open-frame-child-context frame))
 
@@ -1176,13 +1184,12 @@
 
 (defun %bp-finish-frame (source-buffer frame)
   (let ((node (%bp-open-frame-node frame)))
-    (unless (eq (%bp-open-frame-kind frame) :root)
-      (setf (node-span node) (%bp-frame-span source-buffer frame)))
+    (setf (node-span node) (%bp-frame-span source-buffer frame))
     (case (%bp-open-frame-kind frame)
-      (:root (nreverse (%bp-open-frame-children frame)))
       (:quote
        (setf (block-quote-children node)
-             (nreverse (%bp-open-frame-children frame))))
+             (nreverse (%bp-open-frame-children frame)))
+       node)
       (:list
        (let ((items (nreverse (%bp-open-frame-items frame))))
          (setf (list-node-items node) items
@@ -1190,10 +1197,12 @@
        node)
       (:item
        (setf (list-item-children node)
-             (nreverse (%bp-open-frame-children frame))))
+             (nreverse (%bp-open-frame-children frame)))
+       node)
       (:footnote
        (setf (footnote-definition-children node)
-             (nreverse (%bp-open-frame-children frame))))
+             (nreverse (%bp-open-frame-children frame)))
+       node)
       (otherwise node))))
 
 (defun %bp-container-transform-line (line stack &optional record-p)
@@ -1225,7 +1234,7 @@
             (setf content
                   (%bp-strip-columns
                    content (%bp-open-frame-content-indent frame)))
-            (when (and record-p (not (%bp-blank-line-p content)))
+            (when record-p
               (setf (%bp-open-frame-end-line frame) line)))
            (t
             (return-from %bp-container-transform-line
@@ -1339,8 +1348,7 @@
                (when leaf
                  (let* ((kind (%bp-open-leaf-kind leaf))
                         (content-lines (nreverse (%bp-open-leaf-lines leaf)))
-                        (end-line (or (%bp-open-leaf-end-line leaf)
-                                      (%bp-open-leaf-start-line leaf)))
+                        (end-line (%bp-open-leaf-end-line leaf))
                         (context (%bp-open-leaf-context leaf))
                         (node
                           (case kind
@@ -1411,19 +1419,15 @@
              (close-top-frame ()
                (let* ((frame (pop stack))
                       (parent (current-frame))
-                      (kind (%bp-open-frame-kind frame))
-                      (end-line (or (%bp-open-frame-end-line frame)
-                                    (%bp-open-frame-start-line frame)))
+                      (end-line (%bp-open-frame-end-line frame))
                       (node (%bp-finish-frame source-buffer frame)))
-                 (unless (eq kind :root)
-                   (%bp-frame-add-node parent node)
-                   (setf (%bp-open-frame-end-line parent) end-line))
+                 (%bp-frame-add-node parent node)
+                 (setf (%bp-open-frame-end-line parent) end-line)
                  node))
              (close-through (target)
-               (loop while (and stack (not (eq (current-frame) target)))
+               (loop while (not (eq (current-frame) target))
                      do (close-top-frame))
-               (when (eq (current-frame) target)
-                 (close-top-frame)))
+               (close-top-frame))
              (frame-parent (frame)
                (loop for tail on stack
                      when (eq (car tail) frame)
@@ -1517,12 +1521,22 @@
              (sibling-record-p (content list-frame)
                (let ((record (%bp-list-marker-record content)))
                  (and record
+                      (not (nth-value 0 (%bp-thematic-break content)))
                       (eq (first record) (%bp-open-frame-marker-kind list-frame))
                       (char= (third record)
                              (%bp-open-frame-marker-delimiter list-frame))
                       (<= (ninth record)
                           (+ (%bp-open-frame-marker-columns list-frame) 3))
                       record)))
+             (list-delimiter-change-p (content list-frame)
+               (let ((record (%bp-list-marker-record content)))
+                 (and record
+                      (eq (first record)
+                          (%bp-open-frame-marker-kind list-frame))
+                      (not (char= (third record)
+                                  (%bp-open-frame-marker-delimiter list-frame)))
+                      (<= (ninth record)
+                          (+ (%bp-open-frame-marker-columns list-frame) 3)))))
              (reference-candidate (content)
                (let ((candidate-lines (list content))
                      (source-index (1+ cursor)))
@@ -1680,7 +1694,9 @@
                                       :indentation indentation
                                       :info-string
                                       (let ((trimmed (%bp-trimmed-string info-string)))
-                                        (unless (zerop (length trimmed)) trimmed))))))
+                                        (unless (zerop (length trimmed))
+                                          (%bp-decode-character-references
+                                           (%bp-unescape-punctuation trimmed))))))))
                             ((nth-value 0 (%bp-html-block-type content))
                              (mark-container-content)
                              (multiple-value-bind (kind terminator name)
@@ -1695,20 +1711,18 @@
                                       :end-line physical-line
                                       :lines (list content)
                                       :html-kind kind
-                                      :html-terminator terminator))))
+                                      :html-terminator terminator))
+                               (when (and (<= kind 5)
+                                          (%bp-html-terminator-p
+                                           content terminator kind))
+                                 (close-leaf))))
                             ((%bp-list-marker-record content)
                              (mark-container-content)
-                             (let* ((record (%bp-list-marker-record content))
-                                    (parent (current-frame)))
-                               (if (and (eq (%bp-open-frame-kind parent) :list)
-                                        (sibling-record-p content parent))
-                                   (let ((item-content
-                                           (open-item physical-line content record)))
-                                     (setf content item-content again t))
-                                   (setf content
-                                         (open-list-and-item
-                                          physical-line content record)
-                                         again t))))
+                             (let ((record (%bp-list-marker-record content)))
+                               (setf content
+                                     (open-list-and-item
+                                      physical-line content record)
+                                     again t)))
                             ((>= (%bp-line-indent-columns content) 4)
                              (mark-container-content)
                              (setf leaf
@@ -1757,6 +1771,9 @@
                                :table-node node :table-alignments alignments
                                :table-rows (table-rows node)))
                         (return-from process-leaf-line :consumed)))
+                    (when (table-header-followed-by-separator-p content)
+                      (close-leaf)
+                      (return-from process-leaf-line nil))
                     (multiple-value-bind (level marker count indent)
                         (%bp-setext-level content)
                       (declare (ignore indent))
@@ -1822,6 +1839,10 @@
                         :consumed)))
                  (:indented
                   (cond
+                    ((%bp-blank-line-p content)
+                     (push (%bp-strip-columns content 4)
+                           (%bp-open-leaf-pending-lines leaf))
+                     :consumed)
                     ((>= (%bp-line-indent-columns content) 4)
                      (setf (%bp-open-leaf-lines leaf)
                            (append (list (%bp-strip-columns content 4))
@@ -1829,10 +1850,6 @@
                                    (%bp-open-leaf-lines leaf))
                            (%bp-open-leaf-pending-lines leaf) nil
                            (%bp-open-leaf-end-line leaf) physical-line)
-                     :consumed)
-                    ((%bp-blank-line-p content)
-                     (push (%bp-line-slice content 0 0)
-                           (%bp-open-leaf-pending-lines leaf))
                      :consumed)
                     (t
                      (close-leaf)
@@ -1855,16 +1872,32 @@
                                    (frame-parent mismatch)))
                       (sibling (and parent
                                     (eq (%bp-open-frame-kind parent) :list)
-                                    (sibling-record-p content parent))))
+                                    (sibling-record-p content parent)))
+                      (delimiter-change (and parent
+                                             (eq (%bp-open-frame-kind parent) :list)
+                                             (list-delimiter-change-p
+                                              content parent))))
                  (and mismatch leaf
                       (eq (%bp-open-leaf-kind leaf) :paragraph)
                       (not sibling)
+                      (not delimiter-change)
                       (not (%bp-blank-line-p content))
-                      (not (%bp-setext-level content))
                       (not (%bp-interrupts-paragraph-p content)))))
              (record-lazy-continuation (physical-line)
                (dolist (frame stack)
                  (setf (%bp-open-frame-end-line frame) physical-line)))
+             (table-header-followed-by-separator-p (content)
+               (let ((next-index (1+ cursor)))
+                 (and (< next-index (length lines))
+                      (multiple-value-bind (next-content mismatch)
+                          (%bp-container-transform-line
+                           (aref lines next-index) stack nil)
+                        (let ((alignments (%bp-table-alignments next-content)))
+                          (and (not mismatch)
+                               alignments
+                               (= (length alignments)
+                                  (length (%bp-table-cells content)))
+                               (find #\| (%block-line-text content))))))))
              (root-children ()
                (nreverse (%bp-open-frame-children root))))
       (loop while (< cursor (length lines))
@@ -1898,11 +1931,7 @@
                              (progn
                                (close-through mismatch)
                                (when (eq mismatch-kind :item)
-                                 (let ((list-frame (current-frame)))
-                                   (when (and list-frame
-                                              (eq (%bp-open-frame-kind list-frame)
-                                                  :list))
-                                     (close-top-frame))))))))))
+                                 (close-top-frame))))))))
                    (leaf
                     (let ((result (process-leaf-line physical-line content)))
                       (when result (incf cursor))))
@@ -1946,8 +1975,11 @@
 (defun %bp-default-nesting-depth ()
   256)
 
+(defun %bp-default-front-matter-p ()
+  t)
+
 (defun parse-blocks
-    (source-buffer &key (front-matter t)
+    (source-buffer &key (front-matter (%bp-default-front-matter-p))
                         (max-nesting-depth (%bp-default-nesting-depth)))
   "Parse block structure and defer paragraph, heading, and table-cell inlines."
   (check-type source-buffer source-buffer)
