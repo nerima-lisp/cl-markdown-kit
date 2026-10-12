@@ -15,6 +15,7 @@
 /coverage/
 /coverage-report/
 /*-coverage-report/
+/scripts/cl-markdown-kit-coverage/
 *.coverage
 coverage.dat
 /__snapshots__/

@@ -255,6 +255,13 @@
    #:document-headings
    #:find-section
    #:extract
+   ;; Format-preserving edits
+   #:replace-section-body
+   #:replace-section
+   #:delete-section
+   #:insert-section
+   #:replace-node
+   #:set-task-checked
    ;; Markdown writer
    #:write-markdown
    #:write-markdown-to-stream))

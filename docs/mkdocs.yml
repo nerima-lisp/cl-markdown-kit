@@ -14,5 +14,6 @@ nav:
   - Reference:
       - AST and source: reference/nodes.md
       - Query API: reference/query.md
+      - Edit API: reference/edit.md
       - Markdown writer: reference/markdown-writer.md
       - YAML front matter: reference/yaml.md

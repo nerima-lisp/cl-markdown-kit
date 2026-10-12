@@ -29,7 +29,8 @@
                (:file "parse")
                (:file "query")
                (:file "html-writer")
-               (:file "markdown-writer"))
+               (:file "markdown-writer")
+               (:file "edit"))
   :in-order-to ((test-op (test-op "cl-markdown-kit/test"))))
 
 (asdf:defsystem "cl-markdown-kit/yaml"
@@ -92,7 +93,8 @@
                (:file "character-data")
                (:file "query")
                (:file "html-writer")
-               (:file "markdown-writer"))
+               (:file "markdown-writer")
+               (:file "edit"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (let* ((condition-class
