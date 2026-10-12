@@ -355,7 +355,8 @@
               text index (%mw-line-end text index))))))
 
 (defun %mw-write-text (text stream &optional boundary-escapes
-                                           escape-terminal-backslash-p)
+                                           escape-terminal-backslash-p
+                                           (encode-terminal-whitespace-p t))
   (let* ((end (length text))
          (index 0)
          (*mw-text-autolink-breakpoints* (%mw-autolink-breakpoints text)))
@@ -363,11 +364,16 @@
           for character = (char text index)
           do (cond
                ((char= character #\Newline)
-                (if (or *mw-heading-p* *mw-table-cell-p*)
+                (if (or *mw-heading-p* *mw-table-cell-p*
+                        (and (> index 0)
+                             (char= (char text (1- index)) #\Newline))
+                        (and (< (1+ index) end)
+                             (char= (char text (1+ index)) #\Newline)))
                     (%mw-write-string "&#10;" stream)
                     (%mw-write-character character stream))
                 (incf index))
-               ((and (%mw-horizontal-space-p character)
+               ((and encode-terminal-whitespace-p
+                     (%mw-horizontal-space-p character)
                      (let ((line-end (%mw-line-end text index)))
                        (null (position-if-not #'%mw-horizontal-space-p text
                                               :start index :end line-end))))
@@ -451,11 +457,16 @@
                                  (char= (char text (1- (length text))) #\!)))
                           (*mw-heading-closing-hash-allowed-p*
                             (%mw-heading-closing-hash-allowed-after-p
-                             remaining)))
+                             remaining))
+                          (encode-terminal-whitespace-p
+                            (or (null remaining)
+                                (soft-break-p (first remaining))
+                                (hard-break-p (first remaining)))))
                      (%mw-write-text
                       text stream boundary-escapes
                       (or remaining *mw-following-block-p*
-                          escape-terminal-backslash-p)))
+                          escape-terminal-backslash-p)
+                      encode-terminal-whitespace-p))
                    (let ((last-text (find-if #'text-p text-nodes :from-end t)))
                      (when last-text
                        (setf previous last-text))))
@@ -887,7 +898,7 @@
                  (*mw-heading-closing-hash-allowed-p* t))
              (%mw-render-inline-children (heading-children node) stream t))))
         (thematic-break
-         (write-string "---" stream))
+         (write-string "* * *" stream))
         (code-block
          (write-string (%mw-render-code-block node) stream))
         (html-block

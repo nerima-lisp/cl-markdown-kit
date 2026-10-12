@@ -366,6 +366,90 @@
                 :to-equal (format nil "| first&#10;second |~%| :--- |"))
         (expect (html roundtrip) :to-equal (html table-document)))))
 
+  (it "keeps consecutive paragraph text newlines inside the paragraph"
+    (dolist (test-case
+              (list (list (format nil "first~%~%second")
+                          "first&#10;&#10;second")
+                    (list (format nil "~%~%first") "&#10;&#10;first")
+                    (list (format nil "first~%~%") "first&#10;&#10;")))
+      (destructuring-bind (text expected-markdown) test-case
+        (let* ((document
+                 (cl-markdown-kit:make-document
+                  :children
+                  (list
+                   (cl-markdown-kit:make-paragraph
+                    :children (list (cl-markdown-kit:make-text :value text))))))
+               (markdown (cl-markdown-kit:write-markdown document))
+               (roundtrip (cl-markdown-kit:parse-string markdown)))
+          (expect markdown :to-equal expected-markdown)
+          (expect (cl-markdown-kit:write-html
+                   roundtrip :raw-html :pass-through :unsafe-urls t)
+                  :to-equal
+                  (cl-markdown-kit:write-html
+                   document :raw-html :pass-through :unsafe-urls t))))))
+
+  (it "keeps spaces before inline siblings literal"
+    (dolist (test-case
+              (list (list (list (cl-markdown-kit:make-text :value "left ")
+                                (cl-markdown-kit:make-code-span :literal-text "code"))
+                          "left `code`")
+                    (list (list (cl-markdown-kit:make-text
+                                 :value (format nil " ~C" #\Tab))
+                                (cl-markdown-kit:make-code-span :literal-text "code"))
+                          (format nil "&#32;&#9;`code`"))))
+      (destructuring-bind (children expected-markdown) test-case
+        (let* ((document
+                 (cl-markdown-kit:make-document
+                  :children
+                  (list (cl-markdown-kit:make-paragraph :children children))))
+               (markdown (cl-markdown-kit:write-markdown document))
+               (roundtrip (cl-markdown-kit:parse-string markdown)))
+          (expect markdown :to-equal expected-markdown)
+          (expect (cl-markdown-kit:write-html
+                   roundtrip :raw-html :pass-through :unsafe-urls t)
+                  :to-equal
+                  (cl-markdown-kit:write-html
+                   document :raw-html :pass-through :unsafe-urls t))))))
+
+  (it "writes thematic breaks without opening YAML front matter"
+    (labels ((html (document)
+               (cl-markdown-kit:write-html
+                document :raw-html :pass-through :unsafe-urls t)))
+      (let* ((document
+               (cl-markdown-kit:make-document
+                :children
+                (list (cl-markdown-kit:make-thematic-break)
+                      (cl-markdown-kit:make-heading
+                       :level 2
+                       :children (list (cl-markdown-kit:make-text :value "foo")))
+                      (cl-markdown-kit:make-thematic-break))))
+             (markdown (cl-markdown-kit:write-markdown document))
+             (roundtrip (cl-markdown-kit:parse-string markdown)))
+        (expect markdown :to-equal
+                (format nil "* * *~%~%## foo~%~%* * *"))
+        (expect (html roundtrip) :to-equal (html document)))
+      (let* ((document
+               (cl-markdown-kit:make-document
+                :children
+                (list
+                 (cl-markdown-kit:make-list-node
+                  :kind :unordered
+                  :tight-p t
+                  :items
+                  (list
+                   (cl-markdown-kit:make-list-item
+                    :children
+                    (list
+                     (cl-markdown-kit:make-paragraph
+                      :children
+                      (list (cl-markdown-kit:make-text :value "Foo")))))
+                   (cl-markdown-kit:make-list-item
+                    :children (list (cl-markdown-kit:make-thematic-break))))))))
+             (markdown (cl-markdown-kit:write-markdown document))
+             (roundtrip (cl-markdown-kit:parse-string markdown)))
+        (expect markdown :to-equal (format nil "- Foo~%- * * *"))
+        (expect (html roundtrip) :to-equal (html document)))))
+
   (it "uses minimum backslash escaping when punctuation needs no escape"
     (let* ((document
              (cl-markdown-kit:make-document
@@ -561,6 +645,19 @@
                 :destination "https://example.test" :display-text "example"))
        :to-equal "[example](<https://example.test>)")
       (expect
+       (with-output-to-string (stream)
+         (cl-markdown-kit::%mw-render-inline-node
+          (cl-markdown-kit:make-text :value "direct") stream))
+       :to-equal "direct")
+      (expect
+       (cl-markdown-kit::%mw-render-inline-string
+        (list (cl-markdown-kit:make-link
+               :destination "target"
+               :children (list (cl-markdown-kit:make-text :value "link")))
+              (cl-markdown-kit:make-text :value "[tail]"))
+        :minimize-escapes-p t)
+       :to-equal "[link](<target>)\\[tail\\]")
+      (expect
        (render (cl-markdown-kit:make-footnote-reference
                 :normalized-label
                 (format nil "a[b]&~Cc\\d]" #\Newline)))
@@ -610,6 +707,9 @@
              (format nil "a|~%---:"))
             :to-be-truthy)
     (expect (cl-markdown-kit::%mw-table-start-follows-p
+             (format nil "a|~%---"))
+            :to-be-truthy)
+    (expect (cl-markdown-kit::%mw-table-start-follows-p
              (format nil "|a|~%:---"))
             :to-be-truthy)
     (expect (cl-markdown-kit::%mw-table-start-follows-p
@@ -643,7 +743,9 @@
               (list (list (format nil "a|~%---:")
                           (format nil "a|~%---\\:"))
                     (list (format nil "|a|~%:---")
-                          (format nil "|a|~%\\:---"))))
+                          (format nil "|a|~%\\:---"))
+                    (list (format nil "a|~%---")
+                          (format nil "a|~%\\---"))))
       (destructuring-bind (text expected-markdown) test-case
         (let* ((document
                  (cl-markdown-kit:make-document
@@ -783,7 +885,7 @@
      :to-equal "##")
     (expect (cl-markdown-kit::%mw-render-block
              (cl-markdown-kit:make-thematic-break))
-            :to-equal "---")
+            :to-equal "* * *")
     (expect (cl-markdown-kit::%mw-render-block
              (cl-markdown-kit:make-html-block :body "<hr>"))
             :to-equal "<hr>")
@@ -1311,4 +1413,5 @@
               :to-equal
               (cl-markdown-kit:write-html
                document :raw-html :pass-through :unsafe-urls t))))
+
 )
