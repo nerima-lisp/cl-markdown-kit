@@ -3,15 +3,15 @@
 
 (defstruct (%block-line
              (:constructor %make-block-line
-                 (text boundaries raw-start raw-end after)))
+                 (text boundaries raw-start raw-end after column-start)))
   (text "" :type string)
   (boundaries #() :type vector)
   (raw-start 0 :type (integer 0 *))
   (raw-end 0 :type (integer 0 *))
-  (after 0 :type (integer 0 *)))
+  (after 0 :type (integer 0 *))
+  (column-start 0 :type (integer 0 *)))
 
-(declaim (special *block-inline-fragments* *block-reference-index*
-                  *block-lazy-paragraph-cache*))
+(declaim (special *block-inline-fragments* *block-reference-index*))
 (declaim (ftype function %bp-parse-lines %bp-check-depth))
 (declaim (ftype function parse-inline))
 
@@ -35,13 +35,24 @@
                 :displaced-to base
                 :displaced-index-offset offset)))
 
+(defun %bp-line-column-at (line index)
+  (loop with column = (%block-line-column-start line)
+        for offset from 0 below index
+        for character = (char (%block-line-text line) offset)
+        do (incf column
+                  (if (char= character #\Tab)
+                      (- 4 (mod column 4))
+                      1))
+        finally (return column)))
+
 (defun %bp-line-slice (line start &optional (end (length (%block-line-text line))))
   (%make-block-line
    (%bp-array-slice-view (%block-line-text line) start end)
    (%bp-array-slice-view (%block-line-boundaries line) start (1+ end))
    (%block-line-raw-start line)
    (%block-line-raw-end line)
-   (%block-line-after line)))
+   (%block-line-after line)
+   (%bp-line-column-at line start)))
 
 (defun %bp-split-lines (text)
   (let ((lines nil)
@@ -56,7 +67,7 @@
                        for boundary-index from 0
                        do (setf (aref boundaries boundary-index) offset))
                  (push (%make-block-line line-text boundaries start index
-                                         (1+ index))
+                                         (1+ index) 0)
                        lines)
                  (setf start (1+ index))))
     (let* ((boundaries (make-array (1+ (- length start))))
@@ -64,12 +75,12 @@
       (loop for offset from start to length
             for boundary-index from 0
             do (setf (aref boundaries boundary-index) offset))
-      (push (%make-block-line line-text boundaries start length length) lines))
+      (push (%make-block-line line-text boundaries start length length 0) lines))
     (coerce (nreverse lines) 'vector)))
 
-(defun %bp-leading-indent (text &optional (limit 3))
+(defun %bp-leading-indent (text &optional (limit 3) (initial-column 0))
   (let ((index 0)
-        (column 0))
+        (column initial-column))
     (loop while (< index (length text))
           for character = (char text index)
           while (%bp-space-p character)
@@ -77,13 +88,17 @@
             (if (char= character #\Tab)
                 (+ column (- 4 (mod column 4)))
                 (1+ column))
-          while (<= next-column limit)
+          while (<= (- next-column initial-column) limit)
           do (setf column next-column)
              (incf index))
-    (values index column)))
+    (values index (- column initial-column))))
 
-(defun %bp-indent-columns (text &optional (end (length text)))
-  (loop with column = 0
+(defun %bp-line-leading-indent (line &optional (limit 3))
+  (%bp-leading-indent (%block-line-text line) limit
+                      (%block-line-column-start line)))
+
+(defun %bp-indent-columns (text &optional (end (length text)) (initial-column 0))
+  (loop with column = initial-column
         for index from 0 below end
         for character = (char text index)
         while (%bp-space-p character)
@@ -91,7 +106,11 @@
                  (if (char= character #\Tab)
                      (+ column (- 4 (mod column 4)))
                      (1+ column)))
-        finally (return column)))
+        finally (return (- column initial-column))))
+
+(defun %bp-line-indent-columns (line)
+  (%bp-indent-columns (%block-line-text line) (length (%block-line-text line))
+                      (%block-line-column-start line)))
 
 (defun %bp-whitespace-width (text start end initial-column)
   (loop with column = initial-column
@@ -107,18 +126,22 @@
   "Remove COLUMNS visual indentation columns while preserving source mapping."
   (let* ((text (%block-line-text line))
          (index 0)
-         (column 0)
+         (column (%block-line-column-start line))
          (partial-spaces 0))
-    (loop while (and (< index (length text)) (< column columns)
+    (loop while (and (< index (length text))
+                     (< (- column (%block-line-column-start line)) columns)
                      (%bp-space-p (char text index)))
           for character = (char text index)
           for width = (if (char= character #\Tab)
                           (- 4 (mod column 4))
                           1)
           do (incf index)
-             (if (> (+ column width) columns)
-                 (setf partial-spaces (- (+ column width) columns)
-                       column columns)
+             (if (> (- (+ column width) (%block-line-column-start line))
+                    columns)
+                 (setf partial-spaces
+                       (- (+ column width)
+                          (%block-line-column-start line) columns)
+                       column (+ (%block-line-column-start line) columns))
                  (incf column width)))
     (if (zerop partial-spaces)
         (%bp-line-slice line index)
@@ -140,11 +163,13 @@
           (%make-block-line new-text new-boundaries
                             (%block-line-raw-start line)
                             (%block-line-raw-end line)
-                            (%block-line-after line))))))
+                            (%block-line-after line)
+                            (+ (%block-line-column-start line) columns))))))
 
 (defun %bp-strip-up-to-three (line)
   (multiple-value-bind (index columns)
-      (%bp-leading-indent (%block-line-text line) 3)
+      (%bp-leading-indent (%block-line-text line) 3
+                          (%block-line-column-start line))
     (declare (ignore columns))
     (%bp-line-slice line index)))
 
@@ -213,34 +238,6 @@
         (push fragment *block-inline-fragments*)))
     owner))
 
-(defun %bp-casefold-label (label casefold-function)
-  (if casefold-function
-      (funcall casefold-function label)
-      (string-downcase label)))
-
-(defun %bp-unicode-casefold-function (package)
-  (let ((casefold (and package (find-symbol "CASEFOLD" package))))
-    (when (and casefold (fboundp casefold))
-      (symbol-function casefold))))
-
-(defun %bp-normalize-label (label)
-  (let* ((collapsed
-           (with-output-to-string (output)
-             (let ((pending-space nil)
-                   (started nil))
-               (loop for character across label
-                     do (if (find character '(#\Space #\Tab #\Newline #\Return))
-                            (when started (setf pending-space t))
-                            (progn
-                              (when pending-space
-                                (write-char #\Space output)
-                                (setf pending-space nil))
-                              (write-char character output)
-                              (setf started t)))))))
-         (casefold (%bp-unicode-casefold-function
-                    (find-package "SB-UNICODE"))))
-    (%bp-casefold-label collapsed casefold)))
-
 (defun %bp-footnote-index-key (normalized-label)
   (cons :footnote normalized-label))
 
@@ -260,8 +257,7 @@
         finally (return index)))
 
 (defun %bp-link-whitespace-p (character)
-  (or (%bp-space-p character)
-      (find character '(#\Newline #\Return))))
+  (unicode-whitespace-p character))
 
 (defun %bp-link-skip-whitespace (text index)
   (loop while (and (< index (length text))
@@ -291,7 +287,8 @@
                         boundaries
                         (%block-line-raw-start (aref lines 0))
                         (%block-line-raw-end (aref lines (1- (length lines))))
-                        (%block-line-after (aref lines (1- (length lines))))))))
+                        (%block-line-after (aref lines (1- (length lines))))
+                        (%block-line-column-start (aref lines 0))))))
 
 (defun %bp-unescape-punctuation (text)
   (with-output-to-string (output)
@@ -299,10 +296,40 @@
           for character = (char text index)
           do (if (and (char= character #\\)
                       (< (1+ index) (length text))
-                      (not (alphanumericp (char text (1+ index)))))
+                      (ascii-punctuation-p (char text (1+ index))))
                  (progn (write-char (char text (1+ index)) output)
                         (incf index))
                  (write-char character output)))))
+
+(defun %bp-decode-character-references (text)
+  (with-output-to-string (output)
+    (loop with index = 0
+          while (< index (length text))
+          do (if (char= (char text index) #\&)
+                 (let ((semicolon (position #\; text :start (1+ index))))
+                   (if semicolon
+                       (let* ((reference (subseq text (1+ index) semicolon))
+                              (decoded
+                                (cond
+                                  ((and (> (length reference) 1)
+                                        (char= (char reference 0) #\#))
+                                   (if (and (> (length reference) 2)
+                                            (find (char reference 1) '(#\x #\X)))
+                                       (decode-numeric-character-reference
+                                        (subseq reference 2) 16)
+                                       (decode-numeric-character-reference
+                                        (subseq reference 1) 10)))
+                                  ((plusp (length reference))
+                                   (lookup-html5-entity reference)))))
+                         (if decoded
+                             (progn (write-string decoded output)
+                                    (setf index (1+ semicolon)))
+                             (progn (write-char #\& output)
+                                    (incf index))))
+                       (progn (write-char #\& output)
+                              (incf index))))
+                 (progn (write-char (char text index) output)
+                        (incf index))))))
 
 (defun %bp-parse-destination (text index)
   (let ((start index)
@@ -370,7 +397,7 @@
 (defun %bp-link-definition (line)
   (let* ((text (%block-line-text line))
          (length (length text)))
-    (multiple-value-bind (indent columns) (%bp-leading-indent text 3)
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
       (declare (ignore columns))
       (when (and (< indent length) (char= (char text indent) #\[)
                  (not (%bp-prefix-p text "[^" indent)))
@@ -392,10 +419,14 @@
                     (not (char= (char text (1+ index)) #\:))
                     (> (- index label-start) 999))
             (return-from %bp-link-definition nil))
-          (let* ((raw-label (%bp-unescape-punctuation
-                             (subseq text label-start index)))
-                 (normalized (%bp-normalize-label raw-label))
+          (let* ((raw-label (subseq text label-start index))
+                 (normalized
+                   (normalize-link-label
+                    (%bp-decode-character-references
+                     (%bp-unescape-punctuation raw-label))))
                  (cursor (%bp-link-skip-whitespace text (+ index 2))))
+            (when (zerop (length normalized))
+              (return-from %bp-link-definition nil))
             (multiple-value-bind (destination destination-end)
                 (%bp-parse-destination text cursor)
               (when destination
@@ -432,11 +463,15 @@
                                          (subseq text destination-end
                                                  destination-line-end))
                             (return-from %bp-link-definition nil)))))
-                  (values raw-label normalized destination title end))))))))))
+                  (values raw-label normalized
+                          (%bp-decode-character-references destination)
+                          (and title (%bp-decode-character-references title))
+                          end))))))))))
 
 (defun %bp-link-label-final-line (lines index)
-  (let* ((first-text (%block-line-text (aref lines index)))
-         (start (1+ (nth-value 0 (%bp-leading-indent first-text 3))))
+  (let* ((start (1+ (nth-value 0
+                               (%bp-line-leading-indent
+                                (aref lines index) 3))))
          (escaped nil))
     (loop for line-index from index below (length lines)
           for line = (aref lines line-index)
@@ -493,7 +528,7 @@
 (defun %bp-link-definition-at (lines index)
   (let* ((first-line (aref lines index))
          (first-text (%block-line-text first-line))
-         (indent (nth-value 0 (%bp-leading-indent first-text 3))))
+         (indent (nth-value 0 (%bp-line-leading-indent first-line 3))))
     (unless (and (< indent (length first-text))
                  (char= (char first-text indent) #\[)
                  (not (%bp-prefix-p first-text "[^" indent)))
@@ -550,7 +585,7 @@
 (defun %bp-footnote-start (line)
   (let* ((text (%block-line-text line))
          (length (length text)))
-    (multiple-value-bind (indent columns) (%bp-leading-indent text 3)
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
       (declare (ignore columns))
       (when (and (%bp-prefix-p text "[^" indent))
         (let ((label-start (+ indent 2))
@@ -567,16 +602,19 @@
           (when (and close (> close label-start)
                      (< (1+ close) length)
                      (char= (char text (1+ close)) #\:))
-            (let* ((raw-label (%bp-unescape-punctuation
-                               (subseq text label-start close)))
+            (let* ((raw-label (subseq text label-start close))
+                   (normalized
+                     (normalize-link-label
+                      (%bp-decode-character-references
+                       (%bp-unescape-punctuation raw-label))))
                    (cursor (%bp-skip-whitespace text (+ close 2))))
-              (values raw-label (%bp-normalize-label raw-label) cursor
+              (values raw-label normalized cursor
                       indent))))))))
 
 (defun %bp-atx-heading (line)
   (let* ((text (%block-line-text line))
          (length (length text)))
-    (multiple-value-bind (indent columns) (%bp-leading-indent text 3)
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
       (declare (ignore columns))
       (when (and (< indent length) (char= (char text indent) #\#))
         (let ((marker-end indent))
@@ -611,7 +649,7 @@
   (let* ((text (%block-line-text line))
          (length (length text)))
     (multiple-value-bind (indent columns)
-        (%bp-leading-indent text most-positive-fixnum)
+        (%bp-line-leading-indent line most-positive-fixnum)
       (when (<= columns 3)
         (let* ((start indent)
                (end length))
@@ -629,7 +667,7 @@
   (let* ((text (%block-line-text line))
          (length (length text)))
     (multiple-value-bind (indent columns)
-        (%bp-leading-indent text most-positive-fixnum)
+        (%bp-line-leading-indent line most-positive-fixnum)
       (when (<= columns 3)
         (let ((marker nil)
               (count 0))
@@ -650,7 +688,7 @@
 (defun %bp-fence-start (line)
   (let* ((text (%block-line-text line))
          (length (length text)))
-    (multiple-value-bind (indent columns) (%bp-leading-indent text 3)
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
       (when (and (< indent length)
                  (find (char text indent) '(#\` #\~)))
         (let* ((character (char text indent))
@@ -667,7 +705,7 @@
 (defun %bp-fence-close-p (line character minimum-length)
   (let* ((text (%block-line-text line))
          (length (length text)))
-    (multiple-value-bind (indent columns) (%bp-leading-indent text 3)
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
       (declare (ignore columns))
       (when (and (< indent length) (char= (char text indent) character))
         (let ((end indent))
@@ -767,7 +805,7 @@
 (defun %bp-html-block-type (line)
   (let* ((text (%block-line-text line))
          (length (length text)))
-    (multiple-value-bind (indent columns) (%bp-leading-indent text 3)
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
       (declare (ignore columns))
       (cond
         ((%bp-prefix-p text "<!--" indent) (values 2 "-->" nil))
@@ -812,7 +850,7 @@
 (defun %bp-list-marker (line)
   (let* ((text (%block-line-text line))
          (length (length text)))
-    (multiple-value-bind (indent columns) (%bp-leading-indent text 3)
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
       (when (< indent length)
         (let* ((marker-start indent)
                (character (char text marker-start))
@@ -823,8 +861,7 @@
           (cond
             ((find character '(#\- #\+ #\*))
              (setf kind :unordered delimiter character marker-end (1+ indent)))
-            ((and (<= (char-code #\1) (char-code character)
-                      (char-code #\9)))
+            ((<= (char-code #\0) (char-code character) (char-code #\9))
              (let ((cursor indent))
                (loop while (and (< cursor length)
                                 (<= (char-code #\0)
@@ -841,14 +878,16 @@
           (when marker-end
             (when (or (= marker-end length)
                       (%bp-space-p (char text marker-end)))
-              (let* ((marker-columns
-                       (+ columns (- marker-end indent)))
+                     (let* ((marker-column
+                              (+ (%block-line-column-start line) columns
+                                 (- marker-end indent)))
+                     (marker-columns (+ columns (- marker-end indent)))
                      (space-end (%bp-skip-whitespace text marker-end))
                      (space-columns
                        (if (= space-end marker-end)
                            1
                            (%bp-whitespace-width text marker-end space-end
-                                                 marker-columns)))
+                                                 marker-column)))
                      (padding (if (<= space-columns 4)
                                  space-columns
                                  1))
@@ -861,20 +900,29 @@
                      (content-indent (+ marker-columns padding)))
                 (values kind start-number delimiter indent marker-end
                         content-end content-indent
-                        (subseq text 0 content-end))))))))))
+                        (subseq text 0 content-end) columns)))))))))
 
 (defun %bp-list-interrupts-paragraph-p (line)
-  (multiple-value-bind (kind start-number)
+  (multiple-value-bind (kind start-number delimiter indent marker-end content-end)
       (%bp-list-marker line)
-    (and kind (or (eq kind :unordered) (= start-number 1)))))
+    (declare (ignore delimiter indent marker-end))
+    (and kind
+         (< content-end (length (%block-line-text line)))
+         (or (eq kind :unordered) (= start-number 1)))))
+
+(defun %bp-link-definition-start-p (line)
+  (let* ((text (%block-line-text line))
+         (indent (nth-value 0 (%bp-line-leading-indent line 3))))
+    (and (< indent (length text))
+         (char= (char text indent) #\[)
+         (not (%bp-prefix-p text "[^" indent)))))
 
 (defun %bp-interrupts-paragraph-p (line)
   (or (nth-value 0 (%bp-atx-heading line))
       (nth-value 0 (%bp-thematic-break line))
       (nth-value 0 (%bp-fence-start line))
       (%bp-list-interrupts-paragraph-p line)
-      (multiple-value-bind (indent columns) (%bp-leading-indent
-                                              (%block-line-text line) 3)
+      (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
         (declare (ignore columns))
         (%bp-prefix-p (%block-line-text line) ">" indent))
       (multiple-value-bind (type) (%bp-html-block-type line)
@@ -900,75 +948,6 @@
                                (%block-line-raw-end line))))
                (write-char #\Newline output))))))
 
-(defun %bp-parse-fenced-code (source-buffer lines index context)
-  (multiple-value-bind (character fence-length indentation fence-end
-                                 info-string fence-start)
-      (%bp-fence-start (aref lines index))
-    (declare (ignore fence-end))
-    (unless character (return-from %bp-parse-fenced-code nil))
-    (let ((body-lines nil)
-          (end-index index)
-          (closed nil))
-      (loop for cursor from (1+ index) below (length lines)
-            for line = (aref lines cursor)
-            do (if (%bp-fence-close-p line character fence-length)
-                   (setf end-index cursor closed t)
-                   (progn
-                     (push (%bp-code-indent-line line indentation) body-lines)
-                     (setf end-index cursor)))
-            when closed do (return))
-      (setf body-lines (nreverse body-lines))
-      (let* ((block-lines (subseq lines index (1+ end-index)))
-             (last-line (aref block-lines (1- (length block-lines))))
-             (span (%bp-lines-span source-buffer block-lines fence-start
-                                   (length (%block-line-text last-line))))
-             (node (make-code-block
-                    :span span
-                    :continuation-prefix context
-                    :style :fenced
-                    :body (%bp-body-from-lines body-lines)
-                    :fence-character character
-                    :fence-length fence-length
-                    :indentation indentation
-                    :info-string (let ((trimmed (%bp-trimmed-string info-string)))
-                                   (unless (zerop (length trimmed)) trimmed)))))
-        (values node (1+ end-index))))))
-
-(defun %bp-parse-indented-code (source-buffer lines index context)
-  (let ((cursor index)
-        (body-lines nil)
-        (last-code-index nil))
-    (unless (>= (%bp-indent-columns (%block-line-text (aref lines index))) 4)
-      (return-from %bp-parse-indented-code nil))
-    (loop while (< cursor (length lines))
-          for line = (aref lines cursor)
-          do (cond
-               ((>= (%bp-indent-columns (%block-line-text line)) 4)
-                (push (%bp-strip-columns line 4) body-lines)
-                (unless (%bp-blank-line-p line)
-                  (setf last-code-index cursor)))
-               ((%bp-blank-line-p line)
-                (push (%bp-line-slice line 0 0) body-lines))
-               (t (return)))
-             (incf cursor))
-    (unless last-code-index (return-from %bp-parse-indented-code nil))
-    (loop while (and body-lines (%bp-blank-line-p (car body-lines)))
-          do (pop body-lines))
-    (setf body-lines (nreverse body-lines))
-    (let* ((block-lines (subseq lines index (1+ last-code-index)))
-           (block-last (aref block-lines (1- (length block-lines))))
-           (node (make-code-block
-                  :span (%bp-lines-span source-buffer block-lines 0
-                                        (length (%block-line-text block-last)))
-                  :continuation-prefix context
-                  :style :indented
-                  :body (%bp-body-from-lines body-lines)
-                  :fence-character nil
-                  :fence-length 0
-                  :indentation 4
-                  :info-string nil)))
-      (values node (1+ last-code-index)))))
-
 (defun %bp-html-terminator-p (line terminator kind)
   (let ((text (%block-line-text line)))
     (cond
@@ -991,34 +970,6 @@
       ((= kind 5) (search "]]>" text))
       (terminator (search terminator text))
       (t nil))))
-
-(defun %bp-parse-html-block (source-buffer lines index context)
-  (multiple-value-bind (kind terminator name)
-      (%bp-html-block-type (aref lines index))
-    (declare (ignore name))
-    (unless kind (return-from %bp-parse-html-block nil))
-    (let ((end-index index))
-      (loop for cursor from index below (length lines)
-            for line = (aref lines cursor)
-            do (when (and (> cursor index) (>= kind 6)
-                          (%bp-blank-line-p line))
-                 (return))
-               (setf end-index cursor)
-               (when (and (<= kind 5)
-                          (%bp-html-terminator-p line terminator kind))
-                 (return)))
-      (let* ((block-lines (subseq lines index (1+ end-index)))
-             (start (nth-value 0 (%bp-leading-indent
-                                  (%block-line-text (aref block-lines 0)) 3)))
-             (node (make-html-block
-                    :span (%bp-lines-span
-                           source-buffer block-lines start
-                           (length (%block-line-text
-                                    (aref block-lines (1- (length block-lines))))))
-                    :continuation-prefix context
-                    :body (%bp-body-from-lines block-lines)
-                    :kind kind)))
-        (values node (1+ end-index))))))
 
 (defun %bp-backtick-run-end (text index end)
   (loop while (and (< index end) (char= (char text index) #\`))
@@ -1145,52 +1096,11 @@
                    cells))
     (make-table-row
      :span (%bp-line-span source-buffer line
-                          (nth-value 0 (%bp-leading-indent
-                                        (%block-line-text line) 3))
+                          (nth-value 0 (%bp-line-leading-indent line 3))
                           (length (%block-line-text line)))
      :continuation-prefix context
      :header-row-p header-p
      :cells (nreverse cells))))
-
-(defun %bp-parse-table (source-buffer lines index context header-line)
-  (let* ((delimiter-line (aref lines (1+ index)))
-         (alignments (%bp-table-alignments delimiter-line)))
-    (unless (and alignments
-                 (= (length alignments)
-                    (length (%bp-table-cells header-line))))
-      (return-from %bp-parse-table nil))
-    (let ((rows (list (%bp-table-row source-buffer header-line alignments t context)))
-          (cursor (+ index 2)))
-      (loop while (< cursor (length lines))
-            for line = (aref lines cursor)
-            while (and (not (%bp-blank-line-p line))
-                       (or (find #\| (%block-line-text line))
-                           (= (length alignments) 1)))
-            do (push (%bp-table-row source-buffer line alignments nil context)
-                     rows)
-               (incf cursor))
-      (setf rows (nreverse rows))
-      (let* ((table-lines (subseq lines index cursor))
-             (table (make-table
-                     :span (%bp-lines-span
-                            source-buffer table-lines
-                            (nth-value 0 (%bp-leading-indent
-                                          (%block-line-text header-line) 3))
-                            (length (%block-line-text
-                                     (aref table-lines
-                                           (1- (length table-lines))))))
-                     :continuation-prefix context
-                     :alignments alignments
-                     :rows rows)))
-        (values table cursor)))))
-
-(defun %bp-table-start-p (lines index)
-  (and (< (1+ index) (length lines))
-       (let* ((header-line (aref lines index))
-              (alignments (%bp-table-alignments (aref lines (1+ index)))))
-         (and alignments
-              (= (length alignments)
-                 (length (%bp-table-cells header-line)))))))
 
 (defun %bp-prefix-text (line end)
   (subseq (%block-line-text line) 0 end))
@@ -1203,110 +1113,124 @@
    :marker-character marker
    :marker-count count))
 
-(defun %bp-quote-marker (line)
-  (let* ((text (%block-line-text line))
-         (length (length text)))
-    (multiple-value-bind (indent columns) (%bp-leading-indent text 3)
-      (declare (ignore columns))
-      (when (and (< indent length) (char= (char text indent) #\>))
-        (let ((content-start (1+ indent)))
-          (when (and (< content-start length)
-                     (%bp-space-p (char text content-start)))
-            (incf content-start))
-          (values indent content-start))))))
-
-(defun %bp-paragraphish-p (line)
-  (and (not (%bp-blank-line-p line))
-       (< (%bp-indent-columns (%block-line-text line)) 4)
-       (not (%bp-interrupts-paragraph-p line))))
-
-(defun %bp-lazy-paragraph-open-p-compute (line)
-  (multiple-value-bind (quote-indent content-start) (%bp-quote-marker line)
-    (declare (ignore quote-indent))
-    (if content-start
-        (%bp-lazy-paragraph-open-p (%bp-line-slice line content-start))
-        (multiple-value-bind (kind start-number delimiter indent marker-end
-                              content-end content-indent prefix)
-            (%bp-list-marker line)
-          (declare (ignore start-number delimiter indent marker-end
-                           content-indent prefix))
-          (if kind
-              (and (< content-end (length (%block-line-text line)))
-                   (%bp-lazy-paragraph-open-p (%bp-line-slice line content-end)))
-              (%bp-paragraphish-p line))))))
-
-(defun %bp-lazy-paragraph-open-p (line)
-  (if *block-lazy-paragraph-cache*
-      (let* ((text (%block-line-text line))
-             (base text)
-             (offset 0))
-        (multiple-value-bind (displaced-to displacement-offset)
-            (array-displacement text)
-          (when displaced-to
-            (setf base displaced-to
-                  offset displacement-offset)))
-        ;; Nested containers repeatedly ask about the same line suffix.
-        (let ((by-offset (or (gethash base *block-lazy-paragraph-cache*)
-                             (setf (gethash base *block-lazy-paragraph-cache*)
-                                   (make-hash-table :test 'eql)))))
-          (multiple-value-bind (cached present-p) (gethash offset by-offset)
-            (if present-p
-                cached
-                (setf (gethash offset by-offset)
-                      (%bp-lazy-paragraph-open-p-compute line))))))
-      (%bp-lazy-paragraph-open-p-compute line)))
-
-(defun %bp-collect-quote-lines (lines index)
-  (let ((cursor index)
-        (inner-lines nil)
-        (first-prefix nil)
-        (paragraph-open nil))
-    (loop while (< cursor (length lines))
-          for line = (aref lines cursor)
-          do (multiple-value-bind (indent content-start) (%bp-quote-marker line)
-               (cond
-                 (indent
-                  (unless first-prefix
-                    (setf first-prefix (%bp-prefix-text line content-start)))
-                  (let ((content (%bp-line-slice line content-start)))
-                    (push content inner-lines)
-                    (setf paragraph-open (%bp-lazy-paragraph-open-p content)))
-                  (incf cursor))
-                 ((and paragraph-open (not (%bp-blank-line-p line))
-                       (not (%bp-interrupts-paragraph-p line)))
-                  (push line inner-lines)
-                  (setf paragraph-open (%bp-lazy-paragraph-open-p line))
-                  (incf cursor))
-                 (t (return)))))
-    (values (nreverse inner-lines) cursor first-prefix)))
-
 (defun %bp-list-marker-record (line)
   (multiple-value-bind (kind start-number delimiter indent marker-end content-end
-                             content-indent prefix)
+                             content-indent prefix marker-columns)
       (%bp-list-marker line)
     (when kind
       (list kind start-number delimiter indent marker-end content-end
-            content-indent prefix))))
+            content-indent prefix marker-columns))))
 
-(defun %bp-list-marker-same-level-p (line list-kind delimiter base-indent)
-  (let ((record (%bp-list-marker-record line)))
-    (and record
-         (eq (first record) list-kind)
-         (char= (third record) delimiter)
-         (= (fourth record) base-indent))))
-
-(defun %bp-item-continuation-p (line item-indent paragraph-open)
+(defun %bp-quote-content (line)
   (let* ((text (%block-line-text line))
-         (indent (%bp-indent-columns text)))
-    (or (>= indent item-indent)
-        (and paragraph-open
-             (not (%bp-blank-line-p line))
-             (not (%bp-interrupts-paragraph-p line))))))
+         (length (length text)))
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
+      (when (and (< indent length) (char= (char text indent) #\>))
+        (let* ((marker-end (1+ indent))
+               (prefix-end marker-end)
+               (content (%bp-line-slice line marker-end)))
+          (when (and (< marker-end length)
+                     (%bp-space-p (char text marker-end)))
+            (setf prefix-end (1+ marker-end)
+                  content (%bp-strip-columns
+                           (%bp-line-slice line marker-end) 1)))
+          (values indent content (subseq text 0 prefix-end) columns))))))
 
-(defun %bp-item-line-content (line indentation)
-  (if (>= (%bp-indent-columns (%block-line-text line)) indentation)
-      (%bp-strip-columns line indentation)
-      line))
+(defstruct (%bp-open-frame
+             (:constructor %bp-make-open-frame
+                 (&key kind node context child-context start-line start-position
+                       end-line marker-kind marker-delimiter marker-columns
+                       content-indent children items blank-seen has-content)))
+  kind node context child-context start-line start-position end-line
+  marker-kind marker-delimiter marker-columns content-indent
+  (children nil) (items nil) (blank-seen nil) (has-content nil))
+
+(defstruct (%bp-open-leaf
+             (:constructor %bp-make-open-leaf
+                 (&key kind context start-line start-position lines end-line
+                       fence-character fence-length indentation info-string
+                       html-kind html-terminator pending-lines table-node
+                       table-alignments table-rows)))
+  kind context start-line start-position end-line
+  (lines nil) fence-character fence-length indentation info-string
+  html-kind html-terminator (pending-lines nil) table-node table-alignments
+  (table-rows nil))
+
+(defun %bp-frame-context (frame)
+  (%bp-open-frame-child-context frame))
+
+(defun %bp-frame-add-node (frame node)
+  (if (eq (%bp-open-frame-kind frame) :list)
+      (push node (%bp-open-frame-items frame))
+      (push node (%bp-open-frame-children frame)))
+  node)
+
+(defun %bp-frame-span (source-buffer frame)
+  (source-buffer-span
+   source-buffer
+   (%bp-line-boundary (%bp-open-frame-start-line frame)
+                      (%bp-open-frame-start-position frame))
+   (%bp-line-boundary
+    (%bp-open-frame-end-line frame)
+    (length (%block-line-text (%bp-open-frame-end-line frame))))))
+
+(defun %bp-finish-frame (source-buffer frame)
+  (let ((node (%bp-open-frame-node frame)))
+    (unless (eq (%bp-open-frame-kind frame) :root)
+      (setf (node-span node) (%bp-frame-span source-buffer frame)))
+    (case (%bp-open-frame-kind frame)
+      (:root (nreverse (%bp-open-frame-children frame)))
+      (:quote
+       (setf (block-quote-children node)
+             (nreverse (%bp-open-frame-children frame))))
+      (:list
+       (let ((items (nreverse (%bp-open-frame-items frame))))
+         (setf (list-node-items node) items
+               (list-node-tight-p node) (not (%bp-list-items-loose-p items))))
+       node)
+      (:item
+       (setf (list-item-children node)
+             (nreverse (%bp-open-frame-children frame))))
+      (:footnote
+       (setf (footnote-definition-children node)
+             (nreverse (%bp-open-frame-children frame))))
+      (otherwise node))))
+
+(defun %bp-container-transform-line (line stack &optional record-p)
+  (let ((content line))
+    (dolist (frame (reverse (butlast stack)))
+      (case (%bp-open-frame-kind frame)
+        (:quote
+         (multiple-value-bind (marker-start quote-content prefix)
+             (%bp-quote-content content)
+           (declare (ignore prefix))
+           (unless marker-start
+             (return-from %bp-container-transform-line
+               (values content frame)))
+           (setf content quote-content)
+           (when record-p
+             (setf (%bp-open-frame-end-line frame) line))))
+        ((:item :footnote)
+         (cond
+           ((%bp-blank-line-p content)
+            (when record-p
+              (setf (%bp-open-frame-blank-seen frame) t)))
+           ((and (eq (%bp-open-frame-kind frame) :item)
+                 (%bp-open-frame-blank-seen frame)
+                 (not (%bp-open-frame-has-content frame)))
+            (return-from %bp-container-transform-line
+              (values content frame)))
+           ((>= (%bp-line-indent-columns content)
+                (%bp-open-frame-content-indent frame))
+            (setf content
+                  (%bp-strip-columns
+                   content (%bp-open-frame-content-indent frame)))
+            (when (and record-p (not (%bp-blank-line-p content)))
+              (setf (%bp-open-frame-end-line frame) line)))
+           (t
+            (return-from %bp-container-transform-line
+              (values content frame)))))))
+    (values content nil)))
 
 (defun %bp-line-gap-p (left right)
   (> (- (cl-parser-kit:span-start-line (node-span right))
@@ -1337,123 +1261,6 @@
                        (%bp-space-p (char text 3)))
                   (%bp-line-slice line 4)
                   (%bp-line-slice line 3))))))
-
-(defun %bp-parse-list (source-buffer lines index context depth limit)
-  (let* ((first-record (%bp-list-marker-record (aref lines index)))
-         (kind (first first-record))
-         (start-number (second first-record))
-         (delimiter (third first-record))
-         (base-indent (fourth first-record))
-         (cursor index)
-         (items nil)
-         (loose-p nil)
-         (list-end-index nil))
-    (unless first-record (return-from %bp-parse-list nil))
-    (%bp-check-depth (1+ depth) limit)
-    (loop while (< cursor (length lines))
-          for marker-line = (aref lines cursor)
-          for record = (%bp-list-marker-record marker-line)
-          while (and record
-                     (eq (first record) kind)
-                     (char= (third record) delimiter)
-                     (= (fourth record) base-indent))
-          do (%bp-check-depth (+ depth 2) limit)
-             (let* ((content-end (sixth record))
-                    (item-indent (seventh record))
-                    (content-prefix
-                      (make-string item-indent :initial-element #\Space))
-                    (first-content (%bp-line-slice marker-line content-end))
-                    (item-lines (list first-content))
-                    (item-last-index cursor)
-                    (paragraph-open (%bp-paragraphish-p first-content))
-                    (item-next (1+ cursor)))
-               (loop while (< item-next (length lines))
-                     for candidate = (aref lines item-next)
-                     do (cond
-                          ((%bp-blank-line-p candidate)
-                           (let ((next-index (1+ item-next)))
-                             (cond
-                               ((and (< next-index (length lines))
-                                     (%bp-list-marker-same-level-p
-                                      (aref lines next-index) kind delimiter
-                                      base-indent))
-                                (setf loose-p t item-next next-index)
-                                (return))
-                               ((and (< next-index (length lines))
-                                     (>= (%bp-indent-columns
-                                          (%block-line-text
-                                           (aref lines next-index)))
-                                         item-indent))
-                                (push (%bp-line-slice candidate 0 0) item-lines)
-                                (setf paragraph-open nil)
-                                (incf item-next))
-                               (t (return)))))
-                          ((%bp-list-marker-same-level-p
-                            candidate kind delimiter base-indent)
-                           (return))
-                          ((%bp-item-continuation-p
-                            candidate item-indent paragraph-open)
-                           (let ((content (%bp-item-line-content
-                                           candidate item-indent)))
-                             (push content item-lines)
-                             (setf item-last-index item-next
-                                   paragraph-open
-                                   (not (%bp-interrupts-paragraph-p content)))
-                             (incf item-next)))
-                          (t (return))))
-               (setf item-lines (nreverse item-lines))
-               (let* ((task-values
-                        (multiple-value-list (%bp-task-marker (first item-lines))))
-                      (task-p (first task-values))
-                      (checked (second task-values))
-                      (task-content (third task-values))
-                      (child-lines (if task-p
-                                       (cons task-content (rest item-lines))
-                                       item-lines))
-                      (child-context (concatenate 'string context content-prefix))
-                      (children (%bp-parse-lines
-                                 source-buffer child-lines child-context
-                                 (+ depth 2) limit))
-                      (item-span
-                        (%bp-lines-span
-                         source-buffer
-                         (subseq lines cursor (1+ item-last-index))
-                         (fourth record)
-                         (length (%block-line-text
-                                  (aref lines item-last-index)))))
-                      (item
-                        (if task-p
-                            (make-task-list-item
-                             :span item-span
-                             :continuation-prefix context
-                             :children children
-                             :checked-p checked
-                             :task-marker-span
-                             (%bp-line-span source-buffer (first item-lines) 0 3)
-                             :original-marker-character
-                             (char (%block-line-text (first item-lines)) 1))
-                            (make-list-item
-                             :span item-span
-                             :continuation-prefix context
-                             :children children))))
-                 (push item items))
-               (setf list-end-index item-last-index
-                     cursor item-next)))
-    (setf items (nreverse items))
-    (setf loose-p (or loose-p (%bp-list-items-loose-p items)))
-    (let ((node (make-list-node
-                 :span (%bp-lines-span
-                        source-buffer (subseq lines index (1+ list-end-index))
-                        (fourth first-record)
-                        (length (%block-line-text (aref lines list-end-index))))
-                 :continuation-prefix context
-                 :kind kind
-                 :tight-p (not loose-p)
-                 :start-number start-number
-                 :marker-character delimiter
-                 :delimiter-character (if (eq kind :ordered) delimiter nil)
-                 :items items)))
-      (values node cursor))))
 
 (defun %bp-check-depth (depth limit)
   (when (> depth limit)
@@ -1487,8 +1294,7 @@
                            destination title eligible end)
   (make-link-reference-definition
    :span (%bp-line-span source-buffer line
-                        (nth-value 0 (%bp-leading-indent
-                                      (%block-line-text line) 3))
+                        (nth-value 0 (%bp-line-leading-indent line 3))
                         end)
    :continuation-prefix context
    :raw-label raw-label
@@ -1509,210 +1315,603 @@
           (setf (gethash normalized *block-reference-index*) node))
         node))))
 
-(defun %bp-parse-footnote-definition (source-buffer lines index context depth limit)
-  (multiple-value-bind (raw-label normalized content-start indent)
-      (%bp-footnote-start (aref lines index))
-    (unless raw-label (return-from %bp-parse-footnote-definition nil))
-    (%bp-check-depth (1+ depth) limit)
-    (let* ((first-line (%bp-line-slice (aref lines index) content-start))
-           (inner-lines (list first-line))
-           (cursor (1+ index))
-           (last-line-index index))
-      (loop while (< cursor (length lines))
-            for line = (aref lines cursor)
-            do (cond
-                 ((%bp-blank-line-p line)
-                  (let ((next (and (< (1+ cursor) (length lines))
-                                   (aref lines (1+ cursor)))))
-                    (if (and next
-                             (>= (%bp-indent-columns
-                                  (%block-line-text next)) 4))
-                        (progn (push line inner-lines)
-                               (push (%bp-strip-columns next 4) inner-lines)
-                               (setf last-line-index (1+ cursor)
-                                     cursor (+ cursor 2)))
-                        (return))))
-                 ((>= (%bp-indent-columns (%block-line-text line)) 4)
-                  (push (%bp-strip-columns line 4) inner-lines)
-                  (setf last-line-index cursor)
-                  (incf cursor))
-                 ((%bp-paragraphish-p line)
-                  (push line inner-lines)
-                  (setf last-line-index cursor)
-                  (incf cursor))
-                 (t (return))))
-      (setf inner-lines (nreverse inner-lines))
-      (let* ((children (%bp-parse-lines
-                        source-buffer inner-lines
-                        (concatenate 'string context (make-string 4
-                                                                  :initial-element #\Space))
-                        (1+ depth) limit))
-             (node (make-footnote-definition
-                    :span (%bp-lines-span
-                           source-buffer
-                           (subseq lines index (1+ last-line-index))
-                           indent
-                           (length (%block-line-text
-                                    (aref lines last-line-index))))
-                    :continuation-prefix context
-                    :raw-label raw-label
-                    :normalized-label normalized
-                    :children children)))
-        (unless (nth-value 1 (gethash (%bp-footnote-index-key normalized)
-                                      *block-reference-index*))
-          (setf (gethash (%bp-footnote-index-key normalized)
-                         *block-reference-index*) node))
-        (values node cursor)))))
-
 (defun %bp-parse-lines (source-buffer lines context depth limit)
-  (let ((lines (if (vectorp lines) lines (coerce lines 'vector)))
-        (cursor 0)
-        (nodes nil))
-    (loop while (< cursor (length lines))
-          for line = (aref lines cursor)
-          for link-definition =
-            (multiple-value-list (%bp-link-definition-at lines cursor))
-          do (cond
-               ((%bp-blank-line-p line)
-                (incf cursor))
-               ((nth-value 0 (%bp-footnote-start line))
-                (multiple-value-bind (node next)
-                    (%bp-parse-footnote-definition
-                     source-buffer lines cursor context depth limit)
-                  (push node nodes)
-                  (setf cursor next)))
-               ((first link-definition)
-                (push (%bp-parse-reference-definition
-                       source-buffer (first link-definition) context
-                       (second link-definition))
-                      nodes)
-                (setf cursor (third link-definition)))
-               ((nth-value 0 (%bp-quote-marker line))
-                (%bp-check-depth (1+ depth) limit)
-                (multiple-value-bind (inner-lines next prefix)
-                    (%bp-collect-quote-lines lines cursor)
-                  (let* ((children (%bp-parse-lines
-                                    source-buffer inner-lines
-                                    (concatenate 'string context prefix)
-                                    (1+ depth) limit))
-                         (last-line (aref lines (1- next)))
-                         (marker-start
-                           (nth-value 0 (%bp-quote-marker line)))
-                         (node (make-block-quote
-                                :span (source-buffer-span
-                                       source-buffer
-                                       (%bp-line-boundary line marker-start)
-                                       (%bp-line-boundary
-                                        last-line
-                                        (length (%block-line-text last-line))))
-                                :continuation-prefix context
-                                :children children)))
-                    (push node nodes)
-                    (setf cursor next))))
-               ((nth-value 0 (%bp-thematic-break line))
-                (multiple-value-bind (marker count indent)
-                    (%bp-thematic-break line)
-                  (push (%bp-make-theta source-buffer line context marker count indent)
-                        nodes))
-                (incf cursor))
-               ((nth-value 0 (%bp-atx-heading line))
-                (multiple-value-bind (level indent content-start content-end
-                                            opening closing)
-                    (%bp-atx-heading line)
-                  (let* ((content-line (%bp-line-slice line content-start content-end))
-                         (node (make-heading
-                                :span (%bp-line-span
-                                       source-buffer line indent
-                                       (length (%block-line-text line)))
-                                :continuation-prefix context
-                                :level level
-                                :style :atx
-                                :marker-character #\#
-                                :opening-marker-length opening
-                                :closing-marker-length closing
-                                :children nil)))
-                    (%bp-add-fragment source-buffer node (list content-line))
-                    (push node nodes)))
-                (incf cursor))
-               ((nth-value 0 (%bp-fence-start line))
-                (multiple-value-bind (node next)
-                    (%bp-parse-fenced-code source-buffer lines cursor context)
-                  (push node nodes)
-                  (setf cursor next)))
-               ((nth-value 0 (%bp-html-block-type line))
-                (multiple-value-bind (node next)
-                    (%bp-parse-html-block source-buffer lines cursor context)
-                  (push node nodes)
-                  (setf cursor next)))
-               ((nth-value 0 (%bp-list-marker line))
-                (multiple-value-bind (node next)
-                    (%bp-parse-list source-buffer lines cursor context depth limit)
-                  (push node nodes)
-                  (setf cursor next)))
-               ((>= (%bp-indent-columns (%block-line-text line)) 4)
-                (multiple-value-bind (node next)
-                    (%bp-parse-indented-code source-buffer lines cursor context)
-                  (push node nodes)
-                  (setf cursor next)))
-               (t
-                (let ((paragraph-lines (list line))
-                      (next-index (1+ cursor))
-                      (handled nil))
-                  (loop while (< next-index (length lines))
-                        for next-line = (aref lines next-index)
-                        do (cond
-                             ((%bp-blank-line-p next-line) (return))
-                             ((and (null (cdr paragraph-lines))
-                                   (%bp-table-start-p lines cursor))
-                              (multiple-value-bind (table end)
-                                  (%bp-parse-table source-buffer lines cursor
-                                                   context line)
-                                (when table
-                                  (push table nodes)
-                                  (setf cursor end handled t)
-                                  (return))))
-                             ((%bp-table-start-p lines next-index)
+  (let* ((lines (if (vectorp lines) lines (coerce lines 'vector)))
+         (root (%bp-make-open-frame :kind :root :node nil
+                                    :context context :child-context context))
+         (stack (list root))
+         (leaf nil)
+         (cursor 0))
+    (labels ((current-frame ()
+               (car stack))
+             (current-context ()
+               (%bp-frame-context (current-frame)))
+             (mark-container-content ()
+               (dolist (frame stack)
+                 (when (member (%bp-open-frame-kind frame) '(:item :footnote))
+                   (setf (%bp-open-frame-has-content frame) t))))
+             (append-to-current (node)
+               (%bp-frame-add-node (current-frame) node))
+             (push-frame (frame)
+               (push frame stack)
+               frame)
+             (close-leaf ()
+               (when leaf
+                 (let* ((kind (%bp-open-leaf-kind leaf))
+                        (content-lines (nreverse (%bp-open-leaf-lines leaf)))
+                        (end-line (or (%bp-open-leaf-end-line leaf)
+                                      (%bp-open-leaf-start-line leaf)))
+                        (context (%bp-open-leaf-context leaf))
+                        (node
+                          (case kind
+                            (:paragraph
+                             (%bp-make-paragraph source-buffer content-lines context))
+                            (:fenced
+                             (make-code-block
+                              :span (source-buffer-span
+                                     source-buffer
+                                     (%bp-line-boundary
+                                      (%bp-open-leaf-start-line leaf)
+                                      (%bp-open-leaf-start-position leaf))
+                                     (%bp-line-boundary
+                                      end-line
+                                      (length (%block-line-text end-line))))
+                              :continuation-prefix context
+                              :style :fenced
+                              :body (%bp-body-from-lines content-lines)
+                              :fence-character
+                              (%bp-open-leaf-fence-character leaf)
+                              :fence-length (%bp-open-leaf-fence-length leaf)
+                              :indentation (%bp-open-leaf-indentation leaf)
+                              :info-string (%bp-open-leaf-info-string leaf)))
+                            (:indented
+                             (make-code-block
+                              :span (source-buffer-span
+                                     source-buffer
+                                     (%bp-line-boundary
+                                      (%bp-open-leaf-start-line leaf)
+                                      (%bp-open-leaf-start-position leaf))
+                                     (%bp-line-boundary
+                                      end-line
+                                      (length (%block-line-text end-line))))
+                              :continuation-prefix context
+                              :style :indented
+                              :body (%bp-body-from-lines content-lines)
+                              :fence-character nil :fence-length 0
+                              :indentation 4 :info-string nil))
+                            (:html
+                             (make-html-block
+                              :span (source-buffer-span
+                                     source-buffer
+                                     (%bp-line-boundary
+                                      (%bp-open-leaf-start-line leaf)
+                                      (%bp-open-leaf-start-position leaf))
+                                     (%bp-line-boundary
+                                      end-line
+                                      (length (%block-line-text end-line))))
+                              :continuation-prefix context
+                              :body (%bp-body-from-lines content-lines)
+                              :kind (%bp-open-leaf-html-kind leaf)))
+                            (:table
+                             (let ((table (%bp-open-leaf-table-node leaf)))
+                               (setf (node-span table)
+                                     (source-buffer-span
+                                      source-buffer
+                                      (%bp-line-boundary
+                                       (%bp-open-leaf-start-line leaf)
+                                       (%bp-open-leaf-start-position leaf))
+                                      (%bp-line-boundary
+                                       end-line
+                                       (length (%block-line-text end-line))))
+                                     (table-rows table)
+                                     (nreverse (%bp-open-leaf-table-rows leaf)))
+                               table)))))
+                   (setf leaf nil)
+                   (append-to-current node))))
+             (close-top-frame ()
+               (let* ((frame (pop stack))
+                      (parent (current-frame))
+                      (kind (%bp-open-frame-kind frame))
+                      (end-line (or (%bp-open-frame-end-line frame)
+                                    (%bp-open-frame-start-line frame)))
+                      (node (%bp-finish-frame source-buffer frame)))
+                 (unless (eq kind :root)
+                   (%bp-frame-add-node parent node)
+                   (setf (%bp-open-frame-end-line parent) end-line))
+                 node))
+             (close-through (target)
+               (loop while (and stack (not (eq (current-frame) target)))
+                     do (close-top-frame))
+               (when (eq (current-frame) target)
+                 (close-top-frame)))
+             (frame-parent (frame)
+               (loop for tail on stack
+                     when (eq (car tail) frame)
+                       return (cadr tail)))
+             (open-item (physical-line content record)
+               (destructuring-bind (kind start-number delimiter indent marker-end
+                                    content-end content-indent prefix marker-columns)
+                   record
+                 (declare (ignore start-number delimiter marker-end prefix
+                                  marker-columns))
+                 (%bp-check-depth (+ depth
+                                     (loop for frame in stack
+                                           sum (case (%bp-open-frame-kind frame)
+                                                 ((:quote :footnote) 1)
+                                                 (:list 1)
+                                                 (:item 1)
+                                                 (otherwise 0)))
+                                     1)
+                                  limit)
+                 (let* ((list-frame (current-frame))
+                        (item-context (%bp-open-frame-context list-frame))
+                        (first-content (%bp-line-slice content content-end))
+                        (task-values (multiple-value-list
+                                      (%bp-task-marker first-content)))
+                        (task-p (first task-values))
+                        (checked (second task-values))
+                        (task-content (third task-values))
+                        (item (if task-p
+                                  (make-task-list-item
+                                   :span nil :continuation-prefix item-context
+                                   :children nil :checked-p checked
+                                   :task-marker-span
+                                   (source-buffer-span
+                                    source-buffer
+                                    (%bp-line-boundary first-content 0)
+                                    (%bp-line-boundary first-content 3))
+                                   :original-marker-character
+                                   (char (%block-line-text first-content) 1))
+                                  (make-list-item
+                                   :span nil :continuation-prefix item-context
+                                   :children nil)))
+                        (item-frame
+                          (%bp-make-open-frame
+                           :kind :item :node item :context item-context
+                           :child-context
+                           (concatenate 'string item-context
+                                        (make-string content-indent
+                                                     :initial-element #\Space))
+                           :start-line content :start-position indent
+                           :end-line physical-line :content-indent content-indent
+                           :has-content task-p)))
+                   (push-frame item-frame)
+                   (values (if task-p task-content first-content) kind))))
+             (open-list-and-item (physical-line content record)
+               (destructuring-bind (kind start-number delimiter indent marker-end
+                                    content-end content-indent prefix marker-columns)
+                   record
+                 (declare (ignore marker-end content-end content-indent prefix))
+                 (%bp-check-depth
+                  (+ depth
+                     (loop for frame in stack
+                           sum (case (%bp-open-frame-kind frame)
+                                 ((:quote :footnote) 1)
+                                 (:list 1)
+                                 (:item 1)
+                                 (otherwise 0)))
+                     1)
+                  limit)
+                 (let* ((list-context (current-context))
+                        (list-node (make-list-node
+                                    :span nil :continuation-prefix list-context
+                                    :kind kind :tight-p t
+                                    :start-number start-number
+                                    :marker-character
+                                    (if (eq kind :unordered) delimiter nil)
+                                    :delimiter-character
+                                    (if (eq kind :ordered) delimiter nil)
+                                    :items nil))
+                        (list-frame
+                          (%bp-make-open-frame
+                           :kind :list :node list-node :context list-context
+                           :child-context list-context :start-line content
+                           :start-position indent :end-line physical-line
+                           :marker-kind kind :marker-delimiter delimiter
+                           :marker-columns marker-columns)))
+                   (push-frame list-frame)
+                   (multiple-value-bind (item-content ignored-kind)
+                       (open-item physical-line content record)
+                     (declare (ignore ignored-kind))
+                     item-content))))
+             (sibling-record-p (content list-frame)
+               (let ((record (%bp-list-marker-record content)))
+                 (and record
+                      (eq (first record) (%bp-open-frame-marker-kind list-frame))
+                      (char= (third record)
+                             (%bp-open-frame-marker-delimiter list-frame))
+                      (<= (ninth record)
+                          (+ (%bp-open-frame-marker-columns list-frame) 3))
+                      record)))
+             (reference-candidate (content)
+               (let ((candidate-lines (list content))
+                     (source-index (1+ cursor)))
+                 (loop while (< source-index (length lines))
+                       do (multiple-value-bind (next-content mismatch)
+                              (%bp-container-transform-line
+                               (aref lines source-index) stack nil)
+                            (when mismatch
                               (return))
-                             ((nth-value 0 (%bp-setext-level next-line))
-                              (multiple-value-bind (level marker count indent)
-                                  (%bp-setext-level next-line)
-                                (declare (ignore indent))
-                                (let* ((content-lines
-                                         (%bp-prepared-paragraph-lines
-                                          (nreverse paragraph-lines)))
-                                       (span-lines
-                                         (concatenate 'vector
-                                                      (coerce content-lines 'vector)
-                                                      (vector next-line)))
-                                       (node (make-heading
-                                              :span (%bp-lines-span
-                                                     source-buffer span-lines 0
-                                                     (length
-                                                      (%block-line-text next-line)))
-                                              :continuation-prefix context
-                                              :level level
-                                              :style :setext
-                                              :marker-character marker
-                                              :opening-marker-length 0
-                                              :closing-marker-length count
-                                              :children nil)))
-                                  (%bp-add-fragment source-buffer node content-lines)
-                                  (push node nodes)
-                                  (setf cursor (+ next-index 1)
-                                        handled t)
-                                  (return))))
-                             ((%bp-interrupts-paragraph-p next-line)
+                            (when (%bp-blank-line-p next-content)
                               (return))
-                             (t
-                              (push next-line paragraph-lines)
-                              (incf next-index))))
-                  (unless handled
-                    (let ((content-lines (nreverse paragraph-lines)))
-                      (push (%bp-make-paragraph
-                             source-buffer content-lines context)
-                            nodes)
-                      (setf cursor next-index)))))))
-    (nreverse nodes)))
+                            (push next-content candidate-lines))
+                          (incf source-index))
+                 (let* ((candidate (coerce (nreverse candidate-lines) 'vector))
+                        (result (multiple-value-list
+                                 (%bp-link-definition-at candidate 0))))
+                   (when (first result)
+                     (values candidate (first result) (second result)
+                             (third result))))))
+             (open-quote (physical-line content marker-start quote-content prefix)
+               (%bp-check-depth
+                (+ depth
+                   (loop for frame in stack
+                         sum (case (%bp-open-frame-kind frame)
+                               ((:quote :footnote) 1)
+                               (:list 1)
+                               (:item 1)
+                               (otherwise 0)))
+                   1)
+                limit)
+               (let* ((quote-context (current-context))
+                      (node (make-block-quote
+                             :span nil :continuation-prefix quote-context
+                             :children nil)))
+                 (push-frame
+                  (%bp-make-open-frame
+                   :kind :quote :node node :context quote-context
+                   :child-context (concatenate 'string quote-context prefix)
+                   :start-line content :start-position marker-start
+                   :end-line physical-line))
+                 quote-content))
+             (open-footnote (physical-line content raw-label normalized
+                                           content-start indent)
+               (%bp-check-depth
+                (+ depth
+                   (loop for frame in stack
+                         sum (case (%bp-open-frame-kind frame)
+                               ((:quote :footnote) 1)
+                               (:list 1)
+                               (:item 1)
+                               (otherwise 0)))
+                   1)
+                limit)
+               (let* ((footnote-context (current-context))
+                      (node (make-footnote-definition
+                             :span nil :continuation-prefix footnote-context
+                             :raw-label raw-label
+                             :normalized-label normalized :children nil))
+                      (frame (%bp-make-open-frame
+                              :kind :footnote :node node
+                              :context footnote-context
+                              :child-context
+                              (concatenate 'string footnote-context
+                                           (make-string 4 :initial-element #\Space))
+                              :start-line content :start-position indent
+                              :end-line physical-line :content-indent 4)))
+                 (push-frame frame)
+                 (unless (nth-value 1
+                                    (gethash (%bp-footnote-index-key normalized)
+                                             *block-reference-index*))
+                   (setf (gethash (%bp-footnote-index-key normalized)
+                                  *block-reference-index*) node))
+                 (%bp-line-slice content content-start)))
+             (open-new-block (physical-line initial-content)
+               (let ((content initial-content)
+                     (again t))
+                 (loop while again
+                       do (setf again nil)
+                          (cond
+                            ((%bp-blank-line-p content)
+                             nil)
+                            ((nth-value 0 (%bp-footnote-start content))
+                             (mark-container-content)
+                             (multiple-value-bind (raw-label normalized start indent)
+                                 (%bp-footnote-start content)
+                               (setf content
+                                     (open-footnote physical-line content raw-label
+                                                    normalized start indent)
+                                     again t)))
+                            ((and (%bp-link-definition-start-p content)
+                                  (first (multiple-value-list
+                                          (reference-candidate content))))
+                             (multiple-value-bind (candidate line parsed next)
+                                 (reference-candidate content)
+                               (declare (ignore candidate))
+                               (mark-container-content)
+                               (let ((node
+                                       (%bp-parse-reference-definition
+                                        source-buffer line (current-context) parsed)))
+                                 (append-to-current node)
+                                 (loop for offset from 1 below next
+                                       do (%bp-container-transform-line
+                                           (aref lines (+ cursor offset))
+                                           stack t))
+                                 (setf cursor (+ cursor next -1)))))
+                            ((multiple-value-bind (start quote-content prefix)
+                                 (%bp-quote-content content)
+                               (when start
+                                 (mark-container-content)
+                                 (setf content
+                                       (open-quote physical-line content start
+                                                   quote-content prefix))
+                                 (setf again t)))
+                             nil)
+                            ((nth-value 0 (%bp-thematic-break content))
+                             (mark-container-content)
+                             (multiple-value-bind (marker count start)
+                                 (%bp-thematic-break content)
+                               (append-to-current
+                                (%bp-make-theta source-buffer content
+                                                (current-context) marker count start))))
+                            ((nth-value 0 (%bp-atx-heading content))
+                             (mark-container-content)
+                             (multiple-value-bind (level indent content-start content-end
+                                                         opening closing)
+                                 (%bp-atx-heading content)
+                               (let* ((content-line
+                                        (%bp-line-slice content content-start content-end))
+                                      (node (make-heading
+                                             :span (%bp-line-span
+                                                    source-buffer content indent
+                                                    (length (%block-line-text content)))
+                                             :continuation-prefix (current-context)
+                                             :level level :style :atx
+                                             :marker-character #\#
+                                             :opening-marker-length opening
+                                             :closing-marker-length closing
+                                             :children nil)))
+                                 (%bp-add-fragment source-buffer node
+                                                   (list content-line))
+                                 (append-to-current node))))
+                            ((nth-value 0 (%bp-fence-start content))
+                             (mark-container-content)
+                             (multiple-value-bind (character fence-length indentation
+                                                           fence-end info-string fence-start)
+                                 (%bp-fence-start content)
+                               (declare (ignore fence-end))
+                               (setf leaf
+                                     (%bp-make-open-leaf
+                                      :kind :fenced :context (current-context)
+                                      :start-line content :start-position fence-start
+                                      :end-line physical-line :lines nil
+                                      :fence-character character
+                                      :fence-length fence-length
+                                      :indentation indentation
+                                      :info-string
+                                      (let ((trimmed (%bp-trimmed-string info-string)))
+                                        (unless (zerop (length trimmed)) trimmed))))))
+                            ((nth-value 0 (%bp-html-block-type content))
+                             (mark-container-content)
+                             (multiple-value-bind (kind terminator name)
+                                 (%bp-html-block-type content)
+                               (declare (ignore name))
+                               (setf leaf
+                                     (%bp-make-open-leaf
+                                      :kind :html :context (current-context)
+                                      :start-line content
+                                      :start-position
+                                      (nth-value 0 (%bp-line-leading-indent content 3))
+                                      :end-line physical-line
+                                      :lines (list content)
+                                      :html-kind kind
+                                      :html-terminator terminator))))
+                            ((%bp-list-marker-record content)
+                             (mark-container-content)
+                             (let* ((record (%bp-list-marker-record content))
+                                    (parent (current-frame)))
+                               (if (and (eq (%bp-open-frame-kind parent) :list)
+                                        (sibling-record-p content parent))
+                                   (let ((item-content
+                                           (open-item physical-line content record)))
+                                     (setf content item-content again t))
+                                   (setf content
+                                         (open-list-and-item
+                                          physical-line content record)
+                                         again t))))
+                            ((>= (%bp-line-indent-columns content) 4)
+                             (mark-container-content)
+                             (setf leaf
+                                   (%bp-make-open-leaf
+                                    :kind :indented :context (current-context)
+                                    :start-line content :start-position 0
+                                    :end-line physical-line
+                                    :lines (list (%bp-strip-columns content 4)))))
+                            (t
+                             (mark-container-content)
+                             (setf leaf
+                                   (%bp-make-open-leaf
+                                    :kind :paragraph :context (current-context)
+                                    :start-line content :start-position 0
+                                    :end-line physical-line :lines (list content))))))))
+             (process-leaf-line (physical-line content)
+               (block process-leaf-line
+                 (case (%bp-open-leaf-kind leaf)
+                 (:paragraph
+                  (let* ((paragraph-lines
+                           (reverse (%bp-open-leaf-lines leaf)))
+                         (alignments (%bp-table-alignments content)))
+                    (when (and (= (length paragraph-lines) 1)
+                               alignments
+                               (= (length alignments)
+                                  (length (%bp-table-cells
+                                           (first paragraph-lines))))
+                               (or (find #\| (%block-line-text
+                                              (first paragraph-lines)))
+                                   (find #\| (%block-line-text content))))
+                      (let* ((header (first paragraph-lines))
+                             (table-context (%bp-open-leaf-context leaf))
+                             (node (make-table
+                                    :span nil :continuation-prefix table-context
+                                    :alignments alignments
+                                    :rows (list (%bp-table-row
+                                                 source-buffer header alignments t
+                                                 table-context)))))
+                        (setf leaf
+                              (%bp-make-open-leaf
+                               :kind :table :context table-context
+                               :start-line header
+                               :start-position
+                               (nth-value 0 (%bp-line-leading-indent header 3))
+                               :end-line physical-line
+                               :table-node node :table-alignments alignments
+                               :table-rows (table-rows node)))
+                        (return-from process-leaf-line :consumed)))
+                    (multiple-value-bind (level marker count indent)
+                        (%bp-setext-level content)
+                      (declare (ignore indent))
+                      (when level
+                        (let* ((prepared
+                                 (%bp-prepared-paragraph-lines paragraph-lines))
+                               (span-lines
+                                 (concatenate 'vector (coerce prepared 'vector)
+                                              (vector content)))
+                               (node
+                                 (make-heading
+                                  :span (%bp-lines-span
+                                         source-buffer span-lines 0
+                                         (length (%block-line-text content)))
+                                  :continuation-prefix
+                                  (%bp-open-leaf-context leaf)
+                                  :level level :style :setext
+                                  :marker-character marker
+                                  :opening-marker-length 0
+                                  :closing-marker-length count
+                                  :children nil)))
+                          (%bp-add-fragment source-buffer node prepared)
+                          (setf leaf nil)
+                          (append-to-current node)
+                          (return-from process-leaf-line :consumed))))
+                    (cond
+                      ((%bp-blank-line-p content)
+                       (close-leaf)
+                       nil)
+                      ((%bp-interrupts-paragraph-p content)
+                       (close-leaf)
+                       nil)
+                      (t
+                       (push content (%bp-open-leaf-lines leaf))
+                       (setf (%bp-open-leaf-end-line leaf) physical-line)
+                       :consumed))))
+                 (:fenced
+                  (if (%bp-fence-close-p
+                       content (%bp-open-leaf-fence-character leaf)
+                       (%bp-open-leaf-fence-length leaf))
+                      (progn
+                        (setf (%bp-open-leaf-end-line leaf) physical-line)
+                        (close-leaf)
+                        :consumed)
+                      (progn
+                        (push (%bp-code-indent-line
+                               content (%bp-open-leaf-indentation leaf))
+                              (%bp-open-leaf-lines leaf))
+                        (setf (%bp-open-leaf-end-line leaf) physical-line)
+                        :consumed)))
+                 (:html
+                  (if (and (>= (%bp-open-leaf-html-kind leaf) 6)
+                           (%bp-blank-line-p content))
+                      (progn (close-leaf) nil)
+                      (progn
+                        (push content (%bp-open-leaf-lines leaf))
+                        (setf (%bp-open-leaf-end-line leaf) physical-line)
+                        (when (and (<= (%bp-open-leaf-html-kind leaf) 5)
+                                   (%bp-html-terminator-p
+                                    content (%bp-open-leaf-html-terminator leaf)
+                                    (%bp-open-leaf-html-kind leaf)))
+                          (close-leaf))
+                        :consumed)))
+                 (:indented
+                  (cond
+                    ((>= (%bp-line-indent-columns content) 4)
+                     (setf (%bp-open-leaf-lines leaf)
+                           (append (list (%bp-strip-columns content 4))
+                                   (%bp-open-leaf-pending-lines leaf)
+                                   (%bp-open-leaf-lines leaf))
+                           (%bp-open-leaf-pending-lines leaf) nil
+                           (%bp-open-leaf-end-line leaf) physical-line)
+                     :consumed)
+                    ((%bp-blank-line-p content)
+                     (push (%bp-line-slice content 0 0)
+                           (%bp-open-leaf-pending-lines leaf))
+                     :consumed)
+                    (t
+                     (close-leaf)
+                     nil)))
+                 (:table
+                  (if (and (not (%bp-blank-line-p content))
+                           (or (find #\| (%block-line-text content))
+                               (= (length (%bp-open-leaf-table-alignments leaf)) 1)))
+                      (progn
+                        (push (%bp-table-row
+                               source-buffer content
+                               (%bp-open-leaf-table-alignments leaf) nil
+                               (%bp-open-leaf-context leaf))
+                              (%bp-open-leaf-table-rows leaf))
+                        (setf (%bp-open-leaf-end-line leaf) physical-line)
+                        :consumed)
+                      (progn (close-leaf) nil))))))
+             (lazy-paragraph-continuation-p (content mismatch)
+               (let* ((parent (and (eq (%bp-open-frame-kind mismatch) :item)
+                                   (frame-parent mismatch)))
+                      (sibling (and parent
+                                    (eq (%bp-open-frame-kind parent) :list)
+                                    (sibling-record-p content parent))))
+                 (and mismatch leaf
+                      (eq (%bp-open-leaf-kind leaf) :paragraph)
+                      (not sibling)
+                      (not (%bp-blank-line-p content))
+                      (not (%bp-setext-level content))
+                      (not (%bp-interrupts-paragraph-p content)))))
+             (record-lazy-continuation (physical-line)
+               (dolist (frame stack)
+                 (setf (%bp-open-frame-end-line frame) physical-line)))
+             (root-children ()
+               (nreverse (%bp-open-frame-children root))))
+      (loop while (< cursor (length lines))
+            for physical-line = (aref lines cursor)
+            do (multiple-value-bind (content mismatch)
+                   (%bp-container-transform-line physical-line stack t)
+                 (cond
+                   (mismatch
+                    (cond
+                      ((lazy-paragraph-continuation-p content mismatch)
+                       (record-lazy-continuation physical-line)
+                       (mark-container-content)
+                       (push content (%bp-open-leaf-lines leaf))
+                       (setf (%bp-open-leaf-end-line leaf) physical-line)
+                       (incf cursor))
+                      (t
+                       (close-leaf)
+                       (let* ((mismatch-kind (%bp-open-frame-kind mismatch))
+                              (parent (frame-parent mismatch))
+                              (record (and (eq mismatch-kind :item)
+                                           parent
+                                           (eq (%bp-open-frame-kind parent) :list)
+                                           (sibling-record-p content parent))))
+                         (if record
+                             (progn
+                               (close-through mismatch)
+                               (setf content
+                                     (open-item physical-line content record))
+                               (open-new-block physical-line content)
+                               (incf cursor))
+                             (progn
+                               (close-through mismatch)
+                               (when (eq mismatch-kind :item)
+                                 (let ((list-frame (current-frame)))
+                                   (when (and list-frame
+                                              (eq (%bp-open-frame-kind list-frame)
+                                                  :list))
+                                     (close-top-frame))))))))))
+                   (leaf
+                    (let ((result (process-leaf-line physical-line content)))
+                      (when result (incf cursor))))
+                   (t
+                    (open-new-block physical-line content)
+                    (incf cursor)))))
+      (close-leaf)
+      (loop while (cdr stack) do (close-top-frame))
+      (root-children))))
 
 (defun %bp-front-matter (source-buffer lines)
   (when (and (plusp (length lines))
@@ -1748,7 +1947,8 @@
   256)
 
 (defun parse-blocks
-    (source-buffer &key (max-nesting-depth (%bp-default-nesting-depth)))
+    (source-buffer &key (front-matter t)
+                        (max-nesting-depth (%bp-default-nesting-depth)))
   "Parse block structure and defer paragraph, heading, and table-cell inlines."
   (check-type source-buffer source-buffer)
   (unless (and (integerp max-nesting-depth) (plusp max-nesting-depth))
@@ -1756,14 +1956,14 @@
            :expected-type '(integer 1 *)))
   (let* ((*block-inline-fragments* nil)
          (*block-reference-index* (make-hash-table :test 'equal))
-         (*block-lazy-paragraph-cache* (make-hash-table :test 'eq))
          (lines (%bp-split-lines (source-buffer-normalized-text source-buffer)))
          (children nil))
-    (multiple-value-bind (front-matter next)
-        (%bp-front-matter source-buffer lines)
-      (when front-matter
-        (push front-matter children)
-        (setf lines (subseq lines next))))
+    (when front-matter
+      (multiple-value-bind (front-matter-node next)
+          (%bp-front-matter source-buffer lines)
+        (when front-matter-node
+          (push front-matter-node children)
+          (setf lines (subseq lines next)))))
     (setf children
           (nconc (nreverse children)
                  (%bp-parse-lines source-buffer lines "" 0 max-nesting-depth)))

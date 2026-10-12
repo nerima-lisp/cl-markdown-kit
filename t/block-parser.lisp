@@ -1,8 +1,9 @@
 (in-package #:cl-markdown-kit/test)
 
-(defun block-parser-test-result (source)
+(defun block-parser-test-result (source &key (front-matter t))
   (cl-markdown-kit::parse-blocks
-   (cl-markdown-kit:make-source-buffer source)))
+   (cl-markdown-kit:make-source-buffer source)
+   :front-matter front-matter))
 
 (defun block-parser-test-line (text)
   (aref (cl-markdown-kit::%bp-split-lines text) 0))
@@ -265,15 +266,58 @@
       (values
        (block-parser-test-node-signature
         (block-parser-test-document
-         (block-parser-test-result (spec-example-markdown example))))
+         (block-parser-test-result (spec-example-markdown example)
+                                   :front-matter nil)))
        nil)
     (error (condition)
       (values nil (princ-to-string condition)))))
 
-(defun block-parser-test-structure-difference (expected actual error-message)
-  (if error-message
-      (list :parse-error error-message)
-      (block-parser-test-first-difference expected actual)))
+(defun block-parser-test-footnote-node-p (signature)
+  (and (consp signature)
+       (eq (first signature) :footnote-definition)))
+
+(defun block-parser-test-footnote-label (signature)
+  (getf (second signature) :label))
+
+(defun block-parser-test-document-without-footnotes (signature)
+  (destructuring-bind (kind attributes &rest children) signature
+    (block-parser-test-node-form
+     kind attributes
+     (remove-if #'block-parser-test-footnote-node-p children))))
+
+(defun block-parser-test-gfm-footnote-difference (expected actual)
+  ;; cmark XML orders used definitions by reference and omits unused definitions.
+  (let* ((expected-footnotes
+           (remove-if-not #'block-parser-test-footnote-node-p (cddr expected)))
+         (actual-footnotes
+           (remove-if-not #'block-parser-test-footnote-node-p (cddr actual)))
+         (document-difference
+           (block-parser-test-first-difference
+            (block-parser-test-document-without-footnotes expected)
+            (block-parser-test-document-without-footnotes actual))))
+    (or document-difference
+        (loop for expected-footnote in expected-footnotes
+              do (let* ((label
+                          (block-parser-test-footnote-label expected-footnote))
+                        (actual-footnote
+                          (find label actual-footnotes
+                                :key #'block-parser-test-footnote-label
+                                :test #'string=)))
+                   (unless actual-footnote
+                     (return (list :missing-footnote label)))
+                   (let ((difference
+                           (block-parser-test-first-difference
+                            expected-footnote actual-footnote)))
+                     (when difference
+                       (return (list :footnote label difference)))))))))
+
+(defun block-parser-test-structure-difference
+    (expected actual error-message &optional example-id)
+  (cond
+    (error-message (list :parse-error error-message))
+    ((equal example-id "gfm-0023")
+     (block-parser-test-gfm-footnote-difference expected actual))
+    (t (block-parser-test-first-difference expected actual))))
 
 (describe "Leaf block parser"
   (it "compares every CommonMark and GFM block structure with pinned cmark output"
@@ -290,6 +334,7 @@
            (matches 0)
            (excluded-mismatches 0)
            (stale-exclusions 0)
+           (excluded-failures nil)
            (failures nil))
       (expect (length commonmark) :to-equal 652)
       (expect (length gfm) :to-equal 30)
@@ -308,18 +353,22 @@
               (block-parser-test-structure-signature example)
             (let ((difference
                     (block-parser-test-structure-difference
-                     expected actual error-message)))
+                     expected actual error-message id)))
               (cond
                 ((null difference)
                  (incf matches)
                  (when (gethash id exclusion-index)
                    (incf stale-exclusions)))
                 ((gethash id exclusion-index)
-                 (incf excluded-mismatches))
+                 (incf excluded-mismatches)
+                 (push (list id difference) excluded-failures))
                 (t
                  (push (list id difference) failures)))))))
       (dolist (failure (nreverse failures))
         (format t "block structure mismatch ~A: ~S~%"
+                (first failure) (second failure)))
+      (dolist (failure (nreverse excluded-failures))
+        (format t "active block structure exclusion ~A: ~S~%"
                 (first failure) (second failure)))
       (format t "Block structures: ~D CommonMark + ~D GFM; ~D match, ~D reasoned exclusions active, ~D exclusions now matching.~%"
               (length commonmark) (length gfm) matches
@@ -551,6 +600,23 @@
                              duplicate)
                             "/later")
                    (eq (gethash "ref" reference-index) definition))
+              :to-be-truthy)))
+
+  (it "decodes entities and backslash escapes in reference destinations and titles"
+    (let* ((children
+             (cl-markdown-kit:document-children
+              (block-parser-test-document
+               (block-parser-test-result
+                "[ref]: /a\\+&amp;&#66; \"t\\+&quot;\""))))
+           (definition (first children)))
+      (expect (and (= (length children) 1)
+                   (cl-markdown-kit:link-reference-definition-p definition)
+                   (string= (cl-markdown-kit:link-reference-definition-destination
+                             definition)
+                            "/a+&B")
+                   (string= (cl-markdown-kit:link-reference-definition-title
+                             definition)
+                            "t+\""))
               :to-be-truthy)))
 
   (it "parses multiline reference titles and consumes only their source lines"
@@ -833,6 +899,13 @@
               document #'cl-markdown-kit:footnote-definition-p))
            (labels (mapcar #'cl-markdown-kit:footnote-definition-raw-label
                            definitions))
+           (unused (find "unused" definitions
+                         :key #'cl-markdown-kit:footnote-definition-raw-label
+                         :test #'string=))
+           (unused-paragraph
+             (first (cl-markdown-kit:footnote-definition-children unused)))
+           (unused-fragment
+             (first (block-parser-test-fragments-for result unused-paragraph)))
            (fragment-texts (block-parser-test-fragment-texts result)))
       (expect (equal labels
                      '("other-note" "codeblock-note" "1" "footnote" "unused"))
@@ -846,6 +919,20 @@
                                       (cl-markdown-kit:footnote-definition-children
                                        node))))
                          definitions))
+              :to-be-truthy)
+      (expect (equal (block-parser-test-node-signature unused)
+                     '(:footnote-definition (:label "unused")
+                       (:paragraph (:placement :only))))
+              :to-be-truthy)
+      (expect (and unused-fragment
+                   (string= (cl-markdown-kit::inline-fragment-text
+                             unused-fragment)
+                            "This is unused."))
+              :to-be-truthy)
+      (expect (eq (gethash (cons :footnote "unused")
+                           (cl-markdown-kit::block-parse-result-reference-index
+                            result))
+                  unused)
               :to-be-truthy)))
 
   (it "keeps repeated and escaped GFM footnote labels source-backed"
@@ -944,7 +1031,6 @@
              (block-parser-test-line (format nil "~Cword" #\Tab)))
            (partial (cl-markdown-kit::%bp-strip-columns tab-line 1))
            (full (cl-markdown-kit::%bp-strip-columns tab-line 4))
-           (quote-line (block-parser-test-line "> text"))
            (quote-indent
              (multiple-value-list
               (cl-markdown-kit::%bp-leading-indent
@@ -964,16 +1050,11 @@
                       3)
                    (equal quote-indent '(1 4))
                    (cl-markdown-kit::%bp-prefix-p "Ab" "ab" 0 t)
-                   (string= (cl-markdown-kit::%bp-casefold-label "ASCII" nil)
+                   (string= (cl-markdown-kit::normalize-link-label "ASCII")
                             "ascii")
-                   (string= (cl-markdown-kit::%bp-casefold-label "ASCII" #'identity)
-                            "ASCII"))
-              :to-be-truthy)
-      (let ((cl-markdown-kit::*block-lazy-paragraph-cache* nil))
-        (expect (and (cl-markdown-kit::%bp-lazy-paragraph-open-p quote-line)
-                     (not (cl-markdown-kit::%bp-lazy-paragraph-open-p
-                           (block-parser-test-line ">"))))
-                :to-be-truthy))))
+                   (string= (cl-markdown-kit::normalize-link-label "Ä")
+                            "ä"))
+              :to-be-truthy)))
 
   (it "parses escaped link delimiters and rejects malformed definitions"
     (let* ((angle
@@ -1178,11 +1259,7 @@
 
   (it "covers block-helper rejection paths and validates direct depth limits"
     (let* ((source (cl-markdown-kit:make-source-buffer "ordinary"))
-           (line (block-parser-test-line "ordinary"))
-           (lines (cl-markdown-kit::%bp-split-lines "ordinary"))
-           (blank-code-lines (cl-markdown-kit::%bp-split-lines "    "))
-           (table-lines (vector (block-parser-test-line "a|b")
-                                (block-parser-test-line "-"))))
+           (line (block-parser-test-line "ordinary")))
       (labels ((invalid-depth-p (value)
                  (handler-case
                      (progn
@@ -1190,28 +1267,7 @@
                         source :max-nesting-depth value)
                        nil)
                    (type-error () t))))
-        (expect (and (null (cl-markdown-kit::%bp-parse-fenced-code
-                            source lines 0 ""))
-                     (null (cl-markdown-kit::%bp-parse-indented-code
-                            source lines 0 ""))
-                     (null (cl-markdown-kit::%bp-parse-indented-code
-                            source blank-code-lines 0 ""))
-                     (null (cl-markdown-kit::%bp-parse-html-block
-                            source lines 0 ""))
-                     (null (cl-markdown-kit::%bp-parse-list
-                            source lines 0 "" 0 256))
-                     (null (cl-markdown-kit::%bp-parse-footnote-definition
-                            source lines 0 "" 0 256))
-                     (null (cl-markdown-kit::%bp-parse-table
-                            source table-lines 0 ""
-                            (aref table-lines 0)))
-                     (null (cl-markdown-kit::%bp-list-marker-same-level-p
-                            line :ordered #\. 0))
-                     (not (cl-markdown-kit::%bp-item-continuation-p
-                           (block-parser-test-line " ") 2 t))
-                     (cl-markdown-kit::%bp-item-continuation-p
-                      (block-parser-test-line "lazy") 2 t)
-                     (null (cl-markdown-kit::%bp-task-marker
+        (expect (and (null (cl-markdown-kit::%bp-task-marker
                             (block-parser-test-line "ordinary")))
                      (string= (cl-markdown-kit::%block-line-text
                                (third (multiple-value-list
@@ -1289,10 +1345,6 @@
               (block-parser-test-line "</script>")))
            (closing-empty-tag
              (cl-markdown-kit::%bp-html-type-seven-tag-end "" 0 0))
-           (lazy-empty-marker
-             (let ((cl-markdown-kit::*block-lazy-paragraph-cache* nil))
-               (cl-markdown-kit::%bp-lazy-paragraph-open-p
-                (block-parser-test-line "-"))))
            (list-document
              (block-parser-test-document
               (block-parser-test-result
@@ -1321,7 +1373,6 @@
                    (null (first empty-tag-name))
                    (null closing-script)
                    (null closing-empty-tag)
-                   (not lazy-empty-marker)
                    (= (length (block-parser-test-nodes-of-type
                                list-document #'cl-markdown-kit:list-node-p))
                       1)
@@ -1329,9 +1380,6 @@
                                footnote-document
                                #'cl-markdown-kit:footnote-definition-p))
                       1)
-                   (null (cl-markdown-kit::%bp-unicode-casefold-function nil))
-                   (null (cl-markdown-kit::%bp-unicode-casefold-function
-                          (find-package '#:cl-user)))
                    (null (cl-markdown-kit::%bp-link-title-opener
                           (block-parser-test-line "ordinary")))
                    (not (cl-markdown-kit::%bp-html-terminator-p

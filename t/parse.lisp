@@ -4,8 +4,8 @@
 (defvar *parser-contract-block-calls* nil)
 (defvar *parser-contract-inline-calls* nil)
 
-(defun parser-contract-blocks (source-buffer &key max-nesting-depth)
-  (push (list source-buffer max-nesting-depth)
+(defun parser-contract-blocks (source-buffer &key max-nesting-depth front-matter)
+  (push (list source-buffer max-nesting-depth front-matter)
         *parser-contract-block-calls*)
   (or *parser-contract-block-result*
       (cl-markdown-kit::make-block-parse-result
@@ -103,6 +103,8 @@
                      :to-equal '("cell"))
              (expect (second (first *parser-contract-block-calls*))
                      :to-equal 12)
+             (expect (third (first *parser-contract-block-calls*))
+                     :to-equal t)
              (expect (reverse *parser-contract-inline-calls*)
                      :to-equal '(("paragraph" 34) ("heading" 34) ("cell" 34)))))))))
 
@@ -180,4 +182,45 @@
          (mapcar #'cl-markdown-kit:document-max-inline-delimiter-depth documents)
          :to-equal '(4096 4096 4096 4096))
         (expect (mapcar #'second *parser-contract-block-calls*)
-                :to-equal '(256 256 256 256))))))
+                :to-equal '(256 256 256 256))
+        (expect (mapcar #'third *parser-contract-block-calls*)
+                :to-equal '(t t t t)))))
+
+  (it "forwards the front-matter option through every public input entry point"
+    (let ((*parser-contract-block-result* nil)
+          (*parser-contract-block-calls* nil)
+          (*parser-contract-inline-calls* nil)
+          (octets (make-array 1 :element-type '(unsigned-byte 8)
+                                :initial-contents '(120))))
+      (call-with-parser-contract-stubs
+       (lambda ()
+         (parse-string "string" :front-matter nil)
+         (with-input-from-string (stream "stream")
+           (parse-stream stream :front-matter nil))
+         (parse-octets octets :front-matter nil)
+         (parse "dispatch string" :front-matter nil)
+         (with-input-from-string (stream "dispatch stream")
+           (parse stream :front-matter nil))
+         (parse octets :front-matter nil)))
+      (expect (mapcar #'third *parser-contract-block-calls*)
+              :to-equal '(nil nil nil nil nil nil))))
+
+  (it "recognizes leading front matter by default and can disable it"
+    (let* ((source (format nil "---~%title: sample~%---~%# body~%"))
+           (default-children
+             (cl-markdown-kit:document-children
+              (cl-markdown-kit:parse-string source)))
+           (enabled-children
+             (cl-markdown-kit:document-children
+              (cl-markdown-kit:parse-string source :front-matter t)))
+           (disabled-children
+             (cl-markdown-kit:document-children
+              (cl-markdown-kit:parse-string source :front-matter nil))))
+      (expect (cl-markdown-kit:front-matter-p (first default-children))
+              :to-be-truthy)
+      (expect (cl-markdown-kit:front-matter-p (first enabled-children))
+              :to-be-truthy)
+      (expect (find-if #'cl-markdown-kit:front-matter-p disabled-children)
+              :to-equal nil)
+      (expect (cl-markdown-kit:thematic-break-p (first disabled-children))
+              :to-be-truthy))))

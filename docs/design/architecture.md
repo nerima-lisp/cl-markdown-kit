@@ -71,7 +71,7 @@ their exact spelling remains available through the document source and spans.
 
 | Family | Node kinds and required slots |
 |---|---|
-| Document and source | `document`: block children, original source snapshot, source-format metadata, and link-reference index. `front-matter`: exact original inner text and opening/closing delimiter values. Front matter is recognized only when an opening `---` line and a later closing `---` line occur at document start after an optional BOM; an unclosed opener remains ordinary Markdown. YAML is not interpreted. |
+| Document and source | `document`: block children, original source snapshot, source-format metadata, and link-reference index. `front-matter`: exact original inner text and opening/closing delimiter values. With the public `:front-matter` option enabled (the default), front matter is recognized only when an opening `---` line and a later closing `---` line occur at document start after an optional BOM; an unclosed opener remains ordinary Markdown. Set `:front-matter nil` to leave all leading delimiters to Markdown block parsing. YAML is not interpreted. |
 | CommonMark containers | `block-quote`: block children. `list`: ordered/unordered kind, tight/loose flag, ordered start number, marker character, ordered-list delimiter character, and item children. `list-item`: block children. `task-list-item`: list-item subtype with `checked-p`, `task-marker-span` (a `cl-parser-kit:span`) covering exactly the recognized three-character `[ ]`, `[x]`, or `[X]` marker, and the original marker character; its distinct type means unchecked tasks are distinguishable from ordinary items. |
 | CommonMark leaf blocks | `paragraph`: inline children. `heading`: level, `:atx` or `:setext` style, ATX marker character and opening/closing marker lengths when applicable, and inline children. `thematic-break`: marker character and marker count. `code-block`: `:fenced` or `:indented` style, literal body, fence character/length, indentation, and info string. `html-block`: literal body and CommonMark HTML block kind. `link-reference-definition`: raw and normalized labels, destination, optional title, and first-definition eligibility. |
 | GFM blocks | `table`: column alignments and row children. `table-row`: header-row flag and cell children. `table-cell`: alignment and inline children. `footnote-definition`: raw and normalized label plus block children. |
@@ -185,7 +185,7 @@ encoding for octet input.
 logical-to-original boundary map; it creates `cl-parser-kit:span` values and
 defines no local position/range types. The block parser
 accepts a source buffer through `(parse-blocks source-buffer
-&key max-nesting-depth)` and returns a `block-parse-result` containing the
+&key front-matter max-nesting-depth)` and returns a `block-parse-result` containing the
 partial document, ordered `inline-fragment` records, and normalized-label
 reference index. Each fragment identifies its owning paragraph, heading, or
 table cell, and contains logical text plus the boundary map for that text.
@@ -221,15 +221,19 @@ each deferred inline fragment, and returns the completed document. Its public
 entry points are:
 
 ```lisp
-(parse source &key max-nesting-depth max-inline-delimiter-depth)
-(parse-string string &key max-nesting-depth max-inline-delimiter-depth)
-(parse-stream character-stream &key max-nesting-depth max-inline-delimiter-depth)
-(parse-octets octet-vector &key max-nesting-depth max-inline-delimiter-depth)
+(parse source &key front-matter max-nesting-depth max-inline-delimiter-depth)
+(parse-string string &key front-matter max-nesting-depth max-inline-delimiter-depth)
+(parse-stream character-stream &key front-matter max-nesting-depth max-inline-delimiter-depth)
+(parse-octets octet-vector &key front-matter max-nesting-depth max-inline-delimiter-depth)
 ```
 
-`parse` dispatches on string, character input stream, or octet vector.
-`parse-octets` decodes through `cl-codec-kit` before creating source spans. A
-missing limit argument uses the corresponding positive default.
+`:front-matter` defaults to `t` across all entry points. Set it to `nil` to
+disable the leading front-matter prepass, which lets a leading `---` be parsed
+as Markdown, including in the CommonMark structure comparison. The option does
+not change the source snapshot or YAML interpretation. `parse` dispatches on
+string, character input stream, or octet vector. `parse-octets` decodes through
+`cl-codec-kit` before creating source spans. A missing limit argument uses the
+corresponding positive default.
 `max-nesting-depth` counts
 simultaneously open block containers below the document.
 `max-inline-delimiter-depth` counts unresolved inline delimiter and bracket

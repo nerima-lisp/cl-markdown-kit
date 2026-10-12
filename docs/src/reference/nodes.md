@@ -120,11 +120,16 @@ observed ending in order. Octet input retains the Unicode encoding selected by
 The public parser entry points are:
 
 ```lisp
-(parse source &key max-nesting-depth max-inline-delimiter-depth)
-(parse-string string &key max-nesting-depth max-inline-delimiter-depth)
-(parse-stream character-stream &key max-nesting-depth max-inline-delimiter-depth)
-(parse-octets octet-vector &key max-nesting-depth max-inline-delimiter-depth)
+(parse source &key front-matter max-nesting-depth max-inline-delimiter-depth)
+(parse-string string &key front-matter max-nesting-depth max-inline-delimiter-depth)
+(parse-stream character-stream &key front-matter max-nesting-depth max-inline-delimiter-depth)
+(parse-octets octet-vector &key front-matter max-nesting-depth max-inline-delimiter-depth)
 ```
+
+`:front-matter` defaults to `t`. When true, a leading `---` line and a later
+closing `---` line are read as a front-matter node, after an optional byte
+order mark. Set it to `nil` to parse those lines as ordinary Markdown blocks.
+The parser retains front-matter text without interpreting it as YAML.
 
 Limits must be positive integers. Defaults are 256 open block-container
 levels and 4096 unresolved inline delimiter or bracket records in a fragment.
