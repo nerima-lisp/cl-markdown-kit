@@ -234,4 +234,6 @@
    #:parse
    #:parse-string
    #:parse-stream
-   #:parse-octets))
+   #:parse-octets
+   #:write-html
+   #:write-html-to-stream))
