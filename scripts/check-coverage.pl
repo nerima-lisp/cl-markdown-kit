@@ -60,6 +60,7 @@ sub fail_usage {
 sub strip_lisp_strings_and_comments {
   my ($line) = @_;
   $line =~ s/"(?:\\.|[^"\\])*"//g;
+  $line =~ s/#\\(?:[A-Za-z][A-Za-z0-9-]*|.)//g;
   $line =~ s/;.*//;
   return $line;
 }

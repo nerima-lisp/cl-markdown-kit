@@ -9,4 +9,5 @@
 (:kind defun-header :head "defun" :name "parse-stream" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
 (:kind defun-header :head "defun" :name "parse-octets" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
 (:kind defun-header :head "defun" :name "parse" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
+(:kind defun-header :head "defun" :name "parse-inline" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
 (:kind top-level-form :head "defparameter" :name "*html5-entities*" :reason "Generated entity rows are quoted source data; lookup behavior is covered by character-data tests." :reproduction "scripts/coverage-reproductions/html5-entities-data.lisp")

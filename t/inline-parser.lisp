@@ -567,3 +567,12 @@
                   (progn (cl-markdown-kit::parse-inline "xx" boundary-map index) nil)
                 (error () t))
               :to-be-truthy))))
+
+(describe "Inline conformance fixtures"
+  (it "parses inline content in every pinned CommonMark and GFM example"
+    (let ((examples (append (commonmark-spec-examples)
+                            (gfm-extension-examples))))
+      (dolist (example examples)
+        (expect (cl-markdown-kit:parse-string (spec-example-markdown example))
+                :to-be-truthy))
+      (expect (length examples) :to-equal 682))))
