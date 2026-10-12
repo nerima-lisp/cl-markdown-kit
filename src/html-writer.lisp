@@ -2,13 +2,14 @@
 
 (defstruct (%html-writer-context
              (:constructor %make-html-writer-context
-                 (&key stream raw-html unsafe-urls footnote-definitions
+                 (&key stream raw-html unsafe-urls gfm footnote-definitions
                        footnote-numbers footnote-reference-counts
                        footnote-reference-indices footnote-order)))
   stream
   last-character
   raw-html
   unsafe-urls
+  gfm
   footnote-definitions
   footnote-numbers
   footnote-reference-counts
@@ -73,6 +74,11 @@
                (%hw-write-char context #\<))
            (setf start (1+ index))
         finally (%hw-write context (subseq string start))))
+
+(defun %hw-write-raw-html (context string)
+  (if (%html-writer-context-gfm context)
+      (%hw-filter-html context string)
+      (%hw-write context string)))
 
 (defun %hw-build-footnote-context (document)
   (let ((definitions (make-hash-table :test #'equal))
@@ -166,7 +172,7 @@
      (case (%html-writer-context-raw-html context)
        (:omit (%hw-write context "<!-- raw HTML omitted -->"))
        (:escape (%hw-escaped-text context (html-inline-body node)))
-       (:pass-through (%hw-filter-html context (html-inline-body node)))))
+       (:pass-through (%hw-write-raw-html context (html-inline-body node)))))
     (soft-break
      (%hw-write-char context #\Newline))
     (hard-break
@@ -425,14 +431,15 @@
      (case (%html-writer-context-raw-html context)
        (:omit (%hw-write context "<!-- raw HTML omitted -->"))
        (:escape (%hw-escaped-text context (html-block-body node)))
-       (:pass-through (%hw-filter-html context (html-block-body node))))
+       (:pass-through (%hw-write-raw-html context (html-block-body node))))
      (%hw-newline context))
     (table
      (%hw-write-table context node))
     (t
      (error "Unsupported block node: ~S" node))))
 
-(defun write-html-to-stream (document stream &key (raw-html :omit) unsafe-urls)
+(defun write-html-to-stream (document stream &key (raw-html :omit) unsafe-urls
+                                                  (gfm t))
   "Write DOCUMENT as HTML to STREAM and return STREAM."
   (check-type document document)
   (check-type stream stream)
@@ -442,12 +449,15 @@
     (error "RAW-HTML must be :OMIT, :ESCAPE, or :PASS-THROUGH"))
   (unless (typep unsafe-urls 'boolean)
     (error "UNSAFE-URLS must be a boolean"))
+  (unless (typep gfm 'boolean)
+    (error "GFM must be a boolean"))
   (multiple-value-bind (definitions numbers reference-counts order)
       (%hw-build-footnote-context document)
     (let ((context (%make-html-writer-context
                     :stream stream
                     :raw-html raw-html
                     :unsafe-urls unsafe-urls
+                    :gfm gfm
                     :footnote-definitions definitions
                     :footnote-numbers numbers
                     :footnote-reference-counts reference-counts
@@ -457,9 +467,10 @@
       (%hw-write-footnotes context)))
   stream)
 
-(defun write-html (document &key (raw-html :omit) unsafe-urls)
+(defun write-html (document &key (raw-html :omit) unsafe-urls (gfm t))
   "Return DOCUMENT rendered as HTML."
   (with-output-to-string (stream)
     (write-html-to-stream document stream
                           :raw-html raw-html
-                          :unsafe-urls unsafe-urls)))
+                          :unsafe-urls unsafe-urls
+                          :gfm gfm)))

@@ -203,7 +203,7 @@
      (format nil
              "<p>&lt;em&gt;safe&lt;/em&gt;&lt;script&gt;x&lt;/script&gt;</p>~%")))
 
-  (it "passes ordinary tags through but tagfilters unsafe tags"
+  (it "passes ordinary tags through and applies the GFM tagfilter"
     (let ((output
             (html-writer-test-render
              (list (cl-markdown-kit:make-paragraph
@@ -268,7 +268,7 @@
                            'string
                            "<script>x</script> <scriptx>safe</scriptx> "
                            "<script/> <style type=\"text/css\">x</style> plain<")))
-             :raw-html :pass-through)))
+             :raw-html :pass-through :gfm t)))
       (expect escaped :to-equal (format nil "&lt;b&gt;raw&lt;/b&gt;~%"))
       (expect filtered
               :to-equal
@@ -287,6 +287,50 @@
              :children (list (cl-markdown-kit:make-html-inline :body "plain text"))))
       :raw-html :pass-through)
      :to-equal (format nil "<p>plain text</p>~%")))
+
+  (it "passes raw CommonMark HTML through without the GFM tagfilter"
+    (let* ((inline-body
+             "<script>x</script><style>y</style><textarea>z</textarea><pre>w</pre>")
+           (block-body
+             (format nil
+                     "<script>x</script>~%<style>y</style>~%<textarea>z</textarea>~%<pre>w</pre>~%"))
+           (inline-document
+             (html-writer-test-document
+              (cl-markdown-kit:make-paragraph
+               :children (list (cl-markdown-kit:make-html-inline
+                                :body inline-body)))))
+           (block-document
+             (html-writer-test-document
+              (cl-markdown-kit:make-html-block :body block-body)))
+           (stream-output
+             (with-output-to-string (stream)
+               (cl-markdown-kit:write-html-to-stream
+                inline-document stream :raw-html :pass-through :gfm nil))))
+      (expect (cl-markdown-kit:write-html
+               inline-document :raw-html :pass-through :gfm nil)
+              :to-equal (format nil "<p>~A</p>~%" inline-body))
+      (expect stream-output :to-equal
+              (format nil "<p>~A</p>~%" inline-body))
+      (expect (cl-markdown-kit:write-html
+               block-document :raw-html :pass-through :gfm nil)
+              :to-equal block-body)))
+
+  (it "keeps the GFM tagfilter enabled for inline and block HTML"
+    (let ((inline-output
+            (html-writer-test-render
+             (list (cl-markdown-kit:make-paragraph
+                    :children (list (cl-markdown-kit:make-html-inline
+                                     :body "<textarea>x</textarea>"))))
+             :raw-html :pass-through :gfm t))
+          (block-output
+            (html-writer-test-render
+             (list (cl-markdown-kit:make-html-block
+                    :body "<textarea>x</textarea>"))
+             :raw-html :pass-through :gfm t)))
+      (expect inline-output :to-equal
+              (format nil "<p>&lt;textarea>x&lt;/textarea></p>~%"))
+      (expect block-output :to-equal
+              (format nil "&lt;textarea>x&lt;/textarea>~%"))))
 
   (it "renders code spans, breaks, emphasis, strong, and autolinks"
     (expect
@@ -471,6 +515,13 @@
      (handler-case
          (progn (cl-markdown-kit:write-html (html-writer-test-document)
                                             :unsafe-urls :invalid)
+                nil)
+       (error () t))
+     :to-be-truthy)
+    (expect
+     (handler-case
+         (progn (cl-markdown-kit:write-html (html-writer-test-document)
+                                            :gfm :invalid)
                 nil)
        (error () t))
      :to-be-truthy)

@@ -4,17 +4,17 @@
 (defvar *parser-contract-block-calls* nil)
 (defvar *parser-contract-inline-calls* nil)
 
-(defun parser-contract-blocks (source-buffer &key max-nesting-depth front-matter)
-  (push (list source-buffer max-nesting-depth front-matter)
+(defun parser-contract-blocks (source-buffer &key max-nesting-depth front-matter gfm)
+  (push (list source-buffer max-nesting-depth front-matter gfm)
         *parser-contract-block-calls*)
   (or *parser-contract-block-result*
       (cl-markdown-kit::make-block-parse-result
        :document (cl-markdown-kit:make-document))))
 
 (defun parser-contract-inline (text boundary-map reference-index
-                               &key max-inline-delimiter-depth)
+                               &key max-inline-delimiter-depth gfm)
   (declare (ignore boundary-map reference-index))
-  (push (list text max-inline-delimiter-depth)
+  (push (list text max-inline-delimiter-depth gfm)
         *parser-contract-inline-calls*)
   (list (cl-markdown-kit:make-text :value text)))
 
@@ -106,7 +106,8 @@
              (expect (third (first *parser-contract-block-calls*))
                      :to-equal t)
              (expect (reverse *parser-contract-inline-calls*)
-                     :to-equal '(("paragraph" 34) ("heading" 34) ("cell" 34)))))))))
+                     :to-equal '(("paragraph" 34 t) ("heading" 34 t)
+                                 ("cell" 34 t)))))))))
 
   (it "dispatches supported input types and rejects invalid inputs and limits"
     (let ((*parser-contract-block-result* nil)
@@ -153,6 +154,10 @@
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda ()
+                    (cl-markdown-kit:parse-string "" :gfm :invalid)))
+                 :to-be-truthy)
+         (expect (parser-contract-signals-p
+                  (lambda ()
                     (cl-markdown-kit:parse-string
                      "x" :max-nesting-depth "invalid")))
                  :to-be-truthy)
@@ -184,6 +189,8 @@
         (expect (mapcar #'second *parser-contract-block-calls*)
                 :to-equal '(256 256 256 256))
         (expect (mapcar #'third *parser-contract-block-calls*)
+                :to-equal '(t t t t))
+        (expect (mapcar #'fourth *parser-contract-block-calls*)
                 :to-equal '(t t t t)))))
 
   (it "forwards the front-matter option through every public input entry point"
@@ -203,6 +210,37 @@
            (cl-markdown-kit:parse stream :front-matter nil))
          (cl-markdown-kit:parse octets :front-matter nil)))
       (expect (mapcar #'third *parser-contract-block-calls*)
+              :to-equal '(nil nil nil nil nil nil))))
+
+  (it "forwards the GFM option through every public input entry point"
+    (let* ((source-buffer (cl-markdown-kit:make-source-buffer "x"))
+           (*parser-contract-block-result*
+             (cl-markdown-kit::make-block-parse-result
+              :document (cl-markdown-kit:make-document)
+              :inline-fragments
+              (list (cl-markdown-kit::make-inline-fragment
+                     :node (cl-markdown-kit:make-paragraph)
+                     :text "x"
+                     :boundary-map
+                     (cl-markdown-kit::source-buffer-boundary-map
+                      source-buffer)))))
+           (*parser-contract-block-calls* nil)
+           (*parser-contract-inline-calls* nil)
+           (octets (make-array 1 :element-type '(unsigned-byte 8)
+                                :initial-contents '(120))))
+      (call-with-parser-contract-stubs
+       (lambda ()
+         (cl-markdown-kit:parse-string "string" :gfm nil)
+         (with-input-from-string (stream "stream")
+           (cl-markdown-kit:parse-stream stream :gfm nil))
+         (cl-markdown-kit:parse-octets octets :gfm nil)
+         (cl-markdown-kit:parse "dispatch string" :gfm nil)
+         (with-input-from-string (stream "dispatch stream")
+           (cl-markdown-kit:parse stream :gfm nil))
+         (cl-markdown-kit:parse octets :gfm nil)))
+      (expect (mapcar #'fourth *parser-contract-block-calls*)
+              :to-equal '(nil nil nil nil nil nil))
+      (expect (mapcar #'third *parser-contract-inline-calls*)
               :to-equal '(nil nil nil nil nil nil))))
 
   (it "recognizes leading front matter by default and can disable it"

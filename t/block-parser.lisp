@@ -1,9 +1,10 @@
 (in-package #:cl-markdown-kit/test)
 
-(defun block-parser-test-result (source &key (front-matter t))
+(defun block-parser-test-result (source &key (front-matter t) (gfm t))
   (cl-markdown-kit::parse-blocks
    (cl-markdown-kit:make-source-buffer source)
-   :front-matter front-matter))
+   :front-matter front-matter
+   :gfm gfm))
 
 (defun block-parser-test-line (text)
   (aref (cl-markdown-kit::%bp-split-lines text) 0))
@@ -53,6 +54,9 @@
   (or (find id (commonmark-spec-examples)
             :key #'spec-example-id :test #'string=)
       (error "Missing CommonMark fixture ~A" id)))
+
+(defun block-parser-test-example-source (example)
+  (substitute #\Tab #\→ (spec-example-markdown example)))
 
 (defun block-parser-test-gfm-result (id)
   (block-parser-test-result
@@ -382,6 +386,98 @@
                    (eq (cl-markdown-kit:heading-style setext) :setext)
                    (char= (cl-markdown-kit:heading-marker-character setext) #\=)
                    (block-parser-test-span-is setext 0 9))
+              :to-be-truthy)))
+
+  (it "normalizes CommonMark paragraph continuation and setext heading text"
+    (let ((cases
+            (list
+             (list "commonmark-0049" (list (format nil "Foo~%***")))
+             (list "commonmark-0070" (list (format nil "foo~%# bar")))
+             (list "commonmark-0087" (list (format nil "Foo~%---")))
+             (list "commonmark-0113" (list (format nil "Foo~%bar")))
+             (list "commonmark-0223"
+                   (list (format nil "aaa~%bbb~%ccc")))
+             (list "commonmark-0238" (list (format nil "foo~%- bar")))
+             (list "commonmark-0291"
+                   (list (format nil "A paragraph~%with two lines.")))
+             (list "commonmark-0312"
+                   (list "a" "b" "c" (format nil "d~%- e")))
+             (list "commonmark-0082"
+                   (list (format nil "Foo *bar~%baz*")))
+             (list "commonmark-0089" (list "Foo")))))
+      (dolist (case cases)
+        (let* ((example (block-parser-test-commonmark-example (first case)))
+               (source (block-parser-test-example-source example))
+               (result (block-parser-test-result source :front-matter nil))
+               (document (block-parser-test-document result))
+               (inline-fragments
+                 (loop for inline-owner in
+                       (block-parser-test-nodes-of-type
+                        document
+                        (lambda (node)
+                          (or (cl-markdown-kit:paragraph-p node)
+                              (cl-markdown-kit:heading-p node))))
+                       append
+                       (mapcar
+                        #'cl-markdown-kit::inline-fragment-text
+                        (block-parser-test-fragments-for result inline-owner)))))
+          (expect inline-fragments :to-equal (second case))
+          (expect (block-parser-test-ranges-valid-p document source)
+                  :to-be-truthy)))))
+
+  (it "removes closing ATX markers and preserves link definitions before paragraphs"
+    (let* ((heading-example
+             (block-parser-test-commonmark-example "commonmark-0079"))
+           (heading-source (block-parser-test-example-source heading-example))
+           (heading-result (block-parser-test-result
+                            heading-source :front-matter nil))
+           (heading-document (block-parser-test-document heading-result))
+           (headings
+             (block-parser-test-nodes-of-type
+              heading-document #'cl-markdown-kit:heading-p))
+           (reference-example
+             (block-parser-test-commonmark-example "commonmark-0210"))
+           (reference-source
+             (block-parser-test-example-source reference-example))
+           (reference-result
+             (block-parser-test-result reference-source :front-matter nil))
+           (reference-document (block-parser-test-document reference-result))
+           (reference-children
+             (cl-markdown-kit:document-children reference-document))
+           (paragraph (second reference-children)))
+      (expect (and (equal (mapcar
+                           (lambda (heading)
+                             (cl-markdown-kit::inline-fragment-text
+                              (first (block-parser-test-fragments-for
+                                      heading-result heading))))
+                           headings)
+                          '("" "" ""))
+                   (block-parser-test-ranges-valid-p
+                    heading-document heading-source))
+              :to-be-truthy)
+      (expect (and (= (length reference-children) 2)
+                   (cl-markdown-kit:link-reference-definition-p
+                    (first reference-children))
+                   (cl-markdown-kit:paragraph-p paragraph)
+                   (string= (cl-markdown-kit::inline-fragment-text
+                             (first (block-parser-test-fragments-for
+                                     reference-result paragraph)))
+                            "\"title\" ok")
+                   (block-parser-test-ranges-valid-p
+                    reference-document reference-source))
+              :to-be-truthy)))
+
+  (it "preserves tab-relative code indentation in list items"
+    (let* ((example (block-parser-test-commonmark-example "commonmark-0007"))
+           (source (block-parser-test-example-source example))
+           (document (block-parser-test-document
+                      (block-parser-test-result source :front-matter nil)))
+           (code (first (block-parser-test-nodes-of-type
+                         document #'cl-markdown-kit:code-block-p))))
+      (expect (and (cl-markdown-kit:code-block-p code)
+                   (string= (cl-markdown-kit:code-block-body code)
+                            (format nil "  foo~%"))
+                   (block-parser-test-ranges-valid-p document source))
               :to-be-truthy)))
 
   (it "recognizes delimited front matter as a source-backed leaf block"
@@ -804,9 +900,8 @@
                    (every (lambda (row)
                             (= (length (cl-markdown-kit:table-row-cells row)) 2))
                           rows)
-                   (search (format nil "~C|okay~C|" #\\ #\\) escaped-text)
-                   (search (format nil "`~C|code~C| is okay`" #\\ #\\)
-                           code-text)
+                   (string= escaped-text "Escaped pipes are |okay|.")
+                   (search "`|code| is okay`" code-text)
                    (= (length (cl-markdown-kit:table-row-cells
                                (second unmatched-rows)))
                       2)
@@ -814,6 +909,56 @@
                              (first (block-parser-test-fragments-for
                                      pipe-result (second code-cells))))
                             ""))
+              :to-be-truthy)))
+
+  (it "removes GFM table pipe escapes inside and outside code spans"
+    (let* ((result (block-parser-test-gfm-result "gfm-0011"))
+           (table (first
+                   (cl-markdown-kit:document-children
+                    (block-parser-test-document result))))
+           (row (fifth (cl-markdown-kit:table-rows table)))
+           (cells (cl-markdown-kit:table-row-cells row))
+           (cell-texts
+             (mapcar
+              (lambda (cell)
+                (cl-markdown-kit::inline-fragment-text
+                 (first (block-parser-test-fragments-for result cell))))
+              cells)))
+      (expect cell-texts :to-equal (list "|" "`|`"))))
+
+  (it "disables GFM tables, task markers, and footnote definitions on request"
+    (let* ((table-source (format nil "| a | b |~%| --- | --- |"))
+           (table-document
+             (block-parser-test-document
+              (block-parser-test-result table-source :gfm nil)))
+           (task-document
+             (block-parser-test-document
+              (block-parser-test-result "- [ ] todo" :gfm nil)))
+           (task-list
+             (block-parser-test-only-child task-document))
+           (footnote-document
+             (block-parser-test-document
+              (block-parser-test-result "[^note]: body" :gfm nil)))
+           (gfm-footnote-document
+             (block-parser-test-document
+              (block-parser-test-result "[^note]: body")))
+           (table-default-document
+             (block-parser-test-document
+              (block-parser-test-result table-source))))
+      (expect (and (= (length (cl-markdown-kit:document-children table-document))
+                      1)
+                   (cl-markdown-kit:paragraph-p
+                    (first (cl-markdown-kit:document-children table-document)))
+                   (cl-markdown-kit:list-item-p
+                    (first (cl-markdown-kit:list-node-items task-list)))
+                   (not (cl-markdown-kit:task-list-item-p
+                         (first (cl-markdown-kit:list-node-items task-list))))
+                   (cl-markdown-kit:paragraph-p
+                    (block-parser-test-only-child footnote-document))
+                   (cl-markdown-kit:footnote-definition-p
+                    (block-parser-test-only-child gfm-footnote-document))
+                   (cl-markdown-kit:table-p
+                    (block-parser-test-only-child table-default-document)))
               :to-be-truthy)))
 
   (it "recognizes a table immediately after a paragraph and preserves table-cell fragments"
@@ -1254,6 +1399,12 @@
                        (cl-markdown-kit::parse-blocks
                         source :max-nesting-depth value)
                        nil)
+                   (type-error () t)))
+               (invalid-gfm-p (value)
+                 (handler-case
+                     (progn
+                       (cl-markdown-kit::parse-blocks source :gfm value)
+                       nil)
                    (type-error () t))))
         (expect (and (null (cl-markdown-kit::%bp-task-marker
                             (block-parser-test-line "ordinary")))
@@ -1264,6 +1415,7 @@
                               "")
                      (invalid-depth-p 0)
                      (invalid-depth-p "deep")
+                     (invalid-gfm-p :enabled)
                      (null (cl-markdown-kit::%bp-front-matter
                             source #()))
                      (null (cl-markdown-kit::%bp-front-matter
@@ -1273,6 +1425,9 @@
   (it "covers block parser helper boundaries and open frame transitions"
     (let* ((source (cl-markdown-kit:make-source-buffer "plain"))
            (plain-line (block-parser-test-line "plain"))
+           (trimmed-empty-line
+             (cl-markdown-kit::%bp-trim-line-end
+              (block-parser-test-line "   ")))
            (decoded-references
              (cl-markdown-kit::%bp-decode-character-references
               "&amp;&#66;&#x42;&#X42;&#xZZ;&#x;&#;&; &amp"))
@@ -1313,7 +1468,7 @@
                    (cl-markdown-kit::*block-reference-index*
                      (make-hash-table :test 'equal)))
                (cl-markdown-kit::%bp-parse-lines
-                source (list plain-line) "" 0 256)))
+                source (list plain-line) "" 0 256 t)))
            (default-parse
              (block-parser-test-document
               (cl-markdown-kit::parse-blocks source)))
@@ -1364,6 +1519,9 @@
       (expect (and (string= decoded-references
                             "&BBB&#xZZ;&#x;&#;&; &amp")
                    (string= vector-body "body")
+                   (string= (cl-markdown-kit::%block-line-text
+                             trimmed-empty-line)
+                            "")
                    (string= (first trailing-backslash) "/a\\")
                    (= (second trailing-backslash) 3)
                    (null trailing-angle-backslash)

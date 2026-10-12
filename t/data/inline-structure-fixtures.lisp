@@ -197,7 +197,11 @@ bar"))) ()))
   ("commonmark-0193" ((((:link "/url" "the title" ((:text "foo"))))) ()))
   ("commonmark-0194" ((((:link "my_(url)" "title (with parens)" ((:text "Foo*bar]"))))) ()))
   ("commonmark-0195" ((((:link "my url" "title" ((:text "Foo bar"))))) ()))
-  ("commonmark-0196" ((((:link "/url" " title line1 line2 " ((:text "foo"))))) ()))
+  ("commonmark-0196" ((((:link "/url" "
+title
+line1
+line2
+" ((:text "foo"))))) ()))
   ("commonmark-0197" ((((:text "[foo]: /url 'title")) ((:text "with blank line'")) ((:text "[foo]"))) ()))
   ("commonmark-0198" ((((:link "/url" nil ((:text "foo"))))) ()))
   ("commonmark-0199" ((((:text "[foo]:")) ((:text "[foo]"))) ()))
@@ -355,7 +359,7 @@ bar"))) ()))
   ("commonmark-0351" ((((:text "a * foo bar*"))) ()))
   ("commonmark-0352" ((((:text "a*\"foo\"*"))) ()))
   ("commonmark-0353" ((((:text "* a *"))) ()))
-  ("commonmark-0354" ((((:text "*$*alpha.")) ((:emphasis ((:text "£"))) (:text "bravo.")) ((:emphasis ((:text "€"))) (:text "charlie."))) ()))
+  ("commonmark-0354" ((((:text "*$*alpha.")) ((:text "*£*bravo.")) ((:text "*€*charlie."))) ()))
   ("commonmark-0355" ((((:text "foo") (:emphasis ((:text "bar"))))) ()))
   ("commonmark-0356" ((((:text "5") (:emphasis ((:text "6"))) (:text "78"))) ()))
   ("commonmark-0357" ((((:emphasis ((:text "foo bar"))))) ()))

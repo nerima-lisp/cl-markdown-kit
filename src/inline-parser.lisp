@@ -19,7 +19,8 @@
   bracket-closes
   bracket-prefix
   bare-links
-  html-closes)
+  html-closes
+  (gfm-p t :type boolean))
 
 (defstruct (%ip-delimiter
              (:constructor %ip-make-delimiter
@@ -303,24 +304,26 @@
       (let ((attribute-end (%ip-attribute-name-end text cursor end)))
         (unless attribute-end
           (return-from %ip-raw-html-open-tag-end nil))
-        (setf cursor (%ip-skip-html-space text attribute-end end))
-        (when (and (< cursor end) (char= (char text cursor) #\=))
-          (setf cursor (%ip-skip-html-space text (1+ cursor) end))
-          (when (>= cursor end)
-            (return-from %ip-raw-html-open-tag-end nil))
-          (let ((quote (char text cursor)))
-            (if (find quote "\"'")
-                (let ((quote-end (position quote text :start (1+ cursor) :end end)))
-                  (unless quote-end
-                    (return-from %ip-raw-html-open-tag-end nil))
-                  (setf cursor (1+ quote-end)))
-                (let ((value-start cursor))
-                  (loop while (and (< cursor end)
-                                   (not (%ip-html-space-p (char text cursor)))
-                                   (not (find (char text cursor) "\"'=<>`")))
-                        do (incf cursor))
-                  (when (= value-start cursor)
-                    (return-from %ip-raw-html-open-tag-end nil))))))))))
+        (let ((equals-position (%ip-skip-html-space text attribute-end end)))
+          (setf cursor attribute-end)
+          (when (and (< equals-position end)
+                     (char= (char text equals-position) #\=))
+            (setf cursor (%ip-skip-html-space text (1+ equals-position) end))
+            (when (>= cursor end)
+              (return-from %ip-raw-html-open-tag-end nil))
+            (let ((quote (char text cursor)))
+              (if (find quote "\"'")
+                  (let ((quote-end (position quote text :start (1+ cursor) :end end)))
+                    (unless quote-end
+                      (return-from %ip-raw-html-open-tag-end nil))
+                    (setf cursor (1+ quote-end)))
+                  (let ((value-start cursor))
+                    (loop while (and (< cursor end)
+                                     (not (%ip-html-space-p (char text cursor)))
+                                     (not (find (char text cursor) "\"'=<>`")))
+                          do (incf cursor))
+                    (when (= value-start cursor)
+                      (return-from %ip-raw-html-open-tag-end nil)))))))))))
 
 (defun %ip-raw-html-end (text start end html-closes)
   (cond
@@ -478,10 +481,16 @@
   (or (%ip-ascii-alphanumeric-p character)
       (find character ".-_+")))
 
+(defun %ip-unicode-punctuation-p (character)
+  (not (null (member (sb-unicode:general-category character)
+                     '(:pc :pd :ps :pe :pi :pf :po)
+                     :test #'eq))))
+
 (defun %ip-commonmark-punctuation-p (character)
   (or (ascii-punctuation-p character)
+      (%ip-unicode-punctuation-p character)
       (not (null (member (sb-unicode:general-category character)
-                         '(:pc :pd :ps :pe :pi :pf :po)
+                         '(:sc :sk :sm :so)
                          :test #'eq)))))
 
 (defun %ip-gfm-domain-character-p (character)
@@ -490,7 +499,7 @@
       (let ((category (sb-unicode:general-category character)))
         (and (> (char-code character) #x7F)
              (not (unicode-whitespace-p character))
-             (not (%ip-commonmark-punctuation-p character))
+             (not (%ip-unicode-punctuation-p character))
              (not (member category '(:cc :cf :cs :co :cn) :test #'eq))))))
 
 (defun %ip-gfm-domain-end (text start end &optional email-p allow-single-label)
@@ -1306,7 +1315,9 @@
                                        (and right (or (not left) after-punctuation))
                                        right))
                         (run-length (- run-end index)))
-                   (if (and (char= character #\~) (> run-length 2))
+                   (if (or (and (char= character #\~)
+                                (not (%ip-context-gfm-p context)))
+                           (and (char= character #\~) (> run-length 2)))
                        (add-text (subseq text index run-end) index run-end)
                        (if (or can-open can-close)
                            (push (%ip-make-delimiter
@@ -1336,10 +1347,11 @@
                   (cond
                     ((and (< (1+ index) scan-end)
                           (char= (char text (1+ index)) #\Newline))
-                     (add-node (make-hard-break
-                                :span (%ip-span context index (+ index 2)))
-                               index (+ index 2))
-                     (incf index 2))
+                     (let ((break-end (%ip-skip-space text (+ index 2) scan-end)))
+                       (add-node (make-hard-break
+                                  :span (%ip-span context index break-end))
+                                 index break-end)
+                       (setf index break-end)))
                     ((%ip-backslash-escape-end text index scan-end)
                      (add-text (string (char text (1+ index))) index (+ index 2))
                      (incf index 2))
@@ -1402,32 +1414,37 @@
                          (setf index html-end))
                         (t (add-text "<" index (1+ index)) (incf index))))))
                  ((char= character #\Newline)
-                  (add-node (make-soft-break :span (%ip-span context index (1+ index)))
-                            index (1+ index))
-                  (incf index))
+                  (let ((break-end (%ip-skip-space text (1+ index) scan-end)))
+                    (add-node (make-soft-break
+                               :span (%ip-span context index break-end))
+                              index break-end)
+                    (setf index break-end)))
                  ((find character '(#\Space #\Tab))
                   (let ((space-end (%ip-skip-space text index scan-end)))
                     (if (and (< space-end scan-end)
                              (char= (char text space-end) #\Newline))
-                        (let ((spaces (loop for position from index below space-end
-                                            count (char= (char text position)
-                                                         #\Space))))
+                        (let* ((line-end (1+ space-end))
+                               (break-end (%ip-skip-space text line-end scan-end))
+                               (spaces (loop for position from index below space-end
+                                             count (char= (char text position)
+                                                          #\Space))))
                           (if (>= spaces 2)
                               (add-node (make-hard-break
                                          :span (%ip-span context index
-                                                         (1+ space-end)))
-                                        index (1+ space-end))
+                                                         break-end))
+                                        index break-end)
                               (add-node
                                (make-soft-break
-                                :span (%ip-span context space-end (1+ space-end)))
-                               space-end (1+ space-end)))
-                          (setf index (1+ space-end)))
+                                :span (%ip-span context index break-end))
+                               index break-end))
+                          (setf index break-end))
                         (progn
                           (add-text (subseq text index space-end) index space-end)
                           (setf index space-end)))))
                  ((and (char= character #\[)
                        (<= (+ index 2) scan-end)
                        (char= (char text (1+ index)) #\^)
+                       (%ip-context-gfm-p context)
                        (let ((close (aref (%ip-context-bracket-opens context) index)))
                          (and (>= close 0) (< close scan-end)
                               (let ((normalized
@@ -1450,7 +1467,8 @@
                       (let* ((open (1+ index))
                              (close (aref (%ip-context-bracket-opens context) open))
                              (footnote-p
-                               (and (>= close 0)
+                               (and (%ip-context-gfm-p context)
+                                    (>= close 0)
                                     (< close scan-end)
                                     (< (+ open 2) close)
                                     (char= (char text (+ open 1)) #\^)
@@ -1504,11 +1522,20 @@
           (%ip-build-range context start end all-atoms resolved-pairs
                            base-depth))))))
 
-(defun parse-inline (text boundary-map reference-index &key (max-inline-delimiter-depth 4096))
+(defun %ip-inline-end (text)
+  (loop with end = (length text)
+        while (and (plusp end)
+                   (find (char text (1- end)) '(#\Space #\Tab)))
+          do (decf end)
+        finally (return end)))
+
+(defun parse-inline (text boundary-map reference-index
+                     &key (max-inline-delimiter-depth 4096) (gfm t))
   "Parse inline Markdown TEXT using its source map and reference index."
   (check-type text string)
   (check-type boundary-map boundary-map)
   (check-type reference-index hash-table)
+  (check-type gfm boolean)
   (unless (and (integerp max-inline-delimiter-depth)
                (plusp max-inline-delimiter-depth))
     (error 'type-error :datum max-inline-delimiter-depth
@@ -1522,11 +1549,14 @@
                            (%ip-build-bracket-index
                             text backtick-next html-closes
                             max-inline-delimiter-depth)))
-         (bare-links (%ip-build-bare-links text))
+         (bare-links (if gfm
+                         (%ip-build-bare-links text)
+                         (make-hash-table :test #'eql)))
          (context (%ip-make-context text boundary-map reference-index
                                     max-inline-delimiter-depth backtick-next
                                     (first bracket-indexes)
                                     (second bracket-indexes)
                                     (third bracket-indexes)
                                     bare-links html-closes)))
-    (%ip-parse-range context 0 (length text) t 0)))
+    (setf (%ip-context-gfm-p context) gfm)
+    (%ip-parse-range context 0 (%ip-inline-end text) t 0)))

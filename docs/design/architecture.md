@@ -221,10 +221,10 @@ each deferred inline fragment, and returns the completed document. Its public
 entry points are:
 
 ```lisp
-(parse source &key front-matter max-nesting-depth max-inline-delimiter-depth)
-(parse-string string &key front-matter max-nesting-depth max-inline-delimiter-depth)
-(parse-stream character-stream &key front-matter max-nesting-depth max-inline-delimiter-depth)
-(parse-octets octet-vector &key front-matter max-nesting-depth max-inline-delimiter-depth)
+(parse source &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
+(parse-string string &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
+(parse-stream character-stream &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
+(parse-octets octet-vector &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
 ```
 
 `:front-matter` defaults to `t` across all entry points. Set it to `nil` to
@@ -234,6 +234,8 @@ not change the source snapshot or YAML interpretation. `parse` dispatches on
 string, character input stream, or octet vector. `parse-octets` decodes through
 `cl-codec-kit` before creating source spans. A missing limit argument uses the
 corresponding positive default.
+`:gfm` defaults to `t` and enables GFM block and inline extensions. Set it to
+`nil` to parse CommonMark without GFM extensions.
 `max-nesting-depth` counts
 simultaneously open block containers below the document.
 `max-inline-delimiter-depth` counts unresolved inline delimiter and bracket
@@ -266,8 +268,8 @@ system does not change the core AST or the `:front-matter` parse option.
 ### Writers
 
 ```lisp
-(write-html document &key (raw-html :omit) unsafe-urls)
-(write-html-to-stream document stream &key (raw-html :omit) unsafe-urls)
+(write-html document &key (raw-html :omit) unsafe-urls gfm)
+(write-html-to-stream document stream &key (raw-html :omit) unsafe-urls gfm)
 (write-markdown document)
 (write-markdown-to-stream document stream)
 ```
@@ -275,7 +277,9 @@ system does not change the core AST or the `:front-matter` parse option.
 `write-html` returns a string and its stream variant writes the same output.
 `:raw-html` is `:omit` (the default), `:escape`, or `:pass-through`. Omit
 emits no raw block or inline HTML. Escape mode writes raw HTML as text;
-pass-through emits it with GFM tagfilter applied. `:unsafe-urls` defaults to
+pass-through emits it with GFM tagfilter applied when `:gfm` is true. `:gfm`
+defaults to `t`; set it to `nil` for CommonMark HTML output without tagfilter.
+`:unsafe-urls` defaults to
 `nil`. In that mode, link and image destinations using a dangerous scheme are
 written as empty strings. The check follows cmark's `_scan_dangerous_url`:
 scheme checks are case-insensitive, and `javascript:`, `vbscript:`, and

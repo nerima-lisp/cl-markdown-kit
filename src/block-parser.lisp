@@ -75,6 +75,24 @@
    (%block-line-after line)
    (%bp-line-column-at line start)))
 
+(defun %bp-line-prefix-spaces (line count)
+  (let* ((text (%block-line-text line))
+         (prefix-boundary (%bp-line-boundary line 0))
+         (boundaries (make-array (+ count (length text) 1)))
+         (prefixed-text
+           (concatenate 'string (make-string count :initial-element #\Space)
+                        text)))
+    (loop for index from 0 to count
+          do (setf (aref boundaries index) prefix-boundary))
+    (loop for index from 1 to (length text)
+          do (setf (aref boundaries (+ count index))
+                   (%bp-line-boundary line index)))
+    (%make-block-line prefixed-text boundaries
+                      (%block-line-raw-start line)
+                      (%block-line-raw-end line)
+                      (%block-line-after line)
+                      (- (%block-line-column-start line) count))))
+
 (defun %bp-split-lines (text)
   (let ((lines nil)
         (start 0)
@@ -583,11 +601,16 @@
                        lines end title-start
                        (case opener (#\( #\)) (otherwise opener)))))
                 (when close-line
-                  (setf end (1+ close-line)
-                        candidate-line (%bp-join-lines (subseq lines index end))
-                        parsed-values
-                        (multiple-value-list
-                         (%bp-link-definition candidate-line))))))))
+                  (let* ((extended-end (1+ close-line))
+                         (extended-line
+                           (%bp-join-lines (subseq lines index extended-end)))
+                         (extended-values
+                           (multiple-value-list
+                            (%bp-link-definition extended-line))))
+                    (when (first extended-values)
+                      (setf end extended-end
+                            candidate-line extended-line
+                            parsed-values extended-values))))))))
         (when (first parsed-values)
           (return-from %bp-link-definition-at
             (%bp-link-definition-result candidate-line parsed-values index)))
@@ -662,10 +685,10 @@
                                      (char= (char text (1- cursor)) #\#))
                           do (decf cursor))
                     (when (and (< cursor content-end)
-                               (> cursor content-start)
+                               (plusp cursor)
                                (%bp-space-p (char text (1- cursor))))
                       (setf close-count (- content-end cursor)
-                            content-end (1- cursor))
+                            content-end cursor)
                       (multiple-value-setq (content-start content-end)
                         (%bp-trim-indices text content-start content-end)))))
                 (values level indent content-start content-end
@@ -944,7 +967,7 @@
          (char= (char text indent) #\[)
          (not (%bp-prefix-p text "[^" indent)))))
 
-(defun %bp-interrupts-paragraph-p (line)
+(defun %bp-interrupts-paragraph-p (line &optional (gfm t))
   (or (nth-value 0 (%bp-atx-heading line))
       (nth-value 0 (%bp-thematic-break line))
       (nth-value 0 (%bp-fence-start line))
@@ -954,7 +977,7 @@
         (%bp-prefix-p (%block-line-text line) ">" indent))
       (multiple-value-bind (type) (%bp-html-block-type line)
         (and type (<= type 6)))
-      (nth-value 0 (%bp-footnote-start line))))
+      (and gfm (nth-value 0 (%bp-footnote-start line)))))
 
 (defun %bp-body-from-lines (lines)
   (let ((lines (if (listp lines) (coerce lines 'vector) lines)))
@@ -1063,6 +1086,33 @@
         (pop cells)))
     (nreverse cells)))
 
+(defun %bp-unescape-table-pipes (line)
+  (let* ((text (%block-line-text line))
+         (characters (make-array 0 :element-type 'character
+                                 :adjustable t :fill-pointer 0))
+         (boundaries (make-array 0 :adjustable t :fill-pointer 0)))
+    (vector-push-extend (%bp-line-boundary line 0) boundaries)
+    (loop with index = 0
+          while (< index (length text))
+          do (if (and (char= (char text index) #\\)
+                      (< (1+ index) (length text))
+                      (char= (char text (1+ index)) #\|))
+                 (progn
+                   (vector-push-extend #\| characters)
+                   (vector-push-extend (%bp-line-boundary line (+ index 2))
+                                       boundaries)
+                   (incf index 2))
+                 (progn
+                   (vector-push-extend (char text index) characters)
+                   (vector-push-extend (%bp-line-boundary line (1+ index))
+                                       boundaries)
+                   (incf index))))
+    (%make-block-line (coerce characters 'string) boundaries
+                      (%block-line-raw-start line)
+                      (%block-line-raw-end line)
+                      (%block-line-after line)
+                      (%block-line-column-start line))))
+
 (defun %bp-table-alignments (line)
   (let ((cells (%bp-table-cells line)))
     (when cells
@@ -1090,15 +1140,15 @@
 (defun %bp-table-cell-node (source-buffer line range alignment context)
   (multiple-value-bind (start end)
       (%bp-trim-indices (%block-line-text line) (car range) (cdr range))
-    (let* ((text (subseq (%block-line-text line) start end))
-           (cell-line (%bp-line-slice line start end))
+    (let* ((cell-line
+             (%bp-unescape-table-pipes (%bp-line-slice line start end)))
            (cell (make-table-cell
                   :span (%bp-line-span source-buffer line start end)
                   :continuation-prefix context
                   :alignment alignment
                   :children nil)))
       (%bp-add-fragment source-buffer cell (list cell-line))
-      (values cell text))))
+      (values cell (%block-line-text cell-line)))))
 
 (defun %bp-table-row (source-buffer line alignments header-p context)
   (let* ((ranges (coerce (%bp-table-cells line) 'vector))
@@ -1278,7 +1328,18 @@
     node))
 
 (defun %bp-prepared-paragraph-lines (lines)
-  (mapcar #'%bp-strip-up-to-three lines))
+  (loop for line in lines
+        for first = t then nil
+        collect (if first
+                    (%bp-strip-up-to-three line)
+                    (%bp-strip-columns line (%bp-line-indent-columns line)))))
+
+(defun %bp-trim-line-end (line)
+  (let ((end (length (%block-line-text line))))
+    (loop while (and (plusp end)
+                     (%bp-space-p (char (%block-line-text line) (1- end))))
+          do (decf end))
+    (%bp-line-slice line 0 end)))
 
 (defun %bp-make-paragraph (source-buffer lines context)
   (let* ((prepared (%bp-prepared-paragraph-lines lines))
@@ -1312,7 +1373,7 @@
           (setf (gethash normalized *block-reference-index*) node))
         node))))
 
-(defun %bp-parse-lines (source-buffer lines context depth limit)
+(defun %bp-parse-lines (source-buffer lines context depth limit gfm)
   (let* ((lines (if (vectorp lines) lines (coerce lines 'vector)))
          (root (%bp-make-open-frame :kind :root :node nil
                                     :context context :child-context context))
@@ -1437,9 +1498,21 @@
                                   limit)
                  (let* ((list-frame (current-frame))
                         (item-context (%bp-open-frame-context list-frame))
-                        (first-content (%bp-line-slice content content-end))
+                        (first-content
+                          (let* ((line (%bp-line-slice content content-end))
+                                 (content-column
+                                   (+ (%block-line-column-start content)
+                                      content-indent))
+                                 (virtual-indent
+                                   (max 0 (- (%block-line-column-start line)
+                                             content-column))))
+                            (if (plusp virtual-indent)
+                                (%bp-line-prefix-spaces line virtual-indent)
+                                line)))
                         (task-values (multiple-value-list
-                                      (%bp-task-marker first-content)))
+                                      (if gfm
+                                          (%bp-task-marker first-content)
+                                          (values nil nil nil))))
                         (task-p (first task-values))
                         (checked (second task-values))
                         (task-content (third task-values))
@@ -1606,7 +1679,7 @@
                           (cond
                             ((%bp-blank-line-p content)
                              nil)
-                            ((nth-value 0 (%bp-footnote-start content))
+                            ((and gfm (nth-value 0 (%bp-footnote-start content)))
                              (mark-container-content)
                              (multiple-value-bind (raw-label normalized start indent)
                                  (%bp-footnote-start content)
@@ -1733,8 +1806,8 @@
                  (:paragraph
                   (let* ((paragraph-lines
                            (reverse (%bp-open-leaf-lines leaf)))
-                         (alignments (%bp-table-alignments content)))
-                    (when (and (= (length paragraph-lines) 1)
+                         (alignments (and gfm (%bp-table-alignments content))))
+                    (when (and gfm (= (length paragraph-lines) 1)
                                alignments
                                (= (length alignments)
                                   (length (%bp-table-cells
@@ -1760,7 +1833,8 @@
                                :table-node node :table-alignments alignments
                                :table-rows (table-rows node)))
                         (return-from process-leaf-line :consumed)))
-                    (when (table-header-followed-by-separator-p content)
+                    (when (and gfm
+                               (table-header-followed-by-separator-p content))
                       (close-leaf)
                       (return-from process-leaf-line nil))
                     (multiple-value-bind (level marker count indent)
@@ -1769,8 +1843,13 @@
                       (when level
                         (let* ((prepared
                                  (%bp-prepared-paragraph-lines paragraph-lines))
+                               (setext-prepared
+                                 (append (butlast prepared)
+                                         (list (%bp-trim-line-end
+                                                (car (last prepared))))))
                                (span-lines
-                                 (concatenate 'vector (coerce prepared 'vector)
+                                 (concatenate 'vector
+                                              (coerce setext-prepared 'vector)
                                               (vector content)))
                                (node
                                  (make-heading
@@ -1784,7 +1863,7 @@
                                   :opening-marker-length 0
                                   :closing-marker-length count
                                   :children nil)))
-                          (%bp-add-fragment source-buffer node prepared)
+                          (%bp-add-fragment source-buffer node setext-prepared)
                           (setf leaf nil)
                           (append-to-current node)
                           (return-from process-leaf-line :consumed))))
@@ -1792,7 +1871,7 @@
                       ((%bp-blank-line-p content)
                        (close-leaf)
                        nil)
-                      ((%bp-interrupts-paragraph-p content)
+                      ((%bp-interrupts-paragraph-p content gfm)
                        (close-leaf)
                        nil)
                       (t
@@ -1871,7 +1950,7 @@
                       (not sibling)
                       (not delimiter-change)
                       (not (%bp-blank-line-p content))
-                      (not (%bp-interrupts-paragraph-p content)))))
+                      (not (%bp-interrupts-paragraph-p content gfm)))))
              (record-lazy-continuation (physical-line)
                (dolist (frame stack)
                  (setf (%bp-open-frame-end-line frame) physical-line)))
@@ -1967,11 +2046,16 @@
 (defun %bp-default-front-matter-p ()
   t)
 
+(defun %bp-default-gfm-p ()
+  t)
+
 (defun parse-blocks
     (source-buffer &key (front-matter (%bp-default-front-matter-p))
+                        (gfm (%bp-default-gfm-p))
                         (max-nesting-depth (%bp-default-nesting-depth)))
   "Parse block structure and defer paragraph, heading, and table-cell inlines."
   (check-type source-buffer source-buffer)
+  (check-type gfm boolean)
   (unless (and (integerp max-nesting-depth) (plusp max-nesting-depth))
     (error 'type-error :datum max-nesting-depth
            :expected-type '(integer 1 *)))
@@ -1987,7 +2071,8 @@
           (setf lines (subseq lines next)))))
     (setf children
           (nconc (nreverse children)
-                 (%bp-parse-lines source-buffer lines "" 0 max-nesting-depth)))
+                 (%bp-parse-lines source-buffer lines "" 0 max-nesting-depth
+                                  gfm)))
     (let* ((reference-index *block-reference-index*)
            (document (make-document
                       :span (source-buffer-document-span source-buffer)

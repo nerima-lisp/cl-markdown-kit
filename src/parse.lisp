@@ -31,12 +31,14 @@
               owner)))
   owner)
 
-(defun %parse-source-buffer (source-buffer front-matter max-nesting-depth
+(defun %parse-source-buffer (source-buffer front-matter gfm max-nesting-depth
                              max-inline-delimiter-depth)
+  (check-type gfm boolean)
   (let* ((nesting-limit (%positive-limit max-nesting-depth))
          (inline-limit (%positive-limit max-inline-delimiter-depth))
          (block-result (parse-blocks source-buffer
                                      :front-matter front-matter
+                                     :gfm gfm
                                      :max-nesting-depth nesting-limit))
          (document (block-parse-result-document block-result))
          (reference-index (block-parse-result-reference-index block-result)))
@@ -48,6 +50,7 @@
        (parse-inline (inline-fragment-text fragment)
                      (inline-fragment-boundary-map fragment)
                      reference-index
+                     :gfm gfm
                      :max-inline-delimiter-depth inline-limit)))
     (setf (node-span document) (source-buffer-document-span source-buffer)
           (document-source document) (source-buffer-source source-buffer)
@@ -57,53 +60,59 @@
           (document-max-inline-delimiter-depth document) inline-limit)
     document))
 
-(defun parse-string (string &key (front-matter t)
+(defun parse-string (string &key (front-matter t) (gfm t)
                                (max-nesting-depth 256)
                                (max-inline-delimiter-depth 4096))
-  "Parse STRING and return its document AST; FRONT-MATTER controls leading front matter."
+  "Parse STRING; GFM controls extension parsing and FRONT-MATTER controls leading front matter."
   (check-type string string)
   (%parse-source-buffer (make-source-buffer string)
                         front-matter
+                        gfm
                         max-nesting-depth max-inline-delimiter-depth))
 
-(defun parse-stream (character-stream &key (front-matter t)
+(defun parse-stream (character-stream &key (front-matter t) (gfm t)
                                        (max-nesting-depth 256)
                                        (max-inline-delimiter-depth 4096))
-  "Parse a character stream; FRONT-MATTER controls leading front matter."
+  "Parse a character stream; GFM controls extension parsing."
   (check-type character-stream stream)
   (%parse-source-buffer (make-source-buffer character-stream)
                         front-matter
+                        gfm
                         max-nesting-depth max-inline-delimiter-depth))
 
-(defun parse-octets (octet-vector &key (front-matter t)
+(defun parse-octets (octet-vector &key (front-matter t) (gfm t)
                                     (max-nesting-depth 256)
                                     (max-inline-delimiter-depth 4096))
-  "Decode and parse OCTET-VECTOR; FRONT-MATTER controls leading front matter."
+  "Decode and parse OCTET-VECTOR; GFM controls extension parsing."
   (unless (typep octet-vector '(vector (unsigned-byte 8)))
     (error 'type-error :datum octet-vector
            :expected-type '(vector (unsigned-byte 8))))
   (%parse-source-buffer (make-source-buffer octet-vector)
                         front-matter
+                        gfm
                         max-nesting-depth max-inline-delimiter-depth))
 
-(defun parse (source &key (front-matter t)
+(defun parse (source &key (front-matter t) (gfm t)
                         (max-nesting-depth 256)
                         (max-inline-delimiter-depth 4096))
-  "Parse SOURCE; FRONT-MATTER controls recognition of a leading front-matter block."
+  "Parse SOURCE; GFM controls extension parsing and FRONT-MATTER controls leading front matter."
   (cond
     ((stringp source)
      (parse-string source
                    :front-matter front-matter
+                   :gfm gfm
                    :max-nesting-depth max-nesting-depth
                    :max-inline-delimiter-depth max-inline-delimiter-depth))
     ((typep source '(vector (unsigned-byte 8)))
      (parse-octets source
                    :front-matter front-matter
+                   :gfm gfm
                    :max-nesting-depth max-nesting-depth
                    :max-inline-delimiter-depth max-inline-delimiter-depth))
     ((and (streamp source) (input-stream-p source))
      (parse-stream source
                    :front-matter front-matter
+                   :gfm gfm
                    :max-nesting-depth max-nesting-depth
                    :max-inline-delimiter-depth max-inline-delimiter-depth))
     (t

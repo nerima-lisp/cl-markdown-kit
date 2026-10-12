@@ -30,6 +30,31 @@ BLOCK_FIXTURE_SPEC.loader.exec_module(block_fixtures)
 
 INLINE_CONTAINERS = {"paragraph", "heading", "table_cell"}
 
+# cmark-gfm 0.29 loses two CommonMark 0.31.2 distinctions in its XML output.
+COMMONMARK_SPEC_INLINE_OVERRIDES = {
+    "commonmark-0196": [
+        [
+            [
+                [
+                    block_fixtures.Symbol(":link"),
+                    "/url",
+                    "\ntitle\nline1\nline2\n",
+                    [[block_fixtures.Symbol(":text"), "foo"]],
+                ]
+            ]
+        ],
+        [],
+    ],
+    "commonmark-0354": [
+        [
+            [[block_fixtures.Symbol(":text"), "*$*alpha."]],
+            [[block_fixtures.Symbol(":text"), "*£*bravo."]],
+            [[block_fixtures.Symbol(":text"), "*€*charlie."]],
+        ],
+        [],
+    ]
+}
+
 
 def source_position(value: str, example: block_fixtures.Example) -> tuple[int, int, int, int]:
     match = re.match(r"^(\d+):(\d+)-(\d+):(\d+)$", value)
@@ -221,7 +246,11 @@ def main(argv: list[str] | None = None) -> int:
                 cmark, example, example.identifier.startswith("gfm-")
             )
             try:
-                entries.append((example.identifier, parse_signature(xml, example)))
+                signature = parse_signature(xml, example)
+                signature = COMMONMARK_SPEC_INLINE_OVERRIDES.get(
+                    example.identifier, signature
+                )
+                entries.append((example.identifier, signature))
             except ET.ParseError as error:
                 raise ValueError(f"{example.identifier}: invalid cmark XML: {error}") from error
 

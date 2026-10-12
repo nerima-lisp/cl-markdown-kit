@@ -1,14 +1,15 @@
 (in-package #:cl-markdown-kit/test)
 
 (defun inline-parser-test-parse (text &optional reference-index
-                                 &key (max-inline-delimiter-depth 4096))
+                                 &key (max-inline-delimiter-depth 4096) (gfm t))
   (let* ((buffer (cl-markdown-kit:make-source-buffer text))
          (index (or reference-index (make-hash-table :test #'equal))))
     (cl-markdown-kit::parse-inline
      (cl-markdown-kit:source-buffer-normalized-text buffer)
      (cl-markdown-kit::source-buffer-boundary-map buffer)
      index
-     :max-inline-delimiter-depth max-inline-delimiter-depth)))
+     :max-inline-delimiter-depth max-inline-delimiter-depth
+     :gfm gfm)))
 
 (defun inline-parser-test-parse-range (text link-allowed &optional start end)
   (let* ((buffer (cl-markdown-kit:make-source-buffer text))
@@ -184,7 +185,11 @@
   (handler-case
       (let* ((document
                (cl-markdown-kit:parse-string
-                (spec-example-markdown example) :front-matter nil))
+                (spec-example-markdown example)
+                :front-matter nil
+                :gfm (string= "gfm-"
+                              (spec-example-id example)
+                              :end2 4)))
              (fragments (inline-parser-test-block-fragments document))
              (footnotes
                (loop for definition in
@@ -392,6 +397,19 @@
               :to-equal '("http://www.example.com" "www.example.com"
                           :bare-url (58 73 1 59 1 74) "."))))
 
+  (it "disables GFM-only inline syntax in CommonMark mode"
+    (let* ((index (inline-parser-test-reference-index))
+           (source "www.example.com foo@bar.example.com ~~gone~~ [^Note]")
+           (commonmark (inline-parser-test-parse source index :gfm nil))
+           (gfm (inline-parser-test-parse source index :gfm t)))
+      (expect (list (notany #'cl-markdown-kit:autolink-p commonmark)
+                    (notany #'cl-markdown-kit:strikethrough-p commonmark)
+                    (notany #'cl-markdown-kit:footnote-reference-p commonmark)
+                    (some #'cl-markdown-kit:autolink-p gfm)
+                    (some #'cl-markdown-kit:strikethrough-p gfm)
+                    (some #'cl-markdown-kit:footnote-reference-p gfm))
+              :to-equal '(t t t t t t))))
+
   (it "validates angle autolinks and GFM URL boundaries and punctuation"
     (let* ((index (make-hash-table :test #'equal))
            (nodes (inline-parser-test-parse
@@ -561,9 +579,11 @@
     (let* ((currency (inline-parser-test-parse "*£*bravo."))
            (email (inline-parser-test-parse "Email me at:scyther@pokemon.com"))
            (invalid-email (inline-parser-test-parse "(_A_@_.A")))
-      (expect (and (cl-markdown-kit:emphasis-p (first currency))
-                   (not (cl-markdown-kit::%ip-commonmark-punctuation-p
-                         (code-char #x00A3)))
+      (expect (and (notany #'cl-markdown-kit:emphasis-p currency)
+                   (cl-markdown-kit::%ip-commonmark-punctuation-p
+                    (code-char #x00A3))
+                   (cl-markdown-kit::%ip-commonmark-punctuation-p
+                    (code-char #x20AC))
                    (cl-markdown-kit::%ip-commonmark-punctuation-p
                     (code-char #x2014)))
               :to-be-truthy)
@@ -679,6 +699,26 @@
                    (cl-markdown-kit:html-inline-p comment)
                    (string= (cl-markdown-kit:html-inline-body comment)
                             "<!-- comment -->"))
+              :to-be-truthy)))
+
+  (it "trims spaces at inline line boundaries and at the fragment end"
+    (let* ((hard (inline-parser-test-parse (format nil "foo  ~%  bar")))
+           (backslash-hard
+             (inline-parser-test-parse (format nil "foo\\~%     bar")))
+           (soft (inline-parser-test-parse (format nil "foo ~%  bar")))
+           (trailing (inline-parser-test-parse "foo  ")))
+      (expect (mapcar #'inline-parser-test-node-sequence-signature
+                      (list hard backslash-hard soft trailing))
+              :to-equal '(((:text "foo") (:hard-break) (:text "bar"))
+                          ((:text "foo") (:hard-break) (:text "bar"))
+                          ((:text "foo") (:soft-break) (:text "bar"))
+                          ((:text "foo"))))))
+
+  (it "recognizes multiline raw HTML tags with later attributes"
+    (let* ((source (format nil "<a foo=\"bar\" bam = 'baz <em>\"</em>'~%_boolean zoop:33=zoop:33 />"))
+           (html (first (inline-parser-test-parse source))))
+      (expect (and (cl-markdown-kit:html-inline-p html)
+                   (string= (cl-markdown-kit:html-inline-body html) source))
               :to-be-truthy)))
 
   (it "decodes every HTML C1 numeric-reference replacement"

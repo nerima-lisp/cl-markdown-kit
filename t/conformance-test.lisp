@@ -82,19 +82,20 @@
                              (spec-example-html example))
                 "<IGNORE>")))
 
-(defun %conformance-html-render-result (example)
+(defun %conformance-html-render-result (example gfm)
   (let ((document
           (handler-case
               (cl-markdown-kit:parse-string
                (%conformance-html-fixture-text
                 (spec-example-markdown example))
-               :front-matter nil)
+               :front-matter nil :gfm gfm)
             (error (condition)
               (return-from %conformance-html-render-result
                 (values :parse-error condition))))))
     (handler-case
         (let ((html (cl-markdown-kit:write-html
-                     document :raw-html :pass-through :unsafe-urls t))
+                     document :raw-html :pass-through :unsafe-urls t
+                     :gfm gfm))
               (expected (%conformance-html-fixture-text
                          (spec-example-html example))))
           (if (string= html expected)
@@ -114,7 +115,7 @@
   (subseq string (max 0 (- difference 32))
           (min (length string) (+ difference 64))))
 
-(defun %check-html-conformance (name examples exclusions)
+(defun %check-html-conformance (name examples exclusions &key (gfm t))
   (let* ((failures nil)
          (exclusion-map (make-hash-table :test #'equal))
          (stale-exclusions nil))
@@ -122,7 +123,7 @@
       (setf (gethash (first exclusion) exclusion-map) (third exclusion)))
     (dolist (example examples)
       (multiple-value-bind (status detail)
-          (%conformance-html-render-result example)
+          (%conformance-html-render-result example gfm)
         (unless (eq status :match)
           (push (list example status detail) failures))))
     (setf failures (nreverse failures))
@@ -179,7 +180,7 @@
                                               :key #'spec-example-id
                                               :test #'string=))
                         (conformance-read-exclusions))))
-      (%check-html-conformance "T-001" examples exclusions)))
+      (%check-html-conformance "T-001" examples exclusions :gfm nil)))
 
   (it "matches all GFM extension and footnote HTML examples"
     (let* ((all-examples (gfm-extension-examples))
@@ -191,4 +192,4 @@
                         (conformance-read-exclusions))))
       (format t "T-002 fixture placeholders omitted: ~D~%"
               (- (length all-examples) (length examples)))
-      (%check-html-conformance "T-002" examples exclusions))))
+      (%check-html-conformance "T-002" examples exclusions :gfm t))))

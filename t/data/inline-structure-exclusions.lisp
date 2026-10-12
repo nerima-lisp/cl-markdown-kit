@@ -1,11 +1,2 @@
 ; Each entry is (example-id reason); keep the reason specific and reproducible.
-(("commonmark-0028" "Pinned cmark-gfm 0.29.0.gfm.13 preserves this out-of-range numeric reference literally, while CommonMark 0.31.2 requires U+FFFD.")
- ("commonmark-0079" "The block parser retains the ATX closing-marker text in this heading's inline fragment.")
- ("commonmark-0196" "The block parser retains line breaks in this multiline link-reference title instead of folding them to spaces.")
- ("commonmark-0210" "The block parser does not consume this reference definition, so its source is parsed as paragraph inline text.")
- ("commonmark-0608" "The parser enables GFM bare autolinks for every document; this CommonMark-only example expects the extension to be disabled.")
- ("commonmark-0611" "The parser enables GFM bare URL autolinks for every document; this CommonMark-only example expects the extension to be disabled.")
- ("commonmark-0612" "The parser enables GFM bare email autolinks for every document; this CommonMark-only example expects the extension to be disabled.")
- ("commonmark-0616" "The block parser does not classify this multiline raw HTML block as an HTML block, so its contents enter inline parsing.")
- ("gfm-0009" "The block parser does not remove escaped table-pipe backslashes inside code spans before inline parsing.")
- ("gfm-0011" "The block parser does not remove escaped table-pipe backslashes inside code spans before inline parsing."))
+(("commonmark-0028" "Pinned cmark-gfm 0.29.0.gfm.13 preserves this out-of-range numeric reference literally, while CommonMark 0.31.2 requires U+FFFD."))

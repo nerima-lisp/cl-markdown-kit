@@ -48,3 +48,4 @@ coverage.dat
 /site/
 /.serena/cache/
 /.omo/
+/scripts/cl-markdown-kit-coverage/
