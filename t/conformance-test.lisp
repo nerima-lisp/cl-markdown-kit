@@ -83,20 +83,25 @@
                 "<IGNORE>")))
 
 (defun %conformance-html-render-result (example)
-  (handler-case
-      (let* ((document (cl-markdown-kit:parse-string
-                        (%conformance-html-fixture-text
-                         (spec-example-markdown example))
-                        :front-matter nil))
-             (html (cl-markdown-kit:write-html
-                    document :raw-html :pass-through :unsafe-urls t))
-             (expected (%conformance-html-fixture-text
-                        (spec-example-html example))))
-        (if (string= html expected)
-            (values :match nil)
-            (values :mismatch html)))
-    (error (condition)
-      (values :parser-error condition))))
+  (let ((document
+          (handler-case
+              (cl-markdown-kit:parse-string
+               (%conformance-html-fixture-text
+                (spec-example-markdown example))
+               :front-matter nil)
+            (error (condition)
+              (return-from %conformance-html-render-result
+                (values :parse-error condition))))))
+    (handler-case
+        (let ((html (cl-markdown-kit:write-html
+                     document :raw-html :pass-through :unsafe-urls t))
+              (expected (%conformance-html-fixture-text
+                         (spec-example-html example))))
+          (if (string= html expected)
+              (values :match nil)
+              (values :mismatch html)))
+      (error (condition)
+        (values :html-writer-error condition)))))
 
 (defun %conformance-html-difference (expected actual)
   (let ((limit (min (length expected) (length actual))))
@@ -148,14 +153,11 @@
                 name (mapcar (lambda (failure)
                                (spec-example-id (first failure)))
                              unexcluded-failures)))
-      (loop for failure in unexcluded-failures
-            for index from 1
-            while (<= index 12)
-            do
+      (dolist (failure unexcluded-failures)
         (destructuring-bind (example status detail) failure
-          (if (eq status :parser-error)
-              (format t "~A parser error ~A: ~A~%"
-                      name (spec-example-id example) detail)
+          (if (member status '(:parse-error :html-writer-error))
+              (format t "~A ~A ~A: ~A~%"
+                      name status (spec-example-id example) detail)
               (let* ((expected (%conformance-html-fixture-text
                                 (spec-example-html example)))
                      (difference (%conformance-html-difference expected detail)))
@@ -163,11 +165,9 @@
                         name (spec-example-id example) difference
                         (%conformance-html-context expected difference)
                         (%conformance-html-context detail difference))))))
-      (when (> (length unexcluded-failures) 12)
-        (format t "~A additional HTML failures omitted from detail output: ~D~%"
-                name (- (length unexcluded-failures) 12)))
       (dolist (exclusion stale-exclusions)
         (format t "~A stale HTML exclusion ~A~%" name (first exclusion)))
+      (expect excluded-count :to-equal 0)
       (expect (length unexcluded-failures) :to-equal 0)
       (expect (length stale-exclusions) :to-equal 0))))
 
