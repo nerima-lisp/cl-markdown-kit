@@ -183,12 +183,20 @@ encoding for octet input.
 
 `source.lisp` owns source normalization, source metadata, and the
 logical-to-original boundary map; it creates `cl-parser-kit:span` values and
-defines no local position/range types. The block parser
-accepts a source buffer through `(parse-blocks source-buffer
-&key front-matter max-nesting-depth)` and returns a `block-parse-result` containing the
+defines no local position/range types. The exported block parser accepts a
+source buffer through `(parse-blocks source-buffer &key (front-matter t) (gfm t)
+(max-nesting-depth 256))` and returns a `block-parse-result` containing the
 partial document, ordered `inline-fragment` records, and normalized-label
-reference index. Each fragment identifies its owning paragraph, heading, or
-table cell, and contains logical text plus the boundary map for that text.
+reference index. The exported result type has predicate
+`block-parse-result-p`, constructor `make-block-parse-result`, and readers
+`block-parse-result-document`,
+`block-parse-result-inline-fragments`, and
+`block-parse-result-reference-index`. Each fragment identifies its owning
+paragraph, heading, or table cell, and contains logical text plus the boundary
+map for that text. The exported fragment type has predicate
+`inline-fragment-p`, constructor `make-inline-fragment`, and readers
+`inline-fragment-node`, `inline-fragment-text`, and
+`inline-fragment-boundary-map`.
 Block parsing also places all link-reference-definition nodes in source order
 on the partial document. It does not interpret inline emphasis, links, code
 spans, or inline HTML.
@@ -258,12 +266,12 @@ The `cl-markdown-kit/yaml` system provides:
 It accepts a `front-matter` node or a document, forwards the node's raw text and
 YAML options to `yaml-kit:parse`, and returns the constructed YAML value. A
 document without front matter or with empty YAML content returns `nil`. YAML
-syntax errors are wrapped in `markdown-yaml-error`, a `markdown-kit-error`
-subtype that retains the original `yaml-kit:yaml-parse-error` and reports its
-Markdown source line and column.
-The empty-stream composition condition for empty YAML content is treated as a
-`nil` value; other `cl-yaml-kit` conditions propagate unchanged. The optional
-system does not change the core AST or the `:front-matter` parse option.
+parse and composition errors are wrapped in `markdown-yaml-error`, a
+`markdown-kit-error` subtype that retains the original YAML condition and
+reports its Markdown source line and column when a source span is available.
+Empty front matter is recognized before calling the YAML parser and returns
+`nil`. YAML resource-limit conditions propagate unchanged. The optional system
+does not change the core AST or the `:front-matter` parse option.
 
 ### Writers
 
@@ -415,10 +423,23 @@ observed value), and `context` (the parser/input context). Structure-changed
 carries the edit target and a concise description of the first non-target
 projection difference; it must not carry a candidate source string. The
 condition readers are public so callers can handle these expected failures
-without parsing the printed message.
-`markdown-yaml-error` exposes the original YAML parse condition and one-based
-Markdown source line and column. YAML composition and resource-limit conditions
-from `cl-yaml-kit` propagate with their original condition types.
+without parsing the printed message:
+
+| Condition | Exported readers |
+|---|---|
+| `markdown-kit-error` | `markdown-kit-error-message` |
+| `markdown-resource-limit-error` and its subtypes | `markdown-resource-limit-error-limit-name`, `markdown-resource-limit-error-limit`, `markdown-resource-limit-error-actual`, `markdown-resource-limit-error-context` |
+| `markdown-no-match-error` | `markdown-no-match-error-address` |
+| `markdown-ambiguous-match-error` | `markdown-ambiguous-match-error-address`, `markdown-ambiguous-match-error-candidates` |
+| `markdown-invalid-section-address-error` | `markdown-invalid-section-address-error-address`, `markdown-invalid-section-address-error-reason` |
+| `markdown-structure-changed-error` | `markdown-structure-changed-error-target`, `markdown-structure-changed-error-difference` |
+| `cl-markdown-kit/yaml:markdown-yaml-error` | `markdown-yaml-error-yaml-condition`, `markdown-yaml-error-line`, `markdown-yaml-error-column` |
+
+`markdown-yaml-error` exposes the original YAML condition and one-based
+Markdown source line and column when the front-matter node has a source span.
+YAML parse and composition conditions are wrapped in `markdown-yaml-error`;
+YAML resource-limit conditions from `cl-yaml-kit` propagate with their
+original condition types.
 
 ## Files, load order, and ownership
 

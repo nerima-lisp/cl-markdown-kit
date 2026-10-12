@@ -50,9 +50,14 @@ end. The whole-document record has an empty address and spans the document.
   (section-record-span section))
 ```
 
+| Condition | Exported readers |
+|---|---|
+| `markdown-no-match-error` | `markdown-no-match-error-address` |
+| `markdown-ambiguous-match-error` | `markdown-ambiguous-match-error-address`, `markdown-ambiguous-match-error-candidates` |
+| `markdown-invalid-section-address-error` | `markdown-invalid-section-address-error-address`, `markdown-invalid-section-address-error-reason` |
+
 No match signals `markdown-no-match-error`. A duplicate sibling match signals
-`markdown-ambiguous-match-error`; its candidates are available through
-`markdown-ambiguous-match-error-candidates` and include a heading record and
+`markdown-ambiguous-match-error`; its candidates include a heading record and
 1-based line number. Malformed addresses signal
 `markdown-invalid-section-address-error`.
 
