@@ -10,6 +10,23 @@
      index
      :max-inline-delimiter-depth max-inline-delimiter-depth)))
 
+(defun inline-parser-test-parse-range (text link-allowed)
+  (let* ((buffer (cl-markdown-kit:make-source-buffer text))
+         (normalized (cl-markdown-kit:source-buffer-normalized-text buffer))
+         (boundary-map (cl-markdown-kit::source-buffer-boundary-map buffer))
+         (index (make-hash-table :test #'equal))
+         (limit 4096)
+         (backtick-next (cl-markdown-kit::%ip-build-backtick-index normalized))
+         (html-closes (cl-markdown-kit::%ip-build-html-closes normalized)))
+    (multiple-value-bind (opens closes prefix)
+        (cl-markdown-kit::%ip-build-bracket-index
+         normalized backtick-next html-closes limit)
+      (cl-markdown-kit::%ip-parse-range
+       (cl-markdown-kit::%ip-make-context
+        normalized boundary-map index limit backtick-next opens closes prefix
+        (cl-markdown-kit::%ip-build-bare-links normalized) html-closes)
+       0 (length normalized) link-allowed 0))))
+
 (defun inline-parser-test-span (node)
   (let ((span (cl-markdown-kit:node-span node)))
     (list (cl-parser-kit:span-start span)
@@ -64,6 +81,20 @@
                    (string= (cl-markdown-kit:text-value
                              (first (cl-markdown-kit:emphasis-children punctuation)))
                             "word"))
+              :to-be-truthy)))
+
+  (it "chooses the nearest delimiter across opener buckets"
+    (let* ((nodes (inline-parser-test-parse "**outer *inner* tail**"))
+           (strong (first nodes))
+           (emphasis (second (cl-markdown-kit:strong-children strong))))
+      (expect (and (cl-markdown-kit:strong-p strong)
+                   (cl-markdown-kit:emphasis-p emphasis))
+              :to-be-truthy)
+      (expect (cl-markdown-kit:text-value
+               (first (cl-markdown-kit:emphasis-children emphasis)))
+              :to-equal "inner")
+      (expect (cl-markdown-kit:strong-p
+               (first (inline-parser-test-parse "**strong**")))
               :to-be-truthy)))
 
   (it "decodes escaped punctuation and named and numeric references"
@@ -315,13 +346,191 @@
 
   (it "parses soft breaks, backslash hard breaks, and raw HTML comments"
     (let* ((soft (inline-parser-test-parse (format nil "a~%b")))
+           (soft-spaced (inline-parser-test-parse (format nil "a ~%b")))
            (hard (inline-parser-test-parse (format nil "a\\~%b")))
            (comment (first (inline-parser-test-parse "<!-- comment -->"))))
       (expect (and (= (length soft) 3)
                    (cl-markdown-kit:soft-break-p (second soft))
+                   (cl-markdown-kit:soft-break-p (second soft-spaced))
                    (= (length hard) 3)
                    (cl-markdown-kit:hard-break-p (second hard))
                    (cl-markdown-kit:html-inline-p comment)
                    (string= (cl-markdown-kit:html-inline-body comment)
                             "<!-- comment -->"))
+              :to-be-truthy)))
+
+  (it "decodes every HTML C1 numeric-reference replacement"
+    (let* ((source (format nil "~{&#~D;~^ ~}"
+                           (loop for code from #x80 to #x9f collect code)))
+           (replacement-codes
+             '(#x20ac #x81 #x201a #x0192 #x201e #x2026 #x2020 #x2021
+               #x02c6 #x2030 #x0160 #x2039 #x0152 #x8d #x017d #x8f
+               #x90 #x2018 #x2019 #x201c #x201d #x2022 #x2013 #x2014
+               #x02dc #x2122 #x0161 #x203a #x0153 #x9d #x017e #x0178))
+           (expected (format nil "~{~C~^ ~}"
+                             (mapcar #'code-char replacement-codes)))
+           (nodes (inline-parser-test-parse source)))
+      (expect (apply #'concatenate 'string
+                     (mapcar #'cl-markdown-kit:text-value nodes))
+              :to-equal expected)
+      (expect (mapcar #'cl-markdown-kit:text-value
+                      (inline-parser-test-parse "&#0; &#xD800; &unknown;"))
+              :to-equal (list (format nil "~C ~C &unknown;"
+                                      (code-char #xfffd)
+                                      (code-char #xfffd))))))
+
+  (it "parses link destinations, escapes, whitespace, and all title delimiters"
+    (let* ((escaped-angle (first (inline-parser-test-parse "[x](<a\\>b>)")))
+           (escaped-bare (first (inline-parser-test-parse "[x](a\\)b)")))
+           (nested-bare (first (inline-parser-test-parse "[x](a(b)c)")))
+           (empty (first (inline-parser-test-parse "[x]( )")))
+           (spaced-angle (first (inline-parser-test-parse "[x](<a b>)")))
+           (multiline (first (inline-parser-test-parse
+                              (format nil "[x]( ~% a \"a\\!b\" )"))))
+           (single-quoted (first (inline-parser-test-parse "[x](a 'title')")))
+           (parenthesized (first (inline-parser-test-parse "[x](a (title))")))
+           (invalid (list (inline-parser-test-parse
+                           (format nil "[x](<a~%b>)"))
+                          (inline-parser-test-parse "[x](a(b)")
+                          (inline-parser-test-parse "[x](a (nested(inner)))")
+                          (inline-parser-test-parse "[x](a \"unclosed)"))))
+      (expect (mapcar #'cl-markdown-kit:link-destination
+                      (list escaped-angle escaped-bare nested-bare empty))
+              :to-equal '("a%3Eb" "a)b" "a(b)c" ""))
+      (expect (mapcar #'cl-markdown-kit:link-title
+                      (list multiline single-quoted parenthesized))
+              :to-equal '("a!b" "title" "title"))
+      (expect (mapcar (lambda (nodes) (notany #'cl-markdown-kit:link-p nodes))
+                      invalid)
+              :to-equal '(t t t t))
+      (expect (and (cl-markdown-kit:link-p spaced-angle)
+                   (string= (cl-markdown-kit:link-destination spaced-angle)
+                            "a%20b"))
+              :to-be-truthy)))
+
+  (it "covers raw HTML tag attributes, closing forms, and terminators"
+    (let ((valid '("<tag>" "<tag/>" "<tag disabled>"
+                   "<tag title=bare>" "<tag title='single'>"
+                   "<tag title=\"double\">" "</tag>" "<!-->" "<!--->"
+                   "<!-- comment -->" "<?pi?>" "<![CDATA[x]]>"
+                   "<!DOCTYPE html>")))
+      (expect (every (lambda (source)
+                       (let ((node (first (inline-parser-test-parse source))))
+                         (and (cl-markdown-kit:html-inline-p node)
+                              (string= (cl-markdown-kit:html-inline-body node)
+                                       source))))
+                     valid)
+              :to-be-truthy)
+      (expect (every (lambda (source)
+                       (notany #'cl-markdown-kit:html-inline-p
+                               (inline-parser-test-parse source)))
+                     '("<tag title=>" "<tag title=\"unclosed>"
+                       "<!-- unclosed" "<?unclosed" "<![CDATA[unclosed"
+                       "<!doctype html>"))
+              :to-be-truthy)
+      (expect (list (cl-markdown-kit::%ip-raw-html-end "<!--body-->" 0 11)
+                    (cl-markdown-kit::%ip-raw-html-end "<?pi?>" 0 6)
+                    (cl-markdown-kit::%ip-raw-html-end "<![CDATA[x]]>" 0 13)
+                    (cl-markdown-kit::%ip-raw-html-end "<!DOCTYPE>" 0 10))
+              :to-equal '(11 6 13 10))))
+
+  (it "validates angle email autolinks and links bare email addresses"
+    (let* ((uri (first (inline-parser-test-parse "<git+ssh:user@host>")))
+           (email (first (inline-parser-test-parse "person@example.com")))
+           (tagged-email
+             (first (inline-parser-test-parse "first.last+tag@example.com")))
+           (invalid (mapcar #'inline-parser-test-parse
+                            '("<1scheme:value>" "<a b:c>" "<a@-host>"
+                              "<a@host.>" "<a@host_name>"
+                              "name@.example")))
+           (trailing-domain (inline-parser-test-parse "person@example.com_")))
+      (expect (list (cl-markdown-kit:autolink-kind uri)
+                    (cl-markdown-kit:autolink-destination uri)
+                    (cl-markdown-kit:autolink-kind email)
+                    (cl-markdown-kit:autolink-destination email)
+                    (cl-markdown-kit:autolink-display-text tagged-email))
+              :to-equal '(:angle-uri "git+ssh:user@host" :bare-email
+                          "mailto:person@example.com"
+                          "first.last+tag@example.com"))
+      (expect (every (lambda (nodes)
+                       (notany #'cl-markdown-kit:autolink-p nodes))
+                     invalid)
+              :to-be-truthy)
+      (expect (notany #'cl-markdown-kit:autolink-p trailing-domain)
+              :to-be-truthy)
+      (expect (and (cl-markdown-kit::%ip-angle-email-p "a@b" 0 3 1)
+                   (not (cl-markdown-kit::%ip-angle-email-p "a@-b" 0 4 1))
+                   (not (cl-markdown-kit::%ip-angle-email-p "a@b-" 0 4 1))
+                   (not (cl-markdown-kit::%ip-angle-email-p "a@b." 0 4 1))
+                   (not (cl-markdown-kit::%ip-angle-email-p "@b" 0 2 0))
+                   (not (cl-markdown-kit::%ip-angle-email-p "a@" 0 2 1)))
+              :to-be-truthy)))
+
+  (it "uses the fallback angle-autolink scanner without an HTML index"
+    (expect (multiple-value-list
+             (cl-markdown-kit::%ip-angle-autolink
+              "<https://example.com>" 0 21))
+            :to-equal '("https://example.com" "https://example.com"
+                        :angle-uri 21)))
+
+  (it "trims URL punctuation and handles bare URL query entities"
+    (let* ((nodes (inline-parser-test-parse
+                   "http://example.com/?q=a&amp;."))
+           (link (find-if #'cl-markdown-kit:autolink-p nodes)))
+      (expect (list (cl-markdown-kit:autolink-kind link)
+                    (cl-markdown-kit:autolink-display-text link))
+              :to-equal '(:bare-url "http://example.com/?q=a"))
+      (expect (string= (cl-markdown-kit:text-value (car (last nodes))) "&.")
+              :to-be-truthy)))
+
+  (it "preserves link-like text when parsing disallows autolinks and links"
+    (let* ((nodes (inline-parser-test-parse-range
+                   "www.example.com <https://example.com> [x](/target)" nil)))
+      (expect (notany (lambda (node)
+                        (or (cl-markdown-kit:autolink-p node)
+                            (cl-markdown-kit:link-p node)))
+                      nodes)
+              :to-be-truthy)))
+
+  (it "normalizes padded code spans and preserves non-escapable backslashes"
+    (let* ((padded (first (inline-parser-test-parse "`  code  `")))
+           (spaces (first (inline-parser-test-parse "`  `")))
+           (plain (inline-parser-test-parse "ordinary text \\q \\")))
+      (expect (list (cl-markdown-kit:code-span-literal-text padded)
+                    (cl-markdown-kit:code-span-literal-text spaces)
+                    (mapcar #'cl-markdown-kit:text-value plain))
+              :to-equal '(" code " "  " ("ordinary text \\q \\")))))
+
+  (it "rejects invalid inline parser arguments"
+    (let* ((buffer (cl-markdown-kit:make-source-buffer "x"))
+           (text (cl-markdown-kit:source-buffer-normalized-text buffer))
+           (boundary-map (cl-markdown-kit::source-buffer-boundary-map buffer))
+           (index (make-hash-table :test #'equal)))
+      (expect (handler-case
+                  (progn (cl-markdown-kit::parse-inline text boundary-map index
+                                                        :max-inline-delimiter-depth 0)
+                         nil)
+                (type-error () t))
+              :to-be-truthy)
+      (expect (handler-case
+                  (progn (cl-markdown-kit::parse-inline text boundary-map nil) nil)
+                (type-error () t))
+              :to-be-truthy)
+      (expect (handler-case
+                  (progn (cl-markdown-kit::parse-inline 1 boundary-map index) nil)
+                (type-error () t))
+              :to-be-truthy)
+      (expect (handler-case
+                  (progn (cl-markdown-kit::parse-inline text nil index) nil)
+                (type-error () t))
+              :to-be-truthy)
+      (expect (handler-case
+                  (progn (cl-markdown-kit::parse-inline
+                          text boundary-map index :max-inline-delimiter-depth "bad")
+                         nil)
+                (type-error () t))
+              :to-be-truthy)
+      (expect (handler-case
+                  (progn (cl-markdown-kit::parse-inline "xx" boundary-map index) nil)
+                (error () t))
               :to-be-truthy))))

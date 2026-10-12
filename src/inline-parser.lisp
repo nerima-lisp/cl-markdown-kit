@@ -164,16 +164,6 @@
             (string (code-char replacement))
             decoded)))))
 
-(defun %ip-decode-entities (text start end)
-  (with-output-to-string (output)
-    (loop with index = start
-          while (< index end)
-          do (multiple-value-bind (value next) (%ip-entity-at text index end)
-               (if value
-                   (progn (write-string value output) (setf index next))
-                   (progn (write-char (char text index) output)
-                          (incf index)))))))
-
 (defun %ip-unescape (text start end)
   (with-output-to-string (output)
     (loop with index = start
