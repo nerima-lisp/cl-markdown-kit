@@ -236,4 +236,22 @@
    #:parse-stream
    #:parse-octets
    #:write-html
-   #:write-html-to-stream))
+   #:write-html-to-stream
+   ;; Query records and functions
+   #:heading-record
+   #:heading-record-p
+   #:make-heading-record
+   #:heading-record-node
+   #:heading-record-level
+   #:heading-record-plain-text
+   #:heading-record-source-form
+   #:heading-record-section-span
+   #:section-record
+   #:section-record-p
+   #:make-section-record
+   #:section-record-heading
+   #:section-record-span
+   #:section-record-address
+   #:document-headings
+   #:find-section
+   #:extract))

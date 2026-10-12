@@ -27,7 +27,8 @@
                (:file "block-parser")
                (:file "inline-parser")
                (:file "parse")
-               (:file "html-writer"))
+               (:file "html-writer")
+               (:file "query"))
   :in-order-to ((test-op (test-op "cl-markdown-kit/test"))))
 
 (asdf:defsystem "cl-markdown-kit/test"
@@ -52,7 +53,8 @@
                (:file "block-parser")
                (:file "inline-parser")
                (:file "character-data")
-               (:file "html-writer"))
+               (:file "html-writer")
+               (:file "query"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (let* ((condition-class
