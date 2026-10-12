@@ -64,17 +64,15 @@
             "noframes" "script" "plaintext"))))
 
 (defun %hw-filter-html (context string)
-  (if (not (eq (%html-writer-context-raw-html context) :pass-through))
-      (%hw-write context string)
-      (loop with start = 0
-            for index = (position #\< string :start start)
-            while index
-            do (%hw-write context (subseq string start index))
-               (if (%hw-tagfilter-match-p string index)
-                   (%hw-write context "&lt;")
-                   (%hw-write-char context #\<))
-               (setf start (1+ index))
-            finally (%hw-write context (subseq string start)))))
+  (loop with start = 0
+        for index = (position #\< string :start start)
+        while index
+        do (%hw-write context (subseq string start index))
+           (if (%hw-tagfilter-match-p string index)
+               (%hw-write context "&lt;")
+               (%hw-write-char context #\<))
+           (setf start (1+ index))
+        finally (%hw-write context (subseq string start))))
 
 (defun %hw-build-footnote-context (document)
   (let ((definitions (make-hash-table :test #'equal))

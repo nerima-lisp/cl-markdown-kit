@@ -240,3 +240,252 @@
              (with-output-to-string (stream)
                (cl-markdown-kit:write-html-to-stream document stream))))
       (expect stream-output :to-equal string-output))))
+
+(describe "HTML writer boundary coverage"
+  (it "renders empty documents and omits non-rendered block nodes"
+    (expect (cl-markdown-kit:write-html (html-writer-test-document))
+            :to-equal "")
+    (expect
+     (html-writer-test-render
+      (list (cl-markdown-kit:make-front-matter :raw-text "title: test")
+            (cl-markdown-kit:make-link-reference-definition
+             :raw-label "ref" :normalized-label "ref"
+             :destination "/ref" :eligible-p t)
+            (cl-markdown-kit:make-footnote-definition
+             :raw-label "unused" :normalized-label "unused")))
+     :to-equal ""))
+
+  (it "renders raw block HTML in escape mode and filters every tagfilter boundary"
+    (let ((escaped
+            (html-writer-test-render
+             (list (cl-markdown-kit:make-html-block
+                    :body "<b>raw</b>"))
+             :raw-html :escape))
+          (filtered
+            (html-writer-test-render
+             (list (cl-markdown-kit:make-html-block
+                    :body (concatenate
+                           'string
+                           "<script>x</script> <scriptx>safe</scriptx> "
+                           "<script/> <style type=\"text/css\">x</style> plain<")))
+             :raw-html :pass-through)))
+      (expect escaped :to-equal (format nil "&lt;b&gt;raw&lt;/b&gt;~%"))
+      (expect filtered
+              :to-equal
+              (format nil
+                      "&lt;script>x&lt;/script> <scriptx>safe</scriptx> &lt;script/> &lt;style type=\"text/css\">x&lt;/style> plain<~%"))))
+
+  (it "omits inline HTML and filters pass-through text without tag openers"
+    (expect
+     (html-writer-test-render
+      (list (cl-markdown-kit:make-paragraph
+             :children (list (cl-markdown-kit:make-html-inline :body "<i>raw</i>")))))
+     :to-equal (format nil "<p><!-- raw HTML omitted --></p>~%"))
+    (expect
+     (html-writer-test-render
+      (list (cl-markdown-kit:make-paragraph
+             :children (list (cl-markdown-kit:make-html-inline :body "plain text"))))
+      :raw-html :pass-through)
+     :to-equal (format nil "<p>plain text</p>~%")))
+
+  (it "renders code spans, breaks, emphasis, strong, and autolinks"
+    (expect
+     (html-writer-test-render
+      (list (cl-markdown-kit:make-paragraph
+             :children
+             (list (cl-markdown-kit:make-code-span :literal-text "<code>")
+                   (cl-markdown-kit:make-soft-break)
+                   (cl-markdown-kit:make-hard-break)
+                   (cl-markdown-kit:make-emphasis
+                    :children (list (cl-markdown-kit:make-text :value "em")))
+                   (cl-markdown-kit:make-text :value " ")
+                   (cl-markdown-kit:make-strong
+                    :children (list (cl-markdown-kit:make-text :value "strong")))
+                   (cl-markdown-kit:make-text :value " ")
+                   (cl-markdown-kit:make-autolink
+                    :destination "https://example.test/?a=\"x"
+                    :display-text "<https://example.test>")))))
+     :to-equal
+     (format nil
+             "<p><code>&lt;code&gt;</code>~%<br />~%<em>em</em> <strong>strong</strong> <a href=\"https://example.test/?a=%22x\">&lt;https://example.test&gt;</a></p>~%")))
+
+  (it "renders block quotes, headings, and thematic breaks"
+    (expect
+     (html-writer-test-render
+      (list (cl-markdown-kit:make-block-quote
+             :children
+             (list (cl-markdown-kit:make-paragraph
+                    :children (list (cl-markdown-kit:make-text :value "quoted")))))
+            (cl-markdown-kit:make-heading
+             :level 2
+             :children (list (cl-markdown-kit:make-text :value "Heading")))
+            (cl-markdown-kit:make-thematic-break)
+            (cl-markdown-kit:make-block-quote :children nil)))
+     :to-equal
+     (format nil
+             "<blockquote>~%<p>quoted</p>~%</blockquote>~%<h2>Heading</h2>~%<hr />~%<blockquote>~%</blockquote>~%")))
+
+  (it "allows dangerous URL schemes only when unsafe URLs are enabled"
+    (let ((output
+            (html-writer-test-render
+             (list (cl-markdown-kit:make-paragraph
+                    :children
+                    (list (cl-markdown-kit:make-link
+                           :destination "javascript:alert(1)"
+                           :children (list (cl-markdown-kit:make-text
+                                            :value "unsafe"))))))
+             :unsafe-urls t)))
+      (expect (search "href=\"javascript:alert(1)\"" output) :to-be-truthy)))
+
+  (it "renders loose and ordered lists, unchecked tasks, and empty items"
+    (expect
+     (html-writer-test-render
+      (list (cl-markdown-kit:make-list-node
+             :kind :ordered :start-number 3 :tight-p nil
+             :items
+             (list (cl-markdown-kit:make-task-list-item
+                    :checked-p nil
+                    :children
+                    (list (cl-markdown-kit:make-paragraph
+                           :children (list (cl-markdown-kit:make-text
+                                            :value "todo")))))
+                   (cl-markdown-kit:make-list-item :children nil)))))
+     :to-equal
+     (format nil
+             "<ol start=\"3\">~%<li><input type=\"checkbox\" disabled=\"\" /> ~%<p>todo</p>~%</li>~%<li></li>~%</ol>~%"))
+    (expect (html-writer-test-render
+             (list (cl-markdown-kit:make-list-node
+                    :kind :ordered :start-number 1 :tight-p t :items nil)))
+            :to-equal (format nil "<ol>~%</ol>~%"))
+    (expect (html-writer-test-render
+             (list (cl-markdown-kit:make-list-node
+                    :kind :ordered :start-number 4 :tight-p t :items nil)))
+            :to-equal (format nil "<ol start=\"4\">~%</ol>~%")))
+
+  (it "renders missing code info as plain code and uses only the first info token"
+    (expect
+     (html-writer-test-render
+      (list (cl-markdown-kit:make-code-block :body (format nil "plain~%"))
+            (cl-markdown-kit:make-code-block :body (format nil "blank~%")
+                                             :info-string (format nil " ~C " #\Tab))
+            (cl-markdown-kit:make-code-block :body (format nil "marked~%")
+                                             :info-string " lisp extra")))
+     :to-equal
+     (format nil
+             "<pre><code>plain~%</code></pre>~%<pre><code>blank~%</code></pre>~%<pre><code class=\"language-lisp\">marked~%</code></pre>~%")))
+
+  (it "renders all plain inline forms in image alt text"
+    (expect
+     (html-writer-test-render
+      (list (cl-markdown-kit:make-paragraph
+             :children
+             (list (cl-markdown-kit:make-image
+                    :destination "/alt"
+                    :children
+                    (list (cl-markdown-kit:make-text :value "text")
+                          (cl-markdown-kit:make-code-span :literal-text " <code>")
+                          (cl-markdown-kit:make-html-inline :body " <raw>")
+                          (cl-markdown-kit:make-soft-break)
+                          (cl-markdown-kit:make-hard-break)
+                          (cl-markdown-kit:make-autolink
+                           :destination "/auto" :display-text "auto")
+                          (cl-markdown-kit:make-footnote-reference
+                           :raw-label "note" :normalized-label "note")
+                          (cl-markdown-kit:make-emphasis
+                           :children (list (cl-markdown-kit:make-text
+                                            :value " nested")))))))))
+     :to-equal
+     (format nil
+             "<p><img src=\"/alt\" alt=\"text &lt;code&gt; &lt;raw&gt;  auto nested\" /></p>~%")))
+
+  (it "numbers repeated footnote references and handles definitions without paragraph endings"
+    (let ((output
+            (html-writer-test-render
+             (list (cl-markdown-kit:make-paragraph
+                    :children
+                    (list (cl-markdown-kit:make-footnote-reference
+                           :raw-label "note" :normalized-label "note")
+                          (cl-markdown-kit:make-text :value " ")
+                          (cl-markdown-kit:make-footnote-reference
+                           :raw-label "note" :normalized-label "note")))
+                   (cl-markdown-kit:make-footnote-definition
+                    :raw-label "note" :normalized-label "note"
+                    :children
+                    (list (cl-markdown-kit:make-code-block
+                           :body (format nil "body~%"))))))))
+      (expect (search "id=\"fnref-note-2\"" output) :to-be-truthy)
+      (expect (search "href=\"#fnref-note-2\"" output) :to-be-truthy)
+      (expect (search "aria-label=\"Back to reference 1-2\"" output)
+              :to-be-truthy)))
+
+  (it "keeps unresolved footnote references and renders header-only tables"
+    (expect
+     (html-writer-test-render
+      (list (cl-markdown-kit:make-paragraph
+             :children (list (cl-markdown-kit:make-footnote-reference
+                              :raw-label "missing"
+                              :normalized-label "missing")))
+            (cl-markdown-kit:make-table
+             :rows
+             (list (cl-markdown-kit:make-table-row
+                    :header-row-p t
+                    :cells
+                    (list (cl-markdown-kit:make-table-cell
+                           :children (list (cl-markdown-kit:make-text
+                                            :value "Header")))))))))
+     :to-equal
+     (format nil "<p></p>~%<table>~%<thead>~%<tr>~%<th>Header</th>~%</tr>~%</thead>~%</table>~%")))
+
+  (it "rejects unsupported nodes, invalid options, and non-output streams"
+    (expect
+     (handler-case
+         (progn (cl-markdown-kit:write-html :not-a-document) nil)
+       (type-error () t))
+     :to-be-truthy)
+    (expect
+     (handler-case
+         (progn
+           (cl-markdown-kit:write-html
+            (html-writer-test-document
+             (cl-markdown-kit:make-block-node)))
+           nil)
+       (error () t))
+     :to-be-truthy)
+    (expect
+     (handler-case
+         (progn
+           (html-writer-test-render
+            (list (cl-markdown-kit:make-paragraph
+                   :children (list (cl-markdown-kit:make-inline-node)))))
+           nil)
+       (error () t))
+     :to-be-truthy)
+    (expect
+     (handler-case
+         (progn (cl-markdown-kit:write-html (html-writer-test-document)
+                                            :raw-html :invalid)
+                nil)
+       (error () t))
+     :to-be-truthy)
+    (expect
+     (handler-case
+         (progn (cl-markdown-kit:write-html (html-writer-test-document)
+                                            :unsafe-urls :invalid)
+                nil)
+       (error () t))
+     :to-be-truthy)
+    (expect
+     (handler-case
+         (with-input-from-string (stream "")
+           (cl-markdown-kit:write-html-to-stream
+            (html-writer-test-document) stream)
+           nil)
+       (error () t))
+     :to-be-truthy)
+    (expect
+     (handler-case
+         (progn (cl-markdown-kit:write-html-to-stream
+                 (html-writer-test-document) "not-a-stream")
+                nil)
+       (type-error () t))
+     :to-be-truthy)))
