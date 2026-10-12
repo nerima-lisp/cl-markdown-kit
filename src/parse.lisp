@@ -56,6 +56,8 @@
           (document-source document) (source-buffer-source source-buffer)
           (document-source-format document) (source-buffer-format source-buffer)
           (document-reference-index document) reference-index
+          (document-front-matter-p document) (not (null front-matter))
+          (document-gfm-p document) gfm
           (document-max-nesting-depth document) nesting-limit
           (document-max-inline-delimiter-depth document) inline-limit)
     document))

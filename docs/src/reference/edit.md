@@ -47,11 +47,16 @@ Replacement newlines use the first line-ending sequence in the edited range.
 When that range has none, the nearest preceding sequence is used, then the
 nearest following sequence, and finally LF. CRLF and CR in replacement Markdown
 are normalized to that sequence. Source outside the edit interval, BOM presence,
-and the document's final-newline state are preserved. An edit that reaches EOF
-leaves exactly one final line ending when the input had one, and none otherwise.
+and final-newline presence are preserved. For an edit that reaches EOF, any
+adjustment to match the original final-newline presence applies only to the
+inserted or replacement Markdown. Untouched trailing blank lines and their line
+endings remain unchanged; the candidate is not normalized to one final line
+ending.
 
-After each edit, the source is parsed again with the document's original
-nesting and delimiter limits. The edit is rejected with
+After each edit, the source is parsed again with `:front-matter` and `:gfm`
+set from `(document-front-matter-p document)` and `(document-gfm-p document)`,
+respectively. It also reuses the document's `:max-nesting-depth` and
+`:max-inline-delimiter-depth`. The edit is rejected with
 `markdown-structure-changed-error` if a non-target block's source interval,
 kind, semantic text, or semantic attributes change. The condition exposes the
 edit target and the first difference; it does not contain candidate source.

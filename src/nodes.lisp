@@ -18,12 +18,14 @@
              (:include block-node)
              (:constructor make-document
                  (&key span continuation-prefix children source source-format
-                       reference-index max-nesting-depth
+                       reference-index front-matter-p gfm-p max-nesting-depth
                        max-inline-delimiter-depth)))
   (children nil :type list)
   (source nil :type (or null string))
   (source-format nil :type (or null source-format))
   (reference-index nil :type (or null hash-table))
+  (front-matter-p t :type boolean)
+  (gfm-p t :type boolean)
   (max-nesting-depth 256 :type (integer 1 *))
   (max-inline-delimiter-depth 4096 :type (integer 1 *)))
 

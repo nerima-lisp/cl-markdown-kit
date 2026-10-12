@@ -64,6 +64,8 @@
    #:document-reference-index
    #:document-max-nesting-depth
    #:document-max-inline-delimiter-depth
+   #:document-front-matter-p
+   #:document-gfm-p
    #:front-matter
    #:front-matter-p
    #:make-front-matter

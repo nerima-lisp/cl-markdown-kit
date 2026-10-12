@@ -28,7 +28,7 @@ inline nodes.
 
 | Type | Constructor | Fields |
 |---|---|---|
-| `document` | `make-document` | `children`, `source`, `source-format`, `reference-index`, `max-nesting-depth`, `max-inline-delimiter-depth` |
+| `document` | `make-document` | `children`, `source`, `source-format`, `reference-index`, `front-matter-p`, `gfm-p`, `max-nesting-depth`, `max-inline-delimiter-depth` |
 | `front-matter` | `make-front-matter` | `raw-text`, `opening-delimiter`, `closing-delimiter` |
 | `block-quote` | `make-block-quote` | `children` |
 | `list-node` | `make-list-node` | `kind` (`:ordered` or `:unordered`), `tight-p`, `start-number`, `marker-character`, `delimiter-character`, `items` |
@@ -133,6 +133,12 @@ The parser retains front-matter text without interpreting it as YAML.
 
 `:gfm` defaults to `t`, enabling GFM block and inline extensions. Set it to
 `nil` to parse CommonMark without GFM extensions.
+
+`make-document` accepts `:front-matter-p` and `:gfm-p` keywords. A parsed
+document exposes these settings through `document-front-matter-p` and
+`document-gfm-p`, respectively; each reader returns `t` when its option is
+enabled and `nil` when disabled. Source-preserving edit operations reuse these
+values when reparsing edited source.
 
 Limits must be positive integers. Defaults are 256 open block-container
 levels and 4096 unresolved inline delimiter or bracket records in a fragment.

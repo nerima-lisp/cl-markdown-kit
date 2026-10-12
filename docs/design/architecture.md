@@ -352,13 +352,15 @@ higher-level heading, including separator lines in that interval; a section
 body replacement starts immediately after the heading's line ending. The
 empty address targets all document content while retaining the BOM and final
 newline state. If inserted text could merge with a following block, the edit
-layer inserts a separating blank line, then reparses with the original
-limits. `replace-node` accepts Markdown relative to the selected block, without
-enclosing container prefixes. It keeps the source text before the first line
-of the block, then inserts the node's `continuation-prefix` before every later
-replacement line. This supports nested blockquotes and list items while
-preserving their parent context. Replacing a container node includes its own
-markers in the replacement and uses only its enclosing prefix. The edit
+layer inserts a separating blank line. The document retains its effective
+`:front-matter` and `:gfm` options alongside the parser limits, and edits
+reparse candidates with those original values. `replace-node` accepts Markdown
+relative to the selected block, without enclosing container prefixes. It keeps
+the source text before the first line of the block, then inserts the node's
+`continuation-prefix` before every later replacement line. This supports nested
+blockquotes and list items while preserving their parent context. Replacing a
+container node includes its own markers in the replacement and uses only its
+enclosing prefix. The edit
 interval is the target node/section span (or a zero-width insertion point);
 unchanged prefix and suffix nodes are paired by their source intervals after
 applying the splice-length delta. The target subtree is the selected

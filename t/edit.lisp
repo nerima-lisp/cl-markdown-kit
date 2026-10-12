@@ -697,4 +697,35 @@
                    reference-document definition "[ref]: /new")))))
         (expect (typep reference-condition
                        'cl-markdown-kit:markdown-structure-changed-error)
-                :to-be-truthy)))))
+                :to-be-truthy))))
+  (it "retains :front-matter nil when verifying edits"
+      (let* ((source (edit-lines "---" "title: x" "---" ""
+                                 "# A" "" "old" ""))
+             (document (cl-markdown-kit:parse-string
+                        source :front-matter nil))
+             (edited (cl-markdown-kit:replace-section-body
+                      document "/A" "new")))
+        (expect (edit-heading-texts
+                 (cl-markdown-kit:parse-string
+                  edited :front-matter nil))
+                :to-equal (list "title: x" "A"))
+        (expect (search "new" edited) :to-be-truthy)))
+  (it "normalizes truthy :front-matter values for edits"
+      (let* ((source (edit-lines "# A" "" "old" ""))
+             (document (cl-markdown-kit:parse-string
+                        source :front-matter :enabled))
+             (edited (cl-markdown-kit:replace-section-body
+                      document "/A" "new")))
+        (expect (cl-markdown-kit:document-front-matter-p document)
+                :to-be-truthy)
+        (expect (search "new" edited) :to-be-truthy)))
+  (it "retains :gfm nil when verifying edits"
+      (let* ((source (edit-lines "# A" "" "x" "" "# B" ""
+                                 "| a |" "| - |" ""))
+             (document (cl-markdown-kit:parse-string source :gfm nil))
+             (edited (cl-markdown-kit:replace-section-body
+                      document "/A" "new")))
+        (expect (edit-heading-texts
+                 (cl-markdown-kit:parse-string edited :gfm nil))
+                :to-equal (list "A" "B"))
+        (expect (search "| a |" edited) :to-be-truthy))))

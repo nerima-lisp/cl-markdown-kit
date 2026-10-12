@@ -358,6 +358,8 @@
     (document candidate source start end replacement-length target-range)
   (let* ((candidate-document
            (parse-string candidate
+                         :front-matter (document-front-matter-p document)
+                         :gfm (document-gfm-p document)
                          :max-nesting-depth (document-max-nesting-depth document)
                          :max-inline-delimiter-depth
                          (document-max-inline-delimiter-depth document)))
