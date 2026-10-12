@@ -31,6 +31,42 @@
                (:file "query"))
   :in-order-to ((test-op (test-op "cl-markdown-kit/test"))))
 
+(asdf:defsystem "cl-markdown-kit/yaml"
+  :description "YAML front matter support for cl-markdown-kit"
+  :author "takeokunn"
+  :maintainer "takeokunn"
+  :license "MIT"
+  :version "0.1.0"
+  :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
+  :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
+  :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")
+  :depends-on ("cl-markdown-kit" ; Front matter nodes and source spans.
+               "cl-yaml-kit") ; YAML parsing and value construction.
+  :pathname "src/yaml"
+  :serial t
+  :components ((:file "package")
+               (:file "front-matter"))
+  :in-order-to ((test-op (test-op "cl-markdown-kit/yaml/test"))))
+
+(asdf:defsystem "cl-markdown-kit/yaml/test"
+  :description "Tests for cl-markdown-kit YAML front matter support"
+  :author "takeokunn"
+  :maintainer "takeokunn"
+  :license "MIT"
+  :version "0.1.0"
+  :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
+  :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
+  :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")
+  :depends-on ("cl-markdown-kit/yaml" ; Exercise the optional YAML parser.
+               "cl-weave") ; Run the test suite.
+  :pathname "t"
+  :serial t
+  :components ((:file "yaml"))
+  :perform (test-op (operation component)
+             (declare (ignore operation component))
+             (unless (uiop:symbol-call :cl-markdown-kit/yaml/test :run-tests)
+               (error "cl-markdown-kit YAML test suite failed"))))
+
 (asdf:defsystem "cl-markdown-kit/test"
   :description "Tests for cl-markdown-kit"
   :author "takeokunn"
