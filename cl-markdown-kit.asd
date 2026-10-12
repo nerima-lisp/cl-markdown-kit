@@ -25,6 +25,7 @@
                (:file "source")
                (:file "nodes")
                (:file "block-parser")
+               (:file "inline-parser")
                (:file "parse"))
   :in-order-to ((test-op (test-op "cl-markdown-kit/test"))))
 
@@ -48,6 +49,7 @@
                (:file "nodes")
                (:file "parse")
                (:file "block-parser")
+               (:file "inline-parser")
                (:file "character-data"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
