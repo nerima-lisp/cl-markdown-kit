@@ -84,6 +84,7 @@
   :components ((:file "package")
                (:file "conformance-spec")
                (:file "conformance-test")
+               (:file "positions")
                (:file "helpers")
                (:file "source")
                (:file "nodes")
