@@ -391,7 +391,9 @@
            (parenthesized (first (inline-parser-test-parse "[x](a (title))")))
            (invalid (list (inline-parser-test-parse
                            (format nil "[x](<a~%b>)"))
+                          (inline-parser-test-parse "[x](<unterminated")
                           (inline-parser-test-parse "[x](a(b)")
+                          (inline-parser-test-parse "[x](a(b")
                           (inline-parser-test-parse "[x](a (nested(inner)))")
                           (inline-parser-test-parse "[x](a \"unclosed)"))))
       (expect (mapcar #'cl-markdown-kit:link-destination
@@ -402,11 +404,21 @@
               :to-equal '("a!b" "title" "title"))
       (expect (mapcar (lambda (nodes) (notany #'cl-markdown-kit:link-p nodes))
                       invalid)
-              :to-equal '(t t t t))
+              :to-equal '(t t t t t t))
       (expect (and (cl-markdown-kit:link-p spaced-angle)
                    (string= (cl-markdown-kit:link-destination spaced-angle)
                             "a%20b"))
               :to-be-truthy)))
+
+  (it "decodes entities and preserves non-escapable backslashes in link data"
+    (let* ((destination (first (inline-parser-test-parse "[x](a&amp;b)")))
+           (backslash-destination
+             (first (inline-parser-test-parse "[x](foo\\bar)")))
+           (title (first (inline-parser-test-parse "[x](a \"title\\q\")"))))
+      (expect (list (cl-markdown-kit:link-destination destination)
+                    (cl-markdown-kit:link-destination backslash-destination)
+                    (cl-markdown-kit:link-title title))
+              :to-equal '("a&b" "foo%5Cbar" "title\\q"))))
 
   (it "covers raw HTML tag attributes, closing forms, and terminators"
     (let ((valid '("<tag>" "<tag/>" "<tag disabled>"
@@ -425,6 +437,7 @@
                        (notany #'cl-markdown-kit:html-inline-p
                                (inline-parser-test-parse source)))
                      '("<tag title=>" "<tag title=\"unclosed>"
+                       "<tag" "<tag " "<tag title="
                        "<!-- unclosed" "<?unclosed" "<![CDATA[unclosed"
                        "<!doctype html>"))
               :to-be-truthy)
@@ -490,6 +503,26 @@
                         (or (cl-markdown-kit:autolink-p node)
                             (cl-markdown-kit:link-p node)))
                       nodes)
+              :to-be-truthy)))
+
+  (it "keeps a bare-link candidate inside its containing link text"
+    (let ((link (first (inline-parser-test-parse "[www.example.com](/target)"))))
+      (expect (and (cl-markdown-kit:link-p link)
+                   (string= (cl-markdown-kit:link-destination link) "/target")
+                   (some (lambda (node)
+                           (and (cl-markdown-kit:text-p node)
+                                (search "www.example.com"
+                                        (cl-markdown-kit:text-value node))))
+                         (cl-markdown-kit:link-children link)))
+              :to-be-truthy)))
+
+  (it "preserves single tilde runs and matches triple strikethrough runs"
+    (let* ((single (inline-parser-test-parse "~plain~"))
+           (triple (inline-parser-test-parse "~~~gone~~~")))
+      (expect (apply #'concatenate 'string
+                     (mapcar #'cl-markdown-kit:text-value single))
+              :to-equal "~plain~")
+      (expect (some #'cl-markdown-kit:strikethrough-p triple)
               :to-be-truthy)))
 
   (it "normalizes padded code spans and preserves non-escapable backslashes"
