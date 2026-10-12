@@ -13,10 +13,14 @@
   :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")
+  :depends-on ("cl-parser-kit" ; Public spans use cl-parser-kit:span.
+               "cl-codec-kit") ; Octet input decoding uses cl-codec-kit.
   :pathname "src"
   :serial t
   :components ((:file "package")
-               (:file "conditions"))
+               (:file "conditions")
+               (:file "source")
+               (:file "nodes"))
   :in-order-to ((test-op (test-op "cl-markdown-kit/test"))))
 
 (asdf:defsystem "cl-markdown-kit/test"
@@ -34,7 +38,9 @@
   :components ((:file "package")
                (:file "conformance-spec")
                (:file "conformance-test")
-               (:file "helpers"))
+               (:file "helpers")
+               (:file "source")
+               (:file "nodes"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (let* ((condition-class

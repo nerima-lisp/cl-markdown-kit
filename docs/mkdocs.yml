@@ -11,3 +11,5 @@ theme:
   name: material
 nav:
   - Home: index.md
+  - Reference:
+      - AST and source: reference/nodes.md
