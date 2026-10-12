@@ -270,14 +270,18 @@ for my $row (@$rows) {
       percent_text($values[$index]), percent_text($minimum[$index]);
   }
   if (@reasons) {
+    my $line_failed = defined $row->{values}[0]
+      && $row->{values}[0] < $minimum[0];
+    my $branch_failed = defined $row->{values}[1]
+      && $row->{values}[1] < $minimum[1];
     my $uncovered = $row->{uncovered};
-    my $residual_is_excluded = $uncovered eq '-'
+    my $line_failure_is_excluded = $uncovered eq '-'
       ? @$ranges
       : all { my $line = $_; line_is_excluded($line, $ranges) }
             map { my ($start, $end) = split /-/, $_; $end //= $start;
                   ($start .. $end) } split /,/, $uncovered;
     push @failures, { file => $row->{file}, reasons => \@reasons }
-      unless $residual_is_excluded;
+      if $branch_failed || ($line_failed && !$line_failure_is_excluded);
   }
 }
 
