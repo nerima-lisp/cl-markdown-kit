@@ -92,7 +92,12 @@
                          (princ-to-string start)
                          (format nil "~D-~D" start previous))
                      runs))))
-      (dolist (line lines (progn (emit-run) (format nil "~{~A~^,~}" (nreverse runs))))
+      (dolist (line lines
+               (progn
+                 (emit-run)
+                 (if runs
+                     (format nil "~{~A~^,~}" (nreverse runs))
+                     "-")))
         (cond ((null start) (setf start line previous line))
               ((= line (1+ previous)) (setf previous line))
               (t (emit-run) (setf start line previous line)))))))
