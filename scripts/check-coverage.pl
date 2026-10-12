@@ -8,7 +8,7 @@ use List::Util qw(all);
 my $EXIT_CANNOT_RUN = 2;
 
 my @COLUMNS = qw(file line-covered line-total branch-covered branch-total
-                 uncovered-lines);
+                 uncovered-lines branch-locations);
 my $EXCLUSIONS = 'scripts/coverage-exclusions.sexp';
 my $SOURCE_ROOT = 'src';
 my %ENVIRONMENT = (
@@ -21,8 +21,8 @@ my %DEFAULT = (
   'min-line'   => 100,
   'min-branch' => 100,
 );
-# Each pair names a kind and the option holding its minimum. Index 0 selects the
-# line columns 2 and 3 of a summary row, index 1 the branch columns 4 and 5.
+# Each pair names a kind and the option holding its minimum. The branch counts
+# are adjusted only for source locations covered by a declared exclusion.
 my @KINDS = (['line', 'min-line'], ['branch', 'min-branch']);
 
 sub fail {
@@ -55,6 +55,13 @@ sub fail_usage {
   my ($message) = @_;
   print STDERR "$0: $message\n\n";
   usage();
+}
+
+sub strip_lisp_strings_and_comments {
+  my ($line) = @_;
+  $line =~ s/"(?:\\.|[^"\\])*"//g;
+  $line =~ s/;.*//;
+  return $line;
 }
 
 # A set-but-empty environment variable is how a shell spells "unset", while an
@@ -100,10 +107,12 @@ sub exclusion_rules {
     next if $line =~ /\A\s*(?:;|\z)/;
     my ($kind, $head, $reproduction)
       = $line =~ /:kind\s+([^\s()]+).*?:head\s+"([^"]+)".*?:reproduction\s+"([^"]+)"/;
+    my ($name) = $line =~ /:name\s+"([^"]+)"/;
     fail("$path: expected :kind and :head in '$line'")
       unless defined $kind && defined $head && defined $reproduction;
     fail("$path: missing reproduction $reproduction") unless -f $reproduction;
-    push @rules, { kind => $kind, head => $head, reproduction => $reproduction };
+    push @rules, { kind => $kind, head => $head, name => $name,
+                   reproduction => $reproduction };
   }
   close $handle or fail("cannot read exclusions $path: $!");
   fail("$path has no exclusion rules") unless @rules;
@@ -115,28 +124,48 @@ sub source_exclusion_lines {
   open my $handle, '<', $path or fail("cannot read source $path: $!");
   my @lines = <$handle>;
   close $handle or fail("cannot read source $path: $!");
-  my %allowed = map { $_->{head} => 1 } @$rules;
   my @excluded;
   my $depth = 0;
   my $start;
   for my $index (0 .. $#lines) {
-    my $line = $lines[$index];
-    my $clean = $line;
-    $clean =~ s/;.*//;
-    my $countable = $clean;
-    $countable =~ s/"(?:\\.|[^"\\])*"//g;
-    my $opens = () = $countable =~ /\(/g;
-    my $closes = () = $countable =~ /\)/g;
+    my $clean = strip_lisp_strings_and_comments($lines[$index]);
+    my $opens = () = $clean =~ /\(/g;
+    my $closes = () = $clean =~ /\)/g;
     if ($depth == 0 && $clean =~ /\(\s*([A-Za-z0-9*+!?_-]+)/) {
       $start = $index + 1;
       my $head = $1;
-      if ($allowed{$head}) {
+      my ($form_name) = $clean =~ /\(\s*\Q$head\E\s+([^\s()]+)/;
+      my ($rule) = grep {
+        $_->{head} eq $head
+          && (!defined $_->{name}
+              || (defined $form_name && $_->{name} eq $form_name))
+      } @$rules;
+      if ($rule && $rule->{kind} eq 'defun-header') {
+        my $lambda_list_start;
+        if ($clean =~ /\(\s*\Q$head\E\s+\Q$form_name\E\s*(\()/) {
+          $lambda_list_start = $-[1];
+        }
+        if (defined $lambda_list_start) {
+          my $balance = 0;
+          my $header_end;
+          for my $j ($index .. $#lines) {
+            my $part = strip_lisp_strings_and_comments($lines[$j]);
+            $part = substr($part, $lambda_list_start) if $j == $index;
+            $balance += (() = $part =~ /\(/g);
+            $balance -= (() = $part =~ /\)/g);
+            if ($balance == 0) {
+              $header_end = $j + 1;
+              last;
+            }
+          }
+          push @excluded, [$start, $header_end, $head]
+            if defined $header_end && $start <= $header_end;
+        }
+      } elsif ($rule) {
         my $balance = 0;
         my $end = $index;
         for my $j ($index .. $#lines) {
-          my $part = $lines[$j];
-          $part =~ s/;.*//;
-          $part =~ s/"(?:\\.|[^"\\])*"//g;
+          my $part = strip_lisp_strings_and_comments($lines[$j]);
           $balance += (() = $part =~ /\(/g);
           $balance -= (() = $part =~ /\)/g);
           if ($balance <= 0) {
@@ -144,23 +173,18 @@ sub source_exclusion_lines {
             last;
           }
         }
-        push @excluded, [$start, $end + 1, $head];
-      } elsif ($head eq 'defun' || $head eq 'defmacro') {
-        my $balance = 0;
-        my $header_end = $index + 1;
-        for my $j ($index .. $#lines) {
-          my $part = $lines[$j];
-          $part =~ s/;.*//;
-          $part =~ s/"(?:\\.|[^"\\])*"//g;
-          $balance += (() = $part =~ /\(/g);
-          $balance -= (() = $part =~ /\)/g);
-          if ($j > $index && $part =~ /\(\s*[^\s()]+/ && $balance <= 1) {
-            $header_end = $j;
-            last;
+        my $excluded_end = $end + 1;
+        if ($rule->{kind} eq 'condition-declaration') {
+          for my $j ($index .. $end) {
+            my $part = strip_lisp_strings_and_comments($lines[$j]);
+            if ($part =~ /\(\s*:report\b/) {
+              $excluded_end = $j;
+              last;
+            }
           }
         }
-        push @excluded, [$start, $header_end, $head]
-          if grep { $_->{kind} eq 'defun-header' } @$rules;
+        push @excluded, [$start, $excluded_end, $head]
+          if $start <= $excluded_end;
       }
     }
     $depth += $opens - $closes;
@@ -172,6 +196,17 @@ sub line_is_excluded {
   my ($line, $ranges) = @_;
   return 1 if grep { $line >= $_->[0] && $line <= $_->[1] } @$ranges;
   return 0;
+}
+
+sub branch_counts_outside_exclusions {
+  my ($row, $ranges) = @_;
+  my ($covered, $total) = @{$row->{counts}}[2, 3];
+  for my $location (@{$row->{branch_locations}}) {
+    next unless line_is_excluded($location->[0], $ranges);
+    $covered -= $location->[1];
+    $total -= $location->[2];
+  }
+  return ($covered, $total);
 }
 
 sub read_rows {
@@ -218,8 +253,28 @@ sub read_rows {
           if $start < 1 || $end < $start;
       }
     }
+    my @branch_locations;
+    my ($location_covered, $location_total) = (0, 0);
+    if ($fields[6] ne '-') {
+      my %seen_lines;
+      for my $location (split /,/, $fields[6]) {
+        my ($line, $covered, $total)
+          = $location =~ /\A(\d+):(\d+)\/(\d+)\z/;
+        fail("$path line $number: invalid branch-locations entry '$location'")
+          unless defined $total && $line > 0 && $total > 0
+              && $covered <= $total;
+        fail("$path line $number: duplicate branch-locations line $line")
+          if $seen_lines{$line}++;
+        push @branch_locations, [0 + $line, 0 + $covered, 0 + $total];
+        $location_covered += $covered;
+        $location_total += $total;
+      }
+    }
+    fail("$path line $number: branch-locations do not match branch counts")
+      if $location_covered != $fields[3] || $location_total != $fields[4];
     push @rows, { file => $fields[0], counts => \@counts,
-                  uncovered => $uncovered };
+                  uncovered => $uncovered,
+                  branch_locations => \@branch_locations };
   }
   close $handle or fail("cannot read $path: $!");
   fail("$path is empty") unless $number;
@@ -254,9 +309,13 @@ for my $row (@$rows) {
   my $source = "$source_root/$row->{file}";
   $ranges = source_exclusion_lines($source, $rules) if -f $source;
   $row->{excluded} = $ranges;
+  my ($branch_covered, $branch_total)
+    = branch_counts_outside_exclusions($row, $ranges);
   my @values;
   for my $index (0 .. $#KINDS) {
-    my ($covered, $total) = @{$row->{counts}}[2 * $index, 2 * $index + 1];
+    my ($covered, $total) = $index == 1
+      ? ($branch_covered, $branch_total)
+      : @{$row->{counts}}[2 * $index, 2 * $index + 1];
     push @values, percentage($covered, $total);
     $totals[2 * $index] += $covered;
     $totals[2 * $index + 1] += $total;
