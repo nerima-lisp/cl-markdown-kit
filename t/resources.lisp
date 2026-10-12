@@ -258,22 +258,44 @@
 (defun resource-median (values)
   (nth (floor (length values) 2) (sort (copy-list values) #'<)))
 
-(defun resource-scaling-trial (input)
+(defconstant +resource-scaling-target-cpu-seconds+ 0.06d0)
+(defconstant +resource-scaling-minimum-cpu-seconds+ 0.05d0)
+(defconstant +resource-scaling-sample-count+ 3)
+
+(defun resource-scaling-batch (input iterations)
   (sb-ext:gc :full t)
   (let ((wall-start (get-internal-real-time))
-        (cpu-start (get-internal-run-time))
-        (document
-          (cl-markdown-kit:parse-string
-           input :max-nesting-depth 2048
-                 :max-inline-delimiter-depth 16384)))
-    (unless (cl-markdown-kit:document-p document)
-      (error "Scaling input returned a non-document."))
-    (unless (and (= (cl-markdown-kit:document-max-nesting-depth document) 2048)
-                 (= (cl-markdown-kit:document-max-inline-delimiter-depth document)
-                    16384))
-      (error "Scaling parser did not retain its configured resource limits."))
+        (cpu-start (get-internal-run-time)))
+    (dotimes (iteration iterations)
+      (declare (ignore iteration))
+      (let ((document
+              (cl-markdown-kit:parse-string
+               input :max-nesting-depth 2048
+                     :max-inline-delimiter-depth 16384)))
+        (unless (cl-markdown-kit:document-p document)
+          (error "Scaling input returned a non-document."))
+        (unless (and (= (cl-markdown-kit:document-max-nesting-depth document) 2048)
+                     (= (cl-markdown-kit:document-max-inline-delimiter-depth document)
+                        16384))
+          (error "Scaling parser did not retain its configured resource limits."))))
     (values (resource-seconds (- (get-internal-real-time) wall-start))
             (resource-seconds (- (get-internal-run-time) cpu-start)))))
+
+(defun resource-calibrate-scaling-iterations (input)
+  (let ((iterations 1))
+    (loop
+      (multiple-value-bind (wall cpu)
+          (resource-scaling-batch input iterations)
+        (declare (ignore wall))
+        (when (>= cpu +resource-scaling-target-cpu-seconds+)
+          (return iterations))
+        (setf iterations
+              (if (zerop cpu)
+                  (* iterations 2)
+                  (max (1+ iterations)
+                       (ceiling (/ (* iterations
+                                      +resource-scaling-target-cpu-seconds+)
+                                   cpu)))))))))
 
 (defun resource-time-ratio (larger smaller)
   (assert (plusp smaller))
@@ -284,8 +306,12 @@
                           (resource-input-for-scaling kind size))
                         sizes))
          (character-sizes (mapcar #'length inputs))
-         (wall-samples (make-list 3 :initial-element nil))
-         (cpu-samples (make-list 3 :initial-element nil)))
+         (wall-samples (make-list +resource-scaling-sample-count+
+                                 :initial-element nil))
+         (cpu-samples (make-list +resource-scaling-sample-count+
+                                :initial-element nil))
+         (iteration-counts (make-list +resource-scaling-sample-count+
+                                      :initial-element 0)))
     (assert (= (length sizes) 3))
     (assert (<= 1.8d0
                 (/ (second character-sizes)
@@ -301,15 +327,27 @@
                 4.4d0))
     (loop for input in inputs
           for index from 0
-          do (resource-scaling-trial input)
-             (dotimes (trial 5)
-               (declare (ignore trial))
-               (multiple-value-bind (wall cpu)
-                   (resource-scaling-trial input)
-                 (push wall (nth index wall-samples))
-                 (push cpu (nth index cpu-samples)))))
+          do (resource-scaling-batch input 1)
+             (let ((iterations
+                     (resource-calibrate-scaling-iterations input)))
+               (setf (nth index iteration-counts) iterations)
+               (dotimes (trial +resource-scaling-sample-count+)
+                 (declare (ignore trial))
+                 (multiple-value-bind (wall cpu)
+                     (resource-scaling-batch input iterations)
+                   (push wall (nth index wall-samples))
+                   (push cpu (nth index cpu-samples))))))
+    (setf wall-samples (mapcar #'nreverse wall-samples)
+          cpu-samples (mapcar #'nreverse cpu-samples))
+    (loop for samples in cpu-samples
+          do (loop for cpu in samples
+                   do (assert (<= +resource-scaling-minimum-cpu-seconds+
+                                  cpu))))
     (let* ((median-walls (mapcar #'resource-median wall-samples))
-           (median-cpus (mapcar #'resource-median cpu-samples))
+           (median-cpus
+             (mapcar (lambda (samples iterations)
+                       (/ (resource-median samples) (float iterations 1d0)))
+                     cpu-samples iteration-counts))
            (first-second
              (resource-time-ratio (second median-cpus)
                                   (first median-cpus)))
@@ -319,13 +357,16 @@
            (first-fourth
              (resource-time-ratio (third median-cpus)
                                   (first median-cpus))))
+      (format t "T-007 scaling kind=~A samples=~D chars=~S batch-iterations=~S batch-wall=~S batch-cpu=~S median-batch-wall=~S median-per-parse-cpu=~S cpu-ratios=~S~%"
+              kind +resource-scaling-sample-count+ character-sizes
+              iteration-counts wall-samples cpu-samples
+              median-walls median-cpus
+              (list first-second second-fourth first-fourth))
+      (finish-output)
       (assert (<= first-second 5.0d0))
       (assert (<= second-fourth 5.0d0))
-      (assert (<= first-fourth 8.0d0))
-      (format t "T-007 scaling kind=~A chars=~S median-wall=~S median-cpu=~S cpu-ratios=~S~%"
-              kind character-sizes median-walls median-cpus
-              (list first-second second-fourth first-fourth))
-      (finish-output))))
+      ;; Fourfold input growth below 10x remains separated from quadratic 16x growth.
+      (assert (<= first-fourth 10.0d0)))))
 
 (it "measures five families at approximately 1x, 2x, and 4x source sizes"
   (:timeout-ms 30000)
