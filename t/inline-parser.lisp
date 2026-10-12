@@ -77,6 +77,205 @@
         nil)
     (cl-markdown-kit:markdown-inline-delimiter-depth-exceeded () t)))
 
+(defun inline-parser-test-read-data (name)
+  (let ((path (merge-pathnames
+               (format nil "t/data/~A" name)
+               (asdf:system-source-directory :cl-markdown-kit))))
+    (with-open-file (stream path :direction :input :external-format :utf-8)
+      (let* ((*read-eval* nil)
+             (eof (gensym "EOF"))
+             (data (read stream nil eof)))
+        (when (eq data eof)
+          (error "The inline structure data file is empty: ~A" name))
+        (unless (eq (read stream nil eof) eof)
+          (error "The inline structure data file has multiple forms: ~A" name))
+        data))))
+
+(declaim (ftype function inline-parser-test-node-sequence-signature
+                  inline-parser-test-node-signature))
+
+(defun inline-parser-test-node-sequence-signature (nodes)
+  (let ((result nil))
+    (dolist (node nodes (nreverse result))
+      (let ((signature (inline-parser-test-node-signature node)))
+        (cond
+          ((and (eq (first signature) :text)
+                (string= (second signature) "")))
+          ((and (eq (first signature) :text)
+                result
+                (eq (first (first result)) :text))
+           (setf (second (first result))
+                 (concatenate 'string (second (first result))
+                              (second signature))))
+          (t (push signature result)))))))
+
+(defun inline-parser-test-node-signature (node)
+  (typecase node
+    (cl-markdown-kit:text
+     (list :text (cl-markdown-kit:text-value node)))
+    (cl-markdown-kit:code-span
+     (list :code (cl-markdown-kit:code-span-literal-text node)))
+    (cl-markdown-kit:html-inline
+     (list :html (cl-markdown-kit:html-inline-body node)))
+    (cl-markdown-kit:soft-break '(:soft-break))
+    (cl-markdown-kit:hard-break '(:hard-break))
+    (cl-markdown-kit:emphasis
+     (list :emphasis
+           (inline-parser-test-node-sequence-signature
+            (cl-markdown-kit:emphasis-children node))))
+    (cl-markdown-kit:strong
+     (list :strong
+           (inline-parser-test-node-sequence-signature
+            (cl-markdown-kit:strong-children node))))
+    (cl-markdown-kit:strikethrough
+     (list :strikethrough
+           (inline-parser-test-node-sequence-signature
+            (cl-markdown-kit:strikethrough-children node))))
+    (cl-markdown-kit:link
+     (list :link
+           (cl-markdown-kit:link-destination node)
+           (cl-markdown-kit:link-title node)
+           (inline-parser-test-node-sequence-signature
+            (cl-markdown-kit:link-children node))))
+    (cl-markdown-kit:image
+     (list :image
+           (cl-markdown-kit:image-destination node)
+           (cl-markdown-kit:image-title node)
+           (inline-parser-test-node-sequence-signature
+            (cl-markdown-kit:image-children node))))
+    (cl-markdown-kit:autolink
+     (list :link
+           (cl-markdown-kit:autolink-destination node)
+           nil
+           (list (list :text (cl-markdown-kit:autolink-display-text node)))))
+    (cl-markdown-kit:footnote-reference
+     (list :footnote-reference
+           (cl-markdown-kit:footnote-reference-raw-label node)))
+    (otherwise
+     (error "Unsupported inline node in structural signature: ~S" node))))
+
+(defun inline-parser-test-block-fragments (node)
+  (typecase node
+    (cl-markdown-kit:paragraph
+     (list (inline-parser-test-node-sequence-signature
+            (cl-markdown-kit:paragraph-children node))))
+    (cl-markdown-kit:heading
+     (list (inline-parser-test-node-sequence-signature
+            (cl-markdown-kit:heading-children node))))
+    (cl-markdown-kit:table-cell
+     (list (inline-parser-test-node-sequence-signature
+            (cl-markdown-kit:table-cell-children node))))
+    (cl-markdown-kit:footnote-definition nil)
+    (otherwise
+     (mapcan #'inline-parser-test-block-fragments
+             (cl-markdown-kit:node-children node)))))
+
+(defun inline-parser-test-footnote-definitions (root)
+  (let ((definitions nil))
+    (labels ((visit (node)
+               (when (cl-markdown-kit:footnote-definition-p node)
+                 (push node definitions))
+               (dolist (child (cl-markdown-kit:node-children node))
+                 (visit child))))
+      (visit root))
+    (nreverse definitions)))
+
+(defun inline-parser-test-structure-signature (example)
+  (handler-case
+      (let* ((document
+               (cl-markdown-kit:parse-string
+                (spec-example-markdown example) :front-matter nil))
+             (fragments (inline-parser-test-block-fragments document))
+             (footnotes
+               (loop for definition in
+                       (inline-parser-test-footnote-definitions document)
+                     collect
+                     (list
+                      (cl-markdown-kit:footnote-definition-raw-label definition)
+                      (mapcan #'inline-parser-test-block-fragments
+                              (cl-markdown-kit:footnote-definition-children
+                               definition))))))
+        (values (list fragments footnotes) nil))
+    (error (condition)
+      (values nil (princ-to-string condition)))))
+
+(defun inline-parser-test-normalize-node-signature (signature)
+  (case (first signature)
+    ((:link :image)
+     (list (first signature)
+           (cl-markdown-kit::normalize-uri-percent-encoding
+            (second signature))
+           (third signature)
+           (mapcar #'inline-parser-test-normalize-node-signature
+                   (fourth signature))))
+    ((:emphasis :strong :strikethrough)
+     (list (first signature)
+           (mapcar #'inline-parser-test-normalize-node-signature
+                   (second signature))))
+    (otherwise signature)))
+
+(defun inline-parser-test-trim-text-signature (signature side)
+  (when (eq (first signature) :text)
+    (setf (second signature)
+          (ecase side
+            (:left (string-left-trim '(#\Space #\Tab) (second signature)))
+            (:right (string-right-trim '(#\Space #\Tab) (second signature)))))))
+
+(defun inline-parser-test-canonicalize-fragment (signatures)
+  (let ((signatures
+          (mapcar #'inline-parser-test-normalize-node-signature
+                  (copy-tree signatures))))
+    (when signatures
+      (inline-parser-test-trim-text-signature (first signatures) :left)
+      (inline-parser-test-trim-text-signature (car (last signatures)) :right)
+      (loop for index below (length signatures)
+            for signature = (nth index signatures)
+            when (member (first signature) '(:soft-break :hard-break))
+              do (when (plusp index)
+                   (inline-parser-test-trim-text-signature
+                    (nth (1- index) signatures) :right))
+                 (when (< index (1- (length signatures)))
+                   (inline-parser-test-trim-text-signature
+                    (nth (1+ index) signatures) :left))))
+    (let ((result nil))
+      (dolist (signature signatures (nreverse result))
+        (unless (and (eq (first signature) :text)
+                     (zerop (length (second signature))))
+          (if (and (eq (first signature) :text)
+                   result
+                   (eq (first (first result)) :text))
+              (setf (second (first result))
+                    (concatenate 'string (second (first result))
+                                 (second signature)))
+              (push signature result)))))))
+
+(defun inline-parser-test-canonicalize-fragments (fragments)
+  (mapcar #'inline-parser-test-canonicalize-fragment fragments))
+
+(defun inline-parser-test-structure-difference (expected actual error-message)
+  (if error-message
+      (list :parse-error error-message)
+      (destructuring-bind (expected-fragments expected-footnotes) expected
+        (destructuring-bind (actual-fragments actual-footnotes) actual
+          (let ((difference
+                  (block-parser-test-first-difference
+                   (inline-parser-test-canonicalize-fragments expected-fragments)
+                   (inline-parser-test-canonicalize-fragments actual-fragments))))
+            (or difference
+                (loop for (label expected-content) in expected-footnotes
+                      for actual-footnote =
+                        (find label actual-footnotes :key #'first :test #'string=)
+                      unless actual-footnote
+                        do (return (list :missing-footnote label))
+                      do (let ((difference
+                                 (block-parser-test-first-difference
+                                  (inline-parser-test-canonicalize-fragments
+                                   expected-content)
+                                  (inline-parser-test-canonicalize-fragments
+                                   (second actual-footnote)))))
+                           (when difference
+                             (return (list :footnote label difference)))))))))))
+
 (describe "Inline parser"
   (it "builds nested emphasis and strong nodes with delimiter-inclusive spans"
     (let* ((node (first (inline-parser-test-parse "***word***")))
@@ -312,7 +511,7 @@
                      (string= (cl-markdown-kit:link-destination link) "/foo"))
                 :to-be-truthy))))
 
-  (it "matches only escaped square brackets in reference labels"
+  (it "decodes escaped backslashes and brackets in reference labels"
     (let ((index (make-hash-table :test #'equal)))
       (setf (gethash "ref[" index)
             (cl-markdown-kit:make-link-reference-definition
@@ -321,20 +520,29 @@
             (gethash "foo!" index)
             (cl-markdown-kit:make-link-reference-definition
              :raw-label "foo!" :normalized-label "foo!"
-             :destination "/punctuation" :eligible-p t))
+             :destination "/punctuation" :eligible-p t)
+            (gethash "bar\\" index)
+            (cl-markdown-kit:make-link-reference-definition
+             :raw-label "bar\\" :normalized-label "bar\\"
+             :destination "/backslash" :eligible-p t))
       (let ((bracket-link
               (first (inline-parser-test-parse "[x][ref\\[]" index)))
             (escaped-punctuation
-              (inline-parser-test-parse "[x][foo\\!]" index)))
+              (inline-parser-test-parse "[x][foo\\!]" index))
+            (escaped-backslash
+              (first (inline-parser-test-parse "[x][bar\\\\]" index))))
         (expect (list (cl-markdown-kit:link-destination bracket-link)
                       (inline-parser-test-span bracket-link)
+                      (cl-markdown-kit:link-destination escaped-backslash)
                       (some #'cl-markdown-kit:link-p escaped-punctuation))
-                :to-equal '("/bracket" (0 10 1 1 1 11) nil)))))
+                :to-equal '("/bracket" (0 10 1 1 1 11)
+                            "/backslash" nil)))))
 
   (it "creates GFM strikethrough and resolves footnote references"
     (let* ((index (inline-parser-test-reference-index))
            (strike (first (inline-parser-test-parse "~~gone~~" index)))
-           (footnote (first (inline-parser-test-parse "[^Note]" index))))
+           (footnote (first (inline-parser-test-parse "[^Note]" index)))
+           (image-prefix (inline-parser-test-parse "![^Note]" index)))
       (expect (list (cl-markdown-kit:strikethrough-delimiter-character strike)
                     (inline-parser-test-span strike)
                     (cl-markdown-kit:text-value
@@ -343,7 +551,62 @@
       (expect (list (cl-markdown-kit:footnote-reference-raw-label footnote)
                     (cl-markdown-kit:footnote-reference-normalized-label footnote)
                     (inline-parser-test-span footnote))
-              :to-equal '("Note" "note" (0 7 1 1 1 8)))))
+              :to-equal '("Note" "note" (0 7 1 1 1 8)))
+      (expect (and (= (length image-prefix) 2)
+                   (string= (cl-markdown-kit:text-value (first image-prefix)) "!")
+                   (cl-markdown-kit:footnote-reference-p (second image-prefix)))
+              :to-be-truthy)))
+
+  (it "uses Unicode punctuation categories and GFM email boundaries"
+    (let* ((currency (inline-parser-test-parse "*£*bravo."))
+           (email (inline-parser-test-parse "Email me at:scyther@pokemon.com"))
+           (invalid-email (inline-parser-test-parse "(_A_@_.A")))
+      (expect (and (cl-markdown-kit:emphasis-p (first currency))
+                   (not (cl-markdown-kit::%ip-commonmark-punctuation-p
+                         (code-char #x00A3)))
+                   (cl-markdown-kit::%ip-commonmark-punctuation-p
+                    (code-char #x2014)))
+              :to-be-truthy)
+      (expect (and (cl-markdown-kit:autolink-p (second email))
+                   (string= (cl-markdown-kit:autolink-destination
+                             (second email))
+                            "mailto:scyther@pokemon.com")
+                   (notany #'cl-markdown-kit:autolink-p invalid-email))
+              :to-be-truthy)))
+
+  (it "classifies GFM domain characters and validates email schemes"
+    (let* ((punctuation (code-char #x2014))
+           (space (code-char #x3000))
+           (format-control (code-char #x200B))
+           (private-use (code-char #xE000))
+           (mailto (first (inline-parser-test-parse "mailto:mail@example.com")))
+           (invalid-mailto (inline-parser-test-parse "mailto:mail"))
+           (xmpp (first (inline-parser-test-parse "xmpp:chat@example.com")))
+           (invalid-xmpp (inline-parser-test-parse "xmpp:chat"))
+           (invalid-hyphens
+             (inline-parser-test-parse "user@-bad.example user@bad-.example")))
+      (expect (list (not (null (cl-markdown-kit::%ip-gfm-domain-character-p #\A)))
+                    (not (null (cl-markdown-kit::%ip-gfm-domain-character-p #\-)))
+                    (not (null
+                          (cl-markdown-kit::%ip-gfm-domain-character-p
+                           (code-char #x1F344))))
+                    (not (null (cl-markdown-kit::%ip-gfm-domain-character-p space)))
+                    (not (null
+                          (cl-markdown-kit::%ip-gfm-domain-character-p punctuation)))
+                    (not (null
+                          (cl-markdown-kit::%ip-gfm-domain-character-p format-control)))
+                    (not (null
+                          (cl-markdown-kit::%ip-gfm-domain-character-p private-use))))
+              :to-equal '(t t t nil nil nil nil))
+      (expect (list (cl-markdown-kit:autolink-p mailto)
+                    (cl-markdown-kit:autolink-destination mailto)
+                    (notany #'cl-markdown-kit:autolink-p invalid-mailto)
+                    (cl-markdown-kit:autolink-p xmpp)
+                    (cl-markdown-kit:autolink-destination xmpp)
+                    (notany #'cl-markdown-kit:autolink-p invalid-xmpp)
+                    (notany #'cl-markdown-kit:autolink-p invalid-hyphens))
+              :to-equal '(t "mailto:mail@example.com" t t
+                            "xmpp:chat@example.com" t t))))
 
   (it "signals the configured delimiter-depth limit"
     (expect (inline-parser-test-signals-depth-p "*a *b* c*" 1)
@@ -484,7 +747,7 @@
                    "<tag title=bare>" "<tag title='single'>"
                    "<tag title=\"double\">" "</tag>" "<!-->" "<!--->"
                    "<!-- comment -->" "<?pi?>" "<![CDATA[x]]>"
-                   "<!DOCTYPE html>")))
+                   "<!DOCTYPE html>" "<!doctype html>")))
       (expect (every (lambda (source)
                        (let ((node (first (inline-parser-test-parse source))))
                          (and (cl-markdown-kit:html-inline-p node)
@@ -498,7 +761,8 @@
                      '("<tag title=>" "<tag title=\"unclosed>"
                        "<tag" "<tag " "<tag title" "<tag title="
                        "<tag title=bare" "</"
-                       "<!-- unclosed" "<?unclosed" "<![CDATA[unclosed"))
+                       "<!-- unclosed" "<?unclosed" "<![CDATA[unclosed"
+                       "<a b=\"c\"d=\"e\">"))
               :to-be-truthy)
       (expect (list (cl-markdown-kit::%ip-tag-name-end "tag" 0 3)
                     (cl-markdown-kit::%ip-tag-name-end "t" 0 1)
@@ -597,12 +861,15 @@
                          (cl-markdown-kit:link-children link)))
               :to-be-truthy)))
 
-  (it "keeps single tilde runs literal and parses double tilde runs"
+  (it "matches single and double tilde runs without accepting unequal runs"
     (let* ((single (first (inline-parser-test-parse "~plain~")))
-           (double (first (inline-parser-test-parse "~~gone~~"))))
+           (double (first (inline-parser-test-parse "~~gone~~")))
+           (mismatched (inline-parser-test-parse "~~~gone~~")))
       (expect (list (cl-markdown-kit:strikethrough-p single)
-                    (cl-markdown-kit:strikethrough-p double))
-              :to-equal '(nil t))))
+                    (cl-markdown-kit:strikethrough-p double)
+                    (apply #'concatenate 'string
+                           (mapcar #'cl-markdown-kit:text-value mismatched)))
+              :to-equal '(t t "~~~gone~~"))))
 
   (it "normalizes padded code spans and preserves non-escapable backslashes"
     (let* ((padded (first (inline-parser-test-parse "`  code  `")))
@@ -657,6 +924,60 @@
           (expect (inline-parser-test-ranges-valid-p document source)
                   :to-be-truthy)))
       (expect (length examples) :to-equal 682))))
+
+(describe "Inline structure conformance fixtures"
+  (it "compares every CommonMark and GFM inline structure with pinned cmark output"
+    (let* ((commonmark (commonmark-spec-examples))
+           (gfm (gfm-extension-examples))
+           (examples (append commonmark gfm))
+           (fixtures (inline-parser-test-read-data
+                      "inline-structure-fixtures.lisp"))
+           (exclusions (inline-parser-test-read-data
+                        "inline-structure-exclusions.lisp"))
+           (known-ids (mapcar #'spec-example-id examples))
+           (fixture-ids (mapcar #'first fixtures))
+           (fixture-index (make-hash-table :test 'equal))
+           (exclusion-index (make-hash-table :test 'equal))
+           (matches 0)
+           (failures nil))
+      (expect (length commonmark) :to-equal 652)
+      (expect (length gfm) :to-equal 30)
+      (expect (length fixtures) :to-equal 682)
+      (expect fixture-ids :to-equal known-ids)
+      (expect (every (lambda (entry)
+                       (and (= (length entry) 2)
+                            (stringp (first entry))
+                            (stringp (second entry))
+                            (plusp (length (second entry)))
+                            (member (first entry) known-ids :test #'string=)))
+                     exclusions)
+              :to-be-truthy)
+      (expect (length (remove-duplicates (mapcar #'first exclusions)
+                                         :test #'string=))
+              :to-equal (length exclusions))
+      (dolist (entry fixtures)
+        (setf (gethash (first entry) fixture-index) (second entry)))
+      (dolist (entry exclusions)
+        (setf (gethash (first entry) exclusion-index) (second entry)))
+      (dolist (example examples)
+        (let* ((id (spec-example-id example))
+               (reason (gethash id exclusion-index)))
+          (unless reason
+            (multiple-value-bind (actual error-message)
+                (inline-parser-test-structure-signature example)
+              (let ((difference
+                      (inline-parser-test-structure-difference
+                       (gethash id fixture-index) actual error-message)))
+                (if difference
+                    (push (list id difference) failures)
+                    (incf matches)))))))
+      (dolist (failure (nreverse failures))
+        (format t "inline structure mismatch ~A: ~S~%"
+                (first failure) (second failure)))
+      (format t "Inline structures: ~D CommonMark + ~D GFM; ~D match, ~D excluded.~%"
+              (length commonmark) (length gfm) matches (length exclusions))
+      (expect matches :to-equal (- 682 (length exclusions)))
+      (expect failures :to-equal nil))))
 
 (describe "Inline parser edge cases"
   (it "preserves malformed entities and unresolved inline references"
@@ -757,19 +1078,26 @@
                               (length invalid-entity) 0 0))))
 
   (it "handles delimiter leftovers, image link activation, and bounded ranges"
-    (let* ((crossed (inline-parser-test-parse "*a **b* c**"))
+    (let* ((tilde (inline-parser-test-parse "~~a ~~b~~~"))
+           (crossed (inline-parser-test-parse "*a **b* c**"))
            (image-text (inline-parser-test-parse "![a [link](/target)]"))
            (tab-break
              (inline-parser-test-parse (format nil "a~C~%b" #\Tab)))
            (middle (inline-parser-test-parse-range "*word*" nil 1 5))
            (prefix (inline-parser-test-parse-range "*word*" nil 0 5))
-           (suffix (inline-parser-test-parse-range "*word*" nil 1 6)))
+           (suffix (inline-parser-test-parse-range "*word*" nil 1 6))
+           (partial-footnote
+             (inline-parser-test-parse-range "![^Note]" nil 0 4)))
+      (expect (notany #'cl-markdown-kit:strikethrough-p tilde)
+              :to-be-truthy)
       (expect (some #'cl-markdown-kit:emphasis-p crossed)
               :to-be-truthy)
       (expect (and (notany #'cl-markdown-kit:image-p image-text)
                    (some #'cl-markdown-kit:link-p image-text))
               :to-be-truthy)
       (expect (cl-markdown-kit:soft-break-p (second tab-break))
+              :to-be-truthy)
+      (expect (notany #'cl-markdown-kit:footnote-reference-p partial-footnote)
               :to-be-truthy)
       (expect (list (apply #'concatenate 'string
                            (mapcar #'cl-markdown-kit:text-value middle))
@@ -779,17 +1107,26 @@
                            (mapcar #'cl-markdown-kit:text-value suffix)))
               :to-equal '("word" "*word" "word*"))))
 
-  (it "requires two tilde markers on both sides of a delimiter pair"
+  (it "selects tilde openers only for matching one or two marker runs"
     (let* ((openers (make-hash-table :test #'eql))
            (character (code-char 126))
            (buckets (cl-markdown-kit::%ip-delimiter-buckets openers character))
            (opener (cl-markdown-kit::%ip-make-delimiter
                     character 0 2 t nil))
            (closer (cl-markdown-kit::%ip-make-delimiter
-                    character 4 1 nil t)))
+                    character 4 2 nil t))
+           (asterisk-buckets
+             (cl-markdown-kit::%ip-delimiter-buckets openers #\*))
+           (asterisk-opener
+             (cl-markdown-kit::%ip-make-delimiter #\* 8 1 t nil))
+           (asterisk-closer
+             (cl-markdown-kit::%ip-make-delimiter #\* 10 1 nil t)))
       (setf (cl-markdown-kit::%ip-delimiter-remaining opener) 1
             (aref buckets 6) (list opener)
             (cl-markdown-kit::%ip-delimiter-remaining closer) 1)
+      (expect (cl-markdown-kit::%ip-best-opener openers closer)
+              :to-be opener)
+      (setf (cl-markdown-kit::%ip-delimiter-remaining opener) 3)
       (expect (cl-markdown-kit::%ip-best-opener openers closer)
               :to-equal nil)
       (setf (cl-markdown-kit::%ip-delimiter-remaining opener) 2)
@@ -797,7 +1134,12 @@
               :to-equal nil)
       (setf (cl-markdown-kit::%ip-delimiter-remaining closer) 2)
       (expect (cl-markdown-kit::%ip-best-opener openers closer)
-              :to-be opener)))
+              :to-be opener)
+      (setf (cl-markdown-kit::%ip-delimiter-remaining asterisk-opener) 1
+            (aref asterisk-buckets 1) (list asterisk-opener)
+            (cl-markdown-kit::%ip-delimiter-remaining asterisk-closer) 1)
+      (expect (cl-markdown-kit::%ip-best-opener openers asterisk-closer)
+              :to-be asterisk-opener)))
 
   (it "keeps only complete atoms and pairs inside a rendered range"
     (let* ((text "abcdefgh")
