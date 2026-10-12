@@ -8,8 +8,8 @@
 (defstruct (%ip-context
              (:constructor %ip-make-context
                  (text boundary-map reference-index limit backtick-next
-                  bracket-opens bracket-closes bracket-prefix bare-links
-                  html-closes)))
+                  bracket-opens bracket-closes bracket-prefix bracket-depths
+                  bare-links html-closes)))
   (text "" :type string)
   boundary-map
   reference-index
@@ -18,8 +18,12 @@
   bracket-opens
   bracket-closes
   bracket-prefix
+  bracket-depths
   bare-links
   html-closes
+  (rightmost-unescaped-close-paren :unspecified
+                                   :type (or (integer -1 *)
+                                             (member :unspecified)))
   (gfm-p t :type boolean))
 
 (defstruct (%ip-delimiter
@@ -210,7 +214,7 @@
 
 (defun %ip-build-backtick-index (text)
   (let ((positions (make-hash-table :test #'eql))
-        (next-runs (make-array (length text) :initial-element -1))
+        (next-runs (make-hash-table :test #'eql))
         (index 0)
         (end (length text)))
     (loop while (< index end)
@@ -226,9 +230,12 @@
                (setf run-positions (nreverse run-positions))
                (loop for (left right) on run-positions
                      while right
-                     do (setf (aref next-runs left) right)))
+                     do (setf (gethash left next-runs) right)))
              positions)
     next-runs))
+
+(defun %ip-backtick-close (index position)
+  (gethash position index -1))
 
 (defun %ip-tag-name-end (text index end)
   (when (and (< index end) (%ip-ascii-alpha-p (char text index)))
@@ -262,18 +269,21 @@
 
 (defun %ip-build-pattern-next-indexes (text pattern)
   (let* ((length (length text))
-         (matches (make-array length :initial-element nil))
-         (next-indexes (make-array length :initial-element -1))
-         (next -1)
-         (search-from 0))
-    (loop for match = (search pattern text :start2 search-from)
-          while match
-          do (setf (aref matches match) t
-                   search-from (1+ match)))
-    (loop for index downfrom (1- length) to 0
-          do (when (aref matches index) (setf next index))
-             (setf (aref next-indexes index) next))
-    next-indexes))
+         (first (search pattern text)))
+    (when first
+      (let ((matches (make-array length :initial-element nil))
+            (next-indexes (make-array length :initial-element -1))
+            (next -1)
+            (search-from (1+ first)))
+        (setf (aref matches first) t)
+        (loop for match = (search pattern text :start2 search-from)
+              while match
+              do (setf (aref matches match) t
+                       search-from (1+ match)))
+        (loop for index downfrom (1- length) to 0
+              do (when (aref matches index) (setf next index))
+                 (setf (aref next-indexes index) next))
+        next-indexes))))
 
 (defun %ip-build-html-closes (text)
   (vector (%ip-build-pattern-next-indexes text ">")
@@ -283,7 +293,9 @@
 
 (defun %ip-html-close-at (html-closes pattern-index start end)
   (let* ((indexes (aref html-closes pattern-index))
-         (close (and (< start (length indexes)) (aref indexes start))))
+         (close (and indexes
+                     (< start (length indexes))
+                     (aref indexes start))))
     (and (>= (or close -1) 0) (< close end) close)))
 
 (defun %ip-raw-html-open-tag-end (text name-end end)
@@ -433,10 +445,13 @@
                (t (return-from %ip-angle-email-p nil))))))))
 
 (defun %ip-build-bracket-index (text backtick-next html-closes depth-limit)
+  (unless (find #\[ text)
+    (return-from %ip-build-bracket-index (values nil nil nil nil)))
   (let* ((length (length text))
          (opens (make-array length :initial-element -1))
          (closes (make-array length :initial-element -1))
          (open-p (make-array length :initial-element nil))
+         (bracket-deltas (make-array length :initial-element 0))
          (stack nil)
          (stack-depth 0)
          (index 0))
@@ -447,7 +462,7 @@
                                 (1+ index))))
                ((char= (char text index) #\`)
                 (let* ((run-end (%ip-backtick-run-end text index length))
-                       (close (aref backtick-next index)))
+                       (close (%ip-backtick-close backtick-next index)))
                   (setf index (if (and (>= close 0) (< close length))
                                   (+ close (- run-end index))
                                   run-end))))
@@ -461,21 +476,26 @@
                ((char= (char text index) #\[)
                 (%ip-check-depth (1+ stack-depth) depth-limit)
                 (incf stack-depth)
+                (incf (aref bracket-deltas index))
                 (setf (aref open-p index) t)
                 (push index stack)
                 (incf index))
                ((and (char= (char text index) #\]) stack)
                 (let ((open (pop stack)))
                   (decf stack-depth)
+                  (decf (aref bracket-deltas index))
                   (setf (aref opens open) index
                         (aref closes index) open)
                   (incf index)))
                (t (incf index))))
-    (let ((prefix (make-array (1+ length) :initial-element 0)))
+    (let ((prefix (make-array (1+ length) :initial-element 0))
+          (depths (make-array (1+ length) :initial-element 0)))
       (loop for index below length
             do (setf (aref prefix (1+ index))
-                     (+ (aref prefix index) (if (aref open-p index) 1 0))))
-      (values opens closes prefix))))
+                     (+ (aref prefix index) (if (aref open-p index) 1 0))
+                     (aref depths (1+ index))
+                     (+ (aref depths index) (aref bracket-deltas index))))
+      (values opens closes prefix depths))))
 
 (defun %ip-email-local-character-p (character)
   (or (%ip-ascii-alphanumeric-p character)
@@ -738,8 +758,7 @@
          (unless destination (return-from %ip-parse-link-destination nil))))
       ((and (< cursor end)
             (not (or (char= (char text cursor) #\))
-                     (ascii-control-p (char text cursor))
-                     (char= (char text cursor) #\Space))))
+                     (ascii-control-p (char text cursor)))))
        (let ((start cursor)
              (depth 0))
          (loop while (< cursor end)
@@ -780,6 +799,20 @@
       (when (and (< cursor end) (char= (char text cursor) #\)))
         (values (normalize-uri-percent-encoding destination)
                 title (1+ cursor))))))
+
+(defun %ip-rightmost-unescaped-close-paren (text)
+  (loop with rightmost = -1
+        with backslash-count = 0
+        for index from 0 below (length text)
+        for character = (char text index)
+        do (if (char= character #\\)
+               (incf backslash-count)
+               (progn
+                 (when (and (char= character #\))
+                            (evenp backslash-count))
+                   (setf rightmost index))
+                 (setf backslash-count 0)))
+        finally (return rightmost)))
 
 (defun %ip-parse-title (text index end)
   (let* ((opening (char text index))
@@ -859,14 +892,21 @@
           (link-end nil))
       (when (and (< suffix-start range-end)
                  (char= (char text suffix-start) #\())
-        (multiple-value-bind (parsed-destination parsed-title parsed-end)
-            (%ip-parse-link-destination text (1+ suffix-start) range-end)
-          (when parsed-end
-            (setf kind :inline
-                  destination parsed-destination
-                  title parsed-title
-                  label nil
-                  link-end parsed-end))))
+        (let ((rightmost-close
+                (%ip-context-rightmost-unescaped-close-paren context)))
+          (when (eq rightmost-close :unspecified)
+            (setf rightmost-close (%ip-rightmost-unescaped-close-paren text)
+                  (%ip-context-rightmost-unescaped-close-paren context)
+                  rightmost-close))
+          (when (> rightmost-close suffix-start)
+            (multiple-value-bind (parsed-destination parsed-title parsed-end)
+                (%ip-parse-link-destination text (1+ suffix-start) range-end)
+              (when parsed-end
+                (setf kind :inline
+                      destination parsed-destination
+                      title parsed-title
+                      label nil
+                      link-end parsed-end))))))
       (unless link-end
         (multiple-value-bind (definition reference-kind raw-label ref-end)
             (%ip-reference-candidate context open close range-end)
@@ -955,7 +995,8 @@
               do (setf best candidate)))
     best))
 
-(defun %ip-pop-opener-if-empty (openers delimiter active-count active-stack)
+(defun %ip-pop-opener-if-empty
+    (openers delimiter active-count active-stack total-active-count)
   (when (zerop (%ip-delimiter-remaining delimiter))
     (let* ((buckets (gethash (%ip-delimiter-character delimiter) openers))
            (bucket-index (%ip-delimiter-open-bucket delimiter)))
@@ -963,10 +1004,12 @@
       (pop (aref buckets bucket-index))
       (pop (car active-stack))
       (setf (%ip-delimiter-open-bucket delimiter) nil)
-      (decf (car active-count)))))
+      (decf (car active-count))
+      (decf (car total-active-count)))))
 
 (defun %ip-add-delimiter (start end character can-open can-close
-                          openers delimiters pairs active-count active-stack)
+                          openers delimiters pairs active-count active-stack
+                          total-active-count bracket-depth depth-limit)
   (let* ((length (- end start))
          (run (%ip-make-delimiter character start length can-open can-close)))
     (setf (%ip-delimiter-remaining run) length)
@@ -995,7 +1038,8 @@
                                           openers)))
                           (pop (aref buckets bucket-index))
                           (setf (%ip-delimiter-open-bucket skipped) nil)
-                          (decf (car active-count))))
+                          (decf (car active-count))
+                          (decf (car total-active-count))))
                (push (%ip-make-pair
                       (cond ((char= character #\~) :strikethrough)
                             ((= use-count 2) :strong)
@@ -1006,19 +1050,24 @@
                (decf (%ip-delimiter-remaining opener) use-count)
                (decf (%ip-delimiter-remaining run) use-count)
                (incf (%ip-delimiter-open-offset run) use-count)
-               (%ip-pop-opener-if-empty openers opener active-count active-stack)))
+               (%ip-pop-opener-if-empty
+                openers opener active-count active-stack total-active-count)))
     (when (and can-open (plusp (%ip-delimiter-remaining run))
                (or (not (char= character #\~))
                    (member (%ip-delimiter-remaining run) '(1 2))))
       (let* ((bucket-index (%ip-delimiter-bucket-index run))
              (buckets (%ip-delimiter-buckets openers character)))
+        (%ip-check-depth (+ bracket-depth (car total-active-count) 1)
+                         depth-limit)
         (setf (%ip-delimiter-open-bucket run) bucket-index)
         (push run (aref buckets bucket-index))
         (push run (car active-stack))
-        (incf (car active-count))))
+        (incf (car active-count))
+        (incf (car total-active-count))))
     (values delimiters pairs)))
 
-(defun %ip-resolve-delimiter-runs (runs pairs)
+(defun %ip-resolve-delimiter-runs
+    (runs pairs bracket-depths bracket-closes range-start range-end depth-limit)
   (let* ((containers
            (coerce (sort (copy-list pairs)
                          #'< :key #'%ip-pair-inner-start)
@@ -1039,30 +1088,79 @@
               for container = (aref containers container-index)
               do (when (< position (%ip-pair-inner-end container))
                    (push container container-stack))
-                 (incf container-index))
+              (incf container-index))
         (push run (gethash (first container-stack) groups))))
-    (let ((resolved-delimiters nil)
-          (resolved-pairs pairs))
-      (maphash
-       (lambda (scope scoped-runs)
-         (declare (ignore scope))
-         (let ((openers (make-hash-table :test #'eql))
-               (delimiters nil)
-               (matched-pairs nil)
-               (active-count (list 0))
-               (active-stack (list nil)))
-           (dolist (run (nreverse scoped-runs))
-             (multiple-value-setq (delimiters matched-pairs)
-               (%ip-add-delimiter
-                (%ip-delimiter-start run)
-                (+ (%ip-delimiter-start run) (%ip-delimiter-length run))
-                (%ip-delimiter-character run)
-                (%ip-delimiter-can-open run)
-                (%ip-delimiter-can-close run)
-                openers delimiters matched-pairs active-count active-stack)))
-           (setf resolved-delimiters (nconc delimiters resolved-delimiters)
-                 resolved-pairs (nconc matched-pairs resolved-pairs))))
-       groups)
+    (let* ((run-events nil)
+           (states (make-hash-table :test #'eq))
+           ;; Unmatched records remain counted after their scope ends.
+           (total-active-count (list 0))
+           (resolved-delimiters nil)
+           (resolved-pairs pairs)
+           (bracket-count 0)
+           (position range-start))
+      (maphash (lambda (scope scoped-runs)
+                 (dolist (run scoped-runs)
+                   (push (cons scope run) run-events)))
+               groups)
+      (setf run-events
+            (sort run-events #'<
+                  :key (lambda (event)
+                         (%ip-delimiter-start (cdr event)))))
+      (labels ((advance-bracket-position ()
+                 (when bracket-depths
+                   (let ((delta
+                           (- (aref bracket-depths (1+ position))
+                              (aref bracket-depths position))))
+                     (cond
+                       ((plusp delta)
+                        (%ip-check-depth
+                         (+ bracket-count (car total-active-count) 1)
+                         depth-limit)
+                        (incf bracket-count))
+                       ((and (minusp delta)
+                             (>= (aref bracket-closes position) range-start))
+                        (decf bracket-count))))))
+               (process-run (scope run)
+                 (let* ((state
+                          (or (gethash scope states)
+                              (setf (gethash scope states)
+                                    (list (make-hash-table :test #'eql)
+                                          nil nil (list 0) (list nil)))))
+                        (openers (first state))
+                        (delimiters (second state))
+                        (matched-pairs (third state))
+                        (scope-count (fourth state))
+                        (scope-stack (fifth state)))
+                   (multiple-value-setq (delimiters matched-pairs)
+                     (%ip-add-delimiter
+                      (%ip-delimiter-start run)
+                      (+ (%ip-delimiter-start run)
+                         (%ip-delimiter-length run))
+                      (%ip-delimiter-character run)
+                      (%ip-delimiter-can-open run)
+                      (%ip-delimiter-can-close run)
+                      openers delimiters matched-pairs scope-count scope-stack
+                      total-active-count bracket-count depth-limit))
+                   (setf (second state) delimiters
+                         (third state) matched-pairs))))
+        (dolist (event run-events)
+          (let ((run-position (%ip-delimiter-start (cdr event))))
+            (loop while (< position run-position)
+                  do (advance-bracket-position)
+                     (incf position))
+            (process-run (car event) (cdr event))
+            (advance-bracket-position)
+            (incf position)))
+        (loop while (< position range-end)
+              do (advance-bracket-position)
+                 (incf position))
+        (maphash (lambda (scope state)
+                   (declare (ignore scope))
+                   (setf resolved-delimiters
+                         (nconc (second state) resolved-delimiters)
+                         resolved-pairs
+                         (nconc (third state) resolved-pairs)))
+                 states))
       (values resolved-delimiters resolved-pairs))))
 
 (defun %ip-delimiter-text-atoms (context delimiters pairs)
@@ -1268,9 +1366,11 @@
                       (text-value (if image-p "![" "[")))
                  (add-text text-value text-start (1+ open))))
              (close-bracket ()
-               (let* ((open (aref (%ip-context-bracket-closes context) index))
-                      (bracket (first bracket-stack)))
-                 (when (and bracket (>= open 0)
+               (let* ((bracket (first bracket-stack))
+                      (open (and bracket
+                                 (aref (%ip-context-bracket-closes context)
+                                       index))))
+                 (when (and bracket open (>= open 0)
                             (= open (%ip-bracket-open bracket)))
                    (let ((image-p (%ip-bracket-image-p bracket)))
                      (multiple-value-bind (destination title kind label link-end)
@@ -1359,7 +1459,8 @@
                        (incf index))))
                  ((char= character #\`)
                   (let* ((run-end (%ip-backtick-run-end text index scan-end))
-                         (close (aref (%ip-context-backtick-next context) index)))
+                         (close (%ip-backtick-close
+                                 (%ip-context-backtick-next context) index)))
                     (if (and (>= close 0) (< close scan-end)
                              (<= (+ close (- run-end index)) scan-end))
                         (let* ((close-end (+ close (- run-end index)))
@@ -1514,13 +1615,18 @@
                     (when (= run-end index) (incf run-end))
                     (add-text (subseq text index run-end) index run-end)
                     (setf index run-end)))))
-      (multiple-value-bind (delimiters resolved-pairs)
-          (%ip-resolve-delimiter-runs delimiter-runs pairs)
-        (let* ((literal-atoms (%ip-delimiter-text-atoms
-                               context delimiters resolved-pairs))
-               (all-atoms (nconc (nreverse atoms) literal-atoms)))
-          (%ip-build-range context start end all-atoms resolved-pairs
-                           base-depth))))))
+      (if (and (null delimiter-runs) (null pairs))
+          (%ip-build-range context start end (nreverse atoms) nil base-depth)
+          (multiple-value-bind (delimiters resolved-pairs)
+              (%ip-resolve-delimiter-runs
+               delimiter-runs pairs (%ip-context-bracket-depths context)
+               (%ip-context-bracket-closes context) start end
+               (%ip-context-limit context))
+            (let* ((literal-atoms (%ip-delimiter-text-atoms
+                                   context delimiters resolved-pairs))
+                   (all-atoms (nconc (nreverse atoms) literal-atoms)))
+              (%ip-build-range context start end all-atoms resolved-pairs
+                               base-depth)))))))
 
 (defun %ip-inline-end (text)
   (loop with end = (length text)
@@ -1557,6 +1663,7 @@
                                     (first bracket-indexes)
                                     (second bracket-indexes)
                                     (third bracket-indexes)
+                                    (fourth bracket-indexes)
                                     bare-links html-closes)))
     (setf (%ip-context-gfm-p context) gfm)
     (%ip-parse-range context 0 (%ip-inline-end text) t 0)))

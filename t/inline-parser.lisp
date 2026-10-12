@@ -1,15 +1,15 @@
 (in-package #:cl-markdown-kit/test)
 
-(defun inline-parser-test-parse (text &optional reference-index
-                                 &key (max-inline-delimiter-depth 4096) (gfm t))
-  (let* ((buffer (cl-markdown-kit:make-source-buffer text))
-         (index (or reference-index (make-hash-table :test #'equal))))
-    (cl-markdown-kit::parse-inline
-     (cl-markdown-kit:source-buffer-normalized-text buffer)
-     (cl-markdown-kit::source-buffer-boundary-map buffer)
-     index
-     :max-inline-delimiter-depth max-inline-delimiter-depth
-     :gfm gfm)))
+(defun inline-parser-test-parse (text &optional reference-index &rest options)
+  (destructuring-bind (&key (max-inline-delimiter-depth 4096) (gfm t)) options
+    (let* ((buffer (cl-markdown-kit:make-source-buffer text))
+           (index (or reference-index (make-hash-table :test #'equal))))
+      (cl-markdown-kit::parse-inline
+       (cl-markdown-kit:source-buffer-normalized-text buffer)
+       (cl-markdown-kit::source-buffer-boundary-map buffer)
+       index
+       :max-inline-delimiter-depth max-inline-delimiter-depth
+       :gfm gfm))))
 
 (defun inline-parser-test-parse-range (text link-allowed &optional start end)
   (let* ((buffer (cl-markdown-kit:make-source-buffer text))
@@ -19,13 +19,14 @@
          (limit 4096)
          (backtick-next (cl-markdown-kit::%ip-build-backtick-index normalized))
          (html-closes (cl-markdown-kit::%ip-build-html-closes normalized)))
-    (multiple-value-bind (opens closes prefix)
+    (multiple-value-bind (opens closes prefix bracket-depths)
         (cl-markdown-kit::%ip-build-bracket-index
          normalized backtick-next html-closes limit)
       (cl-markdown-kit::%ip-parse-range
        (cl-markdown-kit::%ip-make-context
         normalized boundary-map index limit backtick-next opens closes prefix
-        (cl-markdown-kit::%ip-build-bare-links normalized) html-closes)
+        bracket-depths (cl-markdown-kit::%ip-build-bare-links normalized)
+        html-closes)
        (or start 0) (or end (length normalized)) link-allowed 0))))
 
 (defun inline-parser-test-span (node)
@@ -498,6 +499,37 @@
                             "a%C2%A0b"))
               :to-be-truthy)))
 
+  (it "rejects unmatched link destination parentheses and preserves escaped title text"
+    (let* ((unmatched (inline-parser-test-parse "[x](a((b)"))
+           (escaped-title (first (inline-parser-test-parse
+                                  "[x](dest \"a\\q\")"))))
+      (expect (notany #'cl-markdown-kit:link-p unmatched) :to-be-truthy)
+      (expect (list (cl-markdown-kit:link-destination escaped-title)
+                    (cl-markdown-kit:link-title escaped-title))
+              :to-equal '("dest" "a\\q"))))
+
+  (it "handles empty and trailing escape boundaries in link syntax"
+    (let* ((empty-destination
+             (cl-markdown-kit::%ip-parse-link-destination "" 0 0))
+           (angle-destination
+             (cl-markdown-kit::%ip-parse-link-destination "<a\\" 0 3))
+           (bare-destination
+             (cl-markdown-kit::%ip-parse-link-destination "a\\" 0 2))
+           (title-values (multiple-value-list
+                          (cl-markdown-kit::%ip-parse-title
+                           "\"title\\" 0 7)))
+           (buffer (cl-markdown-kit:make-source-buffer ""))
+           (default-parse
+             (cl-markdown-kit::parse-inline
+              "" (cl-markdown-kit::source-buffer-boundary-map buffer)
+              (make-hash-table :test #'equal))))
+      (expect (and (null empty-destination)
+                   (null angle-destination)
+                   (null bare-destination))
+              :to-be-truthy)
+      (expect title-values :to-equal '(nil nil))
+      (expect default-parse :to-equal nil)))
+
   (it "does not fall back from an unresolved full reference to a shortcut"
     (let ((index (make-hash-table :test #'equal)))
       (setf (gethash "foo" index)
@@ -628,15 +660,81 @@
               :to-equal '(t "mailto:mail@example.com" t t
                             "xmpp:chat@example.com" t t))))
 
-  (it "signals the configured delimiter-depth limit"
-    (expect (inline-parser-test-signals-depth-p "*a *b* c*" 1)
-            :to-be-truthy)
-    (expect (inline-parser-test-signals-depth-p "[[x]]" 1)
-            :to-be-truthy)
-    (expect (not (inline-parser-test-signals-depth-p "*a*" 1))
-            :to-be-truthy)
-    (expect (not (inline-parser-test-signals-depth-p "[x]" 1))
-            :to-be-truthy))
+  (it "checks inline delimiter depth at exact limits"
+    (labels ((depth-condition (text limit)
+               (handler-case
+                   (progn
+                     (inline-parser-test-parse
+                      text nil :max-inline-delimiter-depth limit)
+                     nil)
+                 (cl-markdown-kit:markdown-inline-delimiter-depth-exceeded
+                     (condition)
+                   condition)))
+             (depth-condition-matches-p (condition limit actual)
+               (and condition
+                    (eq (cl-markdown-kit:markdown-resource-limit-error-limit-name
+                         condition)
+                        :inline-delimiter-depth)
+                    (= (cl-markdown-kit:markdown-resource-limit-error-limit
+                        condition)
+                       limit)
+                    (= (cl-markdown-kit:markdown-resource-limit-error-actual
+                        condition)
+                       actual)))
+             (repeated-opener (marker count)
+               (with-output-to-string (output)
+                 (dotimes (index count)
+                   (when (plusp index)
+                     (write-char #\Space output))
+                   (write-string marker output)
+                   (write-char #\a output))))
+             (combined-openers (bracket-count)
+               (concatenate 'string
+                            (make-string bracket-count :initial-element #\[)
+                            "*a b"))
+             (repeated-brackets (count)
+               (concatenate 'string
+                            (make-string count :initial-element #\[)
+                            "x"
+                            (make-string count :initial-element #\])))
+             (sequential-openers ()
+               (concatenate 'string (repeated-brackets 8) " "
+                            (repeated-opener "*" 8))))
+      (expect (inline-parser-test-signals-depth-p "*a *b* c*" 1)
+              :to-be-truthy)
+      (expect (inline-parser-test-signals-depth-p "[[x]]" 1)
+              :to-be-truthy)
+      (expect (not (inline-parser-test-signals-depth-p "*a*" 1))
+              :to-be-truthy)
+      (expect (not (inline-parser-test-signals-depth-p "[x]" 1))
+              :to-be-truthy)
+      (dolist (marker '("*" "**" "~~"))
+        (expect (null (depth-condition (repeated-opener marker 8) 8))
+                :to-be-truthy)
+        (expect (depth-condition-matches-p
+                 (depth-condition (repeated-opener marker 9) 8) 8 9)
+                :to-be-truthy))
+      (expect (null (depth-condition (repeated-brackets 8) 8))
+              :to-be-truthy)
+      (expect (depth-condition-matches-p
+               (depth-condition (repeated-brackets 9) 8) 8 9)
+              :to-be-truthy)
+      (expect (null (depth-condition (combined-openers 7) 8))
+              :to-be-truthy)
+      (expect (depth-condition-matches-p
+               (depth-condition (combined-openers 8) 8) 8 9)
+              :to-be-truthy)
+      (expect (depth-condition-matches-p
+               (depth-condition "[*a]" 1) 1 2)
+              :to-be-truthy)
+      (expect (depth-condition-matches-p
+               (depth-condition "*[a]" 1) 1 2)
+              :to-be-truthy)
+      (expect (null (depth-condition (sequential-openers) 8))
+              :to-be-truthy)
+      (expect (depth-condition-matches-p
+               (depth-condition "[*a](u) *b *c" 2) 2 3)
+              :to-be-truthy)))
 
   (it "handles long unmatched bracket and angle sequences"
     (let* ((brackets (make-string 2000 :initial-element #\[))
@@ -660,12 +758,29 @@
               :to-equal (list backticks))
       (expect (plusp (length delimiter-nodes)) :to-be-truthy)))
 
-  (it "does not count unmatched delimiter openers against the depth limit"
-    (let ((text (with-output-to-string (output)
-                  (dotimes (index 4097)
-                    (declare (ignore index))
-                    (write-string "*a" output)))))
-      (expect (not (inline-parser-test-signals-depth-p text 4096))
+  (it "counts unmatched delimiter openers against the depth limit"
+    (let* ((limit 4096)
+           (text (with-output-to-string (output)
+                   (loop repeat (1+ limit) do (write-string "*a " output))))
+           (condition
+             (handler-case
+                 (progn
+                   (inline-parser-test-parse
+                    text nil :max-inline-delimiter-depth limit)
+                   nil)
+               (cl-markdown-kit:markdown-inline-delimiter-depth-exceeded
+                   (condition)
+                 condition))))
+      (expect (and condition
+                   (eq (cl-markdown-kit:markdown-resource-limit-error-limit-name
+                        condition)
+                       :inline-delimiter-depth)
+                   (= (cl-markdown-kit:markdown-resource-limit-error-limit
+                       condition)
+                      limit)
+                   (= (cl-markdown-kit:markdown-resource-limit-error-actual
+                       condition)
+                      (1+ limit)))
               :to-be-truthy)))
 
   (it "parses deeply nested bracket links without reparsing each inner range"
@@ -674,9 +789,8 @@
                                 (make-string count :initial-element #\[)
                                 "a"
                                 (with-output-to-string (output)
-                                  (dotimes (index count)
-                                    (declare (ignore index))
-                                    (write-string "](u)" output)))))
+                                  (loop repeat count
+                                        do (write-string "](u)" output)))))
            (completed-p
              (handler-case
                  (progn
@@ -870,6 +984,28 @@
                "<https://example.com>")))
             :to-equal '("https://example.com" "https://example.com"
                         :angle-uri 21)))
+
+  (it "keeps absent inline indexes sparse"
+    (let* ((backtick-index
+             (cl-markdown-kit::%ip-build-backtick-index "`a`b``c``"))
+           (html-closes (cl-markdown-kit::%ip-build-html-closes "plain"))
+           (bracket-indexes
+             (multiple-value-list
+              (cl-markdown-kit::%ip-build-bracket-index
+               "plain" backtick-index html-closes 8)))
+           (nodes (inline-parser-test-parse "plain ]")))
+      (expect (list (hash-table-p backtick-index)
+                    (hash-table-count backtick-index)
+                    (cl-markdown-kit::%ip-backtick-close backtick-index 0)
+                    (cl-markdown-kit::%ip-backtick-close backtick-index 4)
+                    (cl-markdown-kit::%ip-backtick-close backtick-index 2))
+              :to-equal '(t 2 2 7 -1))
+      (expect (coerce html-closes 'list) :to-equal '(nil nil nil nil))
+      (expect (cl-markdown-kit::%ip-html-close-at html-closes 0 0 5)
+              :to-be nil)
+      (expect bracket-indexes :to-equal '(nil nil nil nil))
+      (expect (mapcar #'cl-markdown-kit:text-value nodes)
+              :to-equal '("plain ]"))))
 
   (it "trims URL punctuation and handles bare URL query entities"
     (let* ((nodes (inline-parser-test-parse
@@ -1187,7 +1323,7 @@
            (context
              (cl-markdown-kit::%ip-make-context
               text (cl-markdown-kit::source-buffer-boundary-map buffer)
-              nil 4096 nil nil nil nil nil nil))
+              nil 4096 nil nil nil nil nil nil nil))
            (atoms (list
                    (cl-markdown-kit::%ip-make-atom
                     1 2 (cl-markdown-kit::%ip-text-node context "b" 1 2))

@@ -716,24 +716,56 @@
                    (cl-markdown-kit:paragraph-p (second destination-children)))
               :to-be-truthy)))
 
-  (it "signals the configured limit before entering a nested block quote"
-    (let ((condition
-            (handler-case
-                (progn
-                  (cl-markdown-kit::parse-blocks
-                   (cl-markdown-kit:make-source-buffer "> > nested")
-                   :max-nesting-depth 1)
-                  nil)
-              (cl-markdown-kit:markdown-nesting-depth-exceeded (condition)
-                condition))))
-      (expect (and condition
-                   (= (cl-markdown-kit:markdown-resource-limit-error-limit
-                       condition)
-                      1)
-                   (= (cl-markdown-kit:markdown-resource-limit-error-actual
-                       condition)
-                      2))
-              :to-be-truthy)))
+  (it "accepts the block nesting limit and signals one level beyond it"
+    (labels ((nested-quote-source (depth)
+               (with-output-to-string (output)
+                 (loop repeat depth do (write-string "> " output))
+                 (write-string "nested" output)))
+             (parse-depth-condition (depth limit)
+               (handler-case
+                   (progn
+                     (cl-markdown-kit::parse-blocks
+                      (cl-markdown-kit:make-source-buffer
+                       (nested-quote-source depth))
+                      :max-nesting-depth limit)
+                     nil)
+                 (cl-markdown-kit:markdown-nesting-depth-exceeded
+                     (condition)
+                   condition)))
+             (quote-depth (node)
+               (loop with depth = 0
+                     while (cl-markdown-kit:block-quote-p node)
+                     do (incf depth)
+                        (setf node
+                              (first
+                               (cl-markdown-kit:block-quote-children node)))
+                     finally (return depth)))
+             (depth-condition-matches-p (condition limit actual)
+               (and condition
+                    (eq (cl-markdown-kit:markdown-resource-limit-error-limit-name
+                         condition)
+                        :nesting-depth)
+                    (= (cl-markdown-kit:markdown-resource-limit-error-limit
+                        condition)
+                       limit)
+                    (= (cl-markdown-kit:markdown-resource-limit-error-actual
+                        condition)
+                       actual))))
+      (let* ((limit 8)
+             (accepted-document
+               (block-parser-test-document
+                (cl-markdown-kit::parse-blocks
+                 (cl-markdown-kit:make-source-buffer
+                  (nested-quote-source limit))
+                 :max-nesting-depth limit)))
+             (condition (parse-depth-condition (1+ limit) limit)))
+        (expect (= (quote-depth
+                    (first
+                     (cl-markdown-kit:document-children accepted-document)))
+                   limit)
+                :to-be-truthy)
+        (expect (depth-condition-matches-p condition limit (1+ limit))
+                :to-be-truthy))))
 
   (it "preserves block quote nesting, separate quotes, and lazy continuation"
     (let* ((quoted (block-parser-test-document
