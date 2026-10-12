@@ -30,12 +30,7 @@
 
 (defun %write-percent-encoded-character (char output)
   (let ((code (char-code char)))
-    (when (or (<= #xD800 code #xDFFF)
-              (> code #x10FFFF))
-      (setf code #xFFFD))
     (cond
-      ((<= code #x7F)
-       (%write-percent-encoded-byte code output))
       ((<= code #x7FF)
        (%write-percent-encoded-byte (+ #xC0 (ash code -6)) output)
        (%write-percent-encoded-byte (+ #x80 (logand code #x3F)) output))

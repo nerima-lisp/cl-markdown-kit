@@ -95,6 +95,13 @@
       ((character-data-codepoint #x2003)) t)
   (character-data-probe "probe 32: letter is not Unicode whitespace"
       cl-markdown-kit::unicode-whitespace-p (#\A) nil)
+
+  (it "recognizes the remaining Unicode White_Space characters"
+    (expect (mapcar #'cl-markdown-kit::unicode-whitespace-p
+                    (mapcar #'character-data-codepoint
+                            '(#x0085 #x2028 #x2029 #x180E)))
+            :to-equal '(t t t nil)))
+
   (character-data-probe "probe 33: connector punctuation"
       cl-markdown-kit::unicode-punctuation-p
       ((character-data-codepoint #x203F)) t)
@@ -252,6 +259,8 @@
             :to-equal "%2f%aF%09")
     (expect (cl-markdown-kit::normalize-uri-percent-encoding "% %x0")
             :to-equal "%25%20%25x0")
+    (expect (cl-markdown-kit::normalize-uri-percent-encoding "%a")
+            :to-equal "%25a")
     (expect (cl-markdown-kit::normalize-uri-percent-encoding
              (character-data-codepoint-string #x00E9))
             :to-equal "%C3%A9")
@@ -269,8 +278,9 @@
                       "file:///example/path" "FILE:///example/path"))
             :to-equal '(t t t t t t))
     (expect (mapcar #'cl-markdown-kit::dangerous-url-p
-                    '("data:text/html,<script>" "DATA:TEXT/HTML,x"))
-            :to-equal '(t t))
+                    '("data:text/html,<script>" "DATA:TEXT/HTML,x"
+                      "data:image/svg+xml,<svg onload=alert(1)>"))
+            :to-equal '(t t t))
     (expect (mapcar #'cl-markdown-kit::dangerous-url-p
                     '("data:image/png;base64,x" "data:image/gif;base64,x"
                       "data:image/jpeg;base64,x" "data:image/webp;base64,x"

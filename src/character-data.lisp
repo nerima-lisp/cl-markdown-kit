@@ -30,9 +30,11 @@
 
 (defun unicode-whitespace-p (char)
   (or (not (null (member (char-code char)
-                         '(#x09 #x0A #x0C #x0D)
+                         '(#x09 #x0A #x0C #x0D #x85)
                          :test #'=)))
-      (eq (sb-unicode:general-category char) :zs)))
+      (not (null (member (sb-unicode:general-category char)
+                         '(:zs :zl :zp)
+                         :test #'eq)))))
 
 (defun unicode-punctuation-p (char)
   (not (null

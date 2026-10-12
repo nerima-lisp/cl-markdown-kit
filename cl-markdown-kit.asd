@@ -19,6 +19,9 @@
   :serial t
   :components ((:file "package")
                (:file "conditions")
+               (:file "html-entities-data")
+               (:file "character-data")
+               (:file "html-escaping")
                (:file "source")
                (:file "nodes")
                (:file "block-parser")
@@ -44,7 +47,8 @@
                (:file "source")
                (:file "nodes")
                (:file "parse")
-               (:file "block-parser"))
+               (:file "block-parser")
+               (:file "character-data"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (let* ((condition-class
