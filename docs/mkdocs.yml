@@ -14,3 +14,4 @@ nav:
   - Reference:
       - AST and source: reference/nodes.md
       - Query API: reference/query.md
+      - YAML front matter: reference/yaml.md

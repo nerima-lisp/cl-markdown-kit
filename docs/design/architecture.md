@@ -24,7 +24,7 @@ Optional and test systems remain separate from the core parser system:
 
 | Package | Tag | Use |
 |---|---|---|
-| `cl-yaml-kit` | v0.1.0 | Optional `cl-markdown-kit/yaml` system for interpreting front matter; the core keeps it as raw text and a span. |
+| `cl-yaml-kit` | v0.1.0 | Optional `cl-markdown-kit/yaml:parse-front-matter` API; the core keeps front matter as raw text and a span. |
 | `cl-json-kit` | v1.2.0 | Test fixtures and optional AST-to-JSON export if later aitools integration needs it. |
 | `cl-weave` | v1.4.0 | Tests. |
 
@@ -71,7 +71,7 @@ their exact spelling remains available through the document source and spans.
 
 | Family | Node kinds and required slots |
 |---|---|
-| Document and source | `document`: block children, original source snapshot, source-format metadata, and link-reference index. `front-matter`: exact original inner text and opening/closing delimiter values. With the public `:front-matter` option enabled (the default), front matter is recognized only when an opening `---` line and a later closing `---` line occur at document start after an optional BOM; an unclosed opener remains ordinary Markdown. Set `:front-matter nil` to leave all leading delimiters to Markdown block parsing. YAML is not interpreted. |
+| Document and source | `document`: block children, original source snapshot, source-format metadata, and link-reference index. `front-matter`: exact original inner text and opening/closing delimiter values. With the public `:front-matter` option enabled (the default), front matter is recognized only when an opening `---` line and a later closing `---` line occur at document start after an optional BOM; an unclosed opener remains ordinary Markdown. Set `:front-matter nil` to leave all leading delimiters to Markdown block parsing. The core does not interpret YAML. |
 | CommonMark containers | `block-quote`: block children. `list`: ordered/unordered kind, tight/loose flag, ordered start number, marker character, ordered-list delimiter character, and item children. `list-item`: block children. `task-list-item`: list-item subtype with `checked-p`, `task-marker-span` (a `cl-parser-kit:span`) covering exactly the recognized three-character `[ ]`, `[x]`, or `[X]` marker, and the original marker character; its distinct type means unchecked tasks are distinguishable from ordinary items. |
 | CommonMark leaf blocks | `paragraph`: inline children. `heading`: level, `:atx` or `:setext` style, ATX marker character and opening/closing marker lengths when applicable, and inline children. `thematic-break`: marker character and marker count. `code-block`: `:fenced` or `:indented` style, literal body, fence character/length, indentation, and info string. `html-block`: literal body and CommonMark HTML block kind. `link-reference-definition`: raw and normalized labels, destination, optional title, and first-definition eligibility. |
 | GFM blocks | `table`: column alignments and row children. `table-row`: header-row flag and cell children. `table-cell`: alignment and inline children. `footnote-definition`: raw and normalized label plus block children. |
@@ -244,6 +244,25 @@ records. Exceeding either signals a dedicated resource-limit subtype with the
 resource name, configured limit, and observed depth. The same effective limits
 are retained by the document and reused when an edit reparses its candidate.
 
+### Optional YAML interpretation
+
+The `cl-markdown-kit/yaml` system provides:
+
+```lisp
+(cl-markdown-kit/yaml:parse-front-matter front-matter-or-document
+                                         &rest yaml-parse-options)
+```
+
+It accepts a `front-matter` node or a document, forwards the node's raw text and
+YAML options to `yaml-kit:parse`, and returns the constructed YAML value. A
+document without front matter or with empty YAML content returns `nil`. YAML
+syntax errors are wrapped in `markdown-yaml-error`, a `markdown-kit-error`
+subtype that retains the original `yaml-kit:yaml-parse-error` and reports its
+Markdown source line and column.
+The empty-stream composition condition for empty YAML content is treated as a
+`nil` value; other `cl-yaml-kit` conditions propagate unchanged. The optional
+system does not change the core AST or the `:front-matter` parse option.
+
 ### Writers
 
 ```lisp
@@ -369,13 +388,15 @@ section.
 
 ## Conditions
 
-Every public error condition descends from `markdown-kit-error`:
+Every error condition defined by cl-markdown-kit descends from
+`markdown-kit-error`:
 
 ```text
 markdown-kit-error
 ├── markdown-no-match-error
 ├── markdown-ambiguous-match-error
 ├── markdown-invalid-section-address-error
+├── markdown-yaml-error
 ├── markdown-resource-limit-error
 │   ├── markdown-nesting-depth-exceeded
 │   └── markdown-inline-delimiter-depth-exceeded
@@ -391,6 +412,9 @@ carries the edit target and a concise description of the first non-target
 projection difference; it must not carry a candidate source string. The
 condition readers are public so callers can handle these expected failures
 without parsing the printed message.
+`markdown-yaml-error` exposes the original YAML parse condition and one-based
+Markdown source line and column. YAML composition and resource-limit conditions
+from `cl-yaml-kit` propagate with their original condition types.
 
 ## Files, load order, and ownership
 
