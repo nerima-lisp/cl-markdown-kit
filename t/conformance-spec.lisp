@@ -112,15 +112,15 @@
       (error "Expected a spec example fence at line ~D" (1+ start)))
     (let ((markdown-lines nil)
           (html-lines nil)
-          (separator-seen nil)
-          (markdown-fence nil))
+          (separator-seen nil))
       (block example
         (loop for index from (1+ start) below (length lines)
               for line = (aref lines index)
               do (cond
                    ((conformance-fence-close-p line marker fence-length)
                     (unless separator-seen
-                      (error "Spec example has no input/output separator"))
+                      (error "Spec example beginning at line ~D has no input/output separator"
+                             (1+ start)))
                     (return-from example
                       (values (make-spec-example
                                :id (format nil "~A-~4,'0D" prefix number)
@@ -131,21 +131,9 @@
                                       (nreverse html-lines)))
                               (1+ index))))
                    ((not separator-seen)
-                    (cond
-                      (markdown-fence
-                       (when (conformance-fence-close-p
-                              line (car markdown-fence) (cdr markdown-fence))
-                         (setf markdown-fence nil))
-                       (push line markdown-lines))
-                      ((string= line ".")
-                       (setf separator-seen t))
-                      (t
-                       (multiple-value-bind (inner-marker inner-length)
-                           (conformance-fence-open line)
-                         (when inner-marker
-                           (setf markdown-fence
-                                 (cons inner-marker inner-length))))
-                       (push line markdown-lines))))
+                    (if (string= line ".")
+                        (setf separator-seen t)
+                        (push line markdown-lines)))
                    (t (push line html-lines))))
         (error "Unterminated spec example beginning at line ~D" (1+ start))))))
 
@@ -157,46 +145,56 @@
          (section nil)
          (previous-line nil)
          (fence nil)
+         (section-in-fence nil)
+         (previous-line-in-fence nil)
          (examples nil)
          (number 0)
          (index 0))
-    (loop while (< index (length lines))
-          for line = (aref lines index)
-          do (multiple-value-bind (marker fence-length info)
-                 (conformance-fence-open line)
-               (cond
-                 (fence
-                  (when (conformance-fence-close-p
+    (labels ((advance-section (line prior current)
+               (let ((heading (conformance-heading line)))
+                 (cond
+                   (heading (values heading nil))
+                   ((and prior (conformance-setext-underline-p line))
+                    (values (string-trim '(#\Space #\Tab) prior) nil))
+                   ((string= (string-trim '(#\Space #\Tab) line) "")
+                    (values current nil))
+                   (t (values current line))))))
+      (loop while (< index (length lines))
+            for line = (aref lines index)
+            do (multiple-value-bind (marker fence-length info)
+                   (conformance-fence-open line)
+                 (cond
+                   ((and marker (conformance-example-info-p info))
+                    (when fence
+                      (setf section section-in-fence
+                            fence nil
+                            section-in-fence nil
+                            previous-line-in-fence nil))
+                    (incf number)
+                    (multiple-value-bind (example next-index)
+                        (conformance-read-example lines index section prefix number)
+                      (push example examples)
+                      (setf index next-index
+                            previous-line nil)))
+                   (fence
+                    (if (conformance-fence-close-p
                          line (car fence) (cdr fence))
-                    (setf fence nil))
-                  (setf previous-line nil)
-                  (incf index))
-                 ((and marker (conformance-example-info-p info))
-                  (incf number)
-                  (multiple-value-bind (example next-index)
-                      (conformance-read-example lines index section prefix number)
-                    (push example examples)
-                    (setf index next-index
-                          previous-line nil)))
-                 (marker
-                  (setf fence (cons marker fence-length)
-                        previous-line nil)
-                  (incf index))
-                 (t
-                  (let ((heading (conformance-heading line)))
-                    (cond
-                      (heading
-                       (setf section heading
-                             previous-line nil))
-                      ((and previous-line
-                            (conformance-setext-underline-p line))
-                       (setf section
-                             (string-trim '(#\Space #\Tab) previous-line)
-                             previous-line nil))
-                      ((string= (string-trim '(#\Space #\Tab) line) "")
-                       (setf previous-line nil))
-                      (t (setf previous-line line))))
-                  (incf index)))))
+                        (setf fence nil
+                              section-in-fence nil
+                              previous-line-in-fence nil)
+                        (multiple-value-setq (section-in-fence previous-line-in-fence)
+                          (advance-section line previous-line-in-fence section-in-fence)))
+                    (incf index))
+                   (marker
+                    (setf fence (cons marker fence-length)
+                          section-in-fence section
+                          previous-line-in-fence nil
+                          previous-line nil)
+                    (incf index))
+                   (t
+                    (multiple-value-setq (section previous-line)
+                      (advance-section line previous-line section))
+                    (incf index))))))
     (nreverse examples)))
 
 (defun commonmark-spec-examples ()
