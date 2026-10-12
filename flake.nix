@@ -25,6 +25,7 @@
       inputs.cl-nix-forge.follows = "cl-nix-forge";
       inputs.cl-weave.follows = "cl-weave";
       inputs.cl-codec-kit.follows = "cl-codec-kit";
+      inputs.cl-regex-kit.inputs.cl-parser-kit.follows = "cl-parser-kit";
       inputs.treefmt-nix.follows = "treefmt-nix";
     };
     commonmark-spec = {
