@@ -1,19 +1,19 @@
 ;;;; src/markdown-writer.lisp
 (in-package #:cl-markdown-kit)
 
-(defvar *mw-line-start-p* t)
-(defvar *mw-line-indent* 0)
-(defvar *mw-table-cell-p* nil)
-(defvar *mw-escape-table-pipes-p* nil)
-(defvar *mw-text-autolink-breakpoints* nil)
-(defvar *mw-heading-p* nil)
-(defvar *mw-autolink-label-p* nil)
-(defvar *mw-escape-trailing-bang-p* nil)
-(defvar *mw-list-boundary-token* nil)
-(defvar *mw-list-boundary-count* 0)
-(defvar *mw-following-block-p* nil)
-(defvar *mw-minimize-inline-escapes-p* nil)
-(defvar *mw-heading-closing-hash-allowed-p* nil)
+(declaim (special *mw-line-start-p*
+                  *mw-line-indent*
+                  *mw-table-cell-p*
+                  *mw-escape-table-pipes-p*
+                  *mw-text-autolink-breakpoints*
+                  *mw-heading-p*
+                  *mw-autolink-label-p*
+                  *mw-escape-trailing-bang-p*
+                  *mw-list-boundary-token*
+                  *mw-list-boundary-count*
+                  *mw-following-block-p*
+                  *mw-minimize-inline-escapes-p*
+                  *mw-heading-closing-hash-allowed-p*))
 
 (defun %mw-write-string (string stream)
   (write-string string stream)
@@ -981,34 +981,37 @@
           return (format nil "[~A]: <>" label)))
 
 (defun %mw-render-document-markdown (document)
-  (loop with token-length = 1
-        for token = (concatenate
-                     'string
-                     (make-string token-length :initial-element #\Null)
-                     "markdown-writer-list-boundary"
-                     (make-string token-length :initial-element #\Null))
-        do (let* ((boundary-count 0)
-                  (markdown
-                    (let ((*mw-line-start-p* t)
-                          (*mw-line-indent* 0)
-                          (*mw-table-cell-p* nil)
-                          (*mw-escape-table-pipes-p* nil)
-                          (*mw-text-autolink-breakpoints* nil)
-                          (*mw-heading-p* nil)
-                          (*mw-autolink-label-p* nil)
-                          (*mw-escape-trailing-bang-p* nil)
-                          (*mw-following-block-p* nil)
-                          (*mw-minimize-inline-escapes-p* nil)
-                          (*mw-list-boundary-token* token)
-                          (*mw-list-boundary-count* 0))
-                      (prog1 (%mw-render-blocks (document-children document))
-                        (setf boundary-count *mw-list-boundary-count*))))
-                  (token-count (%mw-substring-count markdown token)))
-             (when (= boundary-count token-count)
-               (return
-                 (%mw-replace-substring
-                  markdown token (%mw-list-boundary-definition markdown))))
-             (incf token-length))))
+  (let ((*mw-line-start-p* t)
+        (*mw-line-indent* 0)
+        (*mw-table-cell-p* nil)
+        (*mw-escape-table-pipes-p* nil)
+        (*mw-text-autolink-breakpoints* nil)
+        (*mw-heading-p* nil)
+        (*mw-autolink-label-p* nil)
+        (*mw-escape-trailing-bang-p* nil)
+        (*mw-list-boundary-token* nil)
+        (*mw-list-boundary-count* 0)
+        (*mw-following-block-p* nil)
+        (*mw-minimize-inline-escapes-p* nil)
+        (*mw-heading-closing-hash-allowed-p* nil))
+    (loop with token-length = 1
+          for token = (concatenate
+                       'string
+                       (make-string token-length :initial-element #\Null)
+                       "markdown-writer-list-boundary"
+                       (make-string token-length :initial-element #\Null))
+          do (let* ((boundary-count 0)
+                    (markdown
+                      (let ((*mw-list-boundary-token* token)
+                            (*mw-list-boundary-count* 0))
+                        (prog1 (%mw-render-blocks (document-children document))
+                          (setf boundary-count *mw-list-boundary-count*))))
+                    (token-count (%mw-substring-count markdown token)))
+               (when (= boundary-count token-count)
+                 (return
+                   (%mw-replace-substring
+                    markdown token (%mw-list-boundary-definition markdown))))
+               (incf token-length)))))
 
 (defun write-markdown-to-stream (document stream)
   (check-type document document)
