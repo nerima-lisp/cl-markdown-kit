@@ -63,86 +63,147 @@
       inputs.cl-json-kit.inputs.cl-weave.follows = "cl-codec-kit/cl-weave";
       inputs.cl-regex-kit.inputs.cl-cli.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-cli.inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-cli.inputs.paredit-cli.inputs.crane.follows = "cl-weave/paredit-cli/crane";
-      inputs.cl-regex-kit.inputs.cl-cli.inputs.paredit-cli.inputs.rust-overlay.follows = "cl-weave/paredit-cli/rust-overlay";
+      inputs.cl-regex-kit.inputs.cl-cli.inputs.paredit-cli.inputs.crane.follows =
+        "cl-weave/paredit-cli/crane";
+      inputs.cl-regex-kit.inputs.cl-cli.inputs.paredit-cli.inputs.rust-overlay.follows =
+        "cl-weave/paredit-cli/rust-overlay";
       inputs.cl-regex-kit.inputs.cl-cli.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-weave.inputs.paredit-cli.follows = "cl-weave/paredit-cli";
-      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-weave.inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-weave.inputs.paredit-cli.follows =
+        "cl-weave/paredit-cli";
+      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-weave.inputs.paredit-cli.inputs.treefmt-nix.follows =
+        "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-weave.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.paredit-cli.inputs.treefmt-nix.follows =
+        "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.treefmt-nix.follows = "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.paredit-cli.follows = "cl-codec-kit/paredit-cli";
       inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
-      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-weave.inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
+      inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-weave.inputs.cl-nix-forge.follows =
+        "cl-weave/cl-nix-forge";
       inputs.cl-regex-kit.inputs.cl-codec-kit.inputs.cl-weave.follows = "cl-codec-kit/cl-weave";
       inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.cl-nix-forge.follows =
+        "cl-weave/cl-nix-forge";
       inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-weave.follows = "cl-codec-kit/cl-weave";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-host-kit.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-prolog.inputs.paredit-cli.follows = "cl-weave/paredit-cli";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-prolog.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.follows = "cl-weave/paredit-cli";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-date-kit.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-host-kit.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.crane.follows = "cl-weave/paredit-cli/crane";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.rust-overlay.follows = "cl-weave/paredit-cli/rust-overlay";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.paredit-cli.follows = "cl-weave/paredit-cli";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.treefmt-nix.follows = "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-host-kit.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-prolog.inputs.paredit-cli.follows =
+        "cl-weave/paredit-cli";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-prolog.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.follows =
+        "cl-weave/paredit-cli";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-date-kit.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-host-kit.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.crane.follows =
+        "cl-weave/paredit-cli/crane";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.rust-overlay.follows =
+        "cl-weave/paredit-cli/rust-overlay";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.paredit-cli.follows =
+        "cl-weave/paredit-cli";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.paredit-cli.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.treefmt-nix.follows =
+        "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-host-kit.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-prolog.inputs.paredit-cli.follows = "cl-weave/paredit-cli";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-prolog.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.follows = "cl-weave/paredit-cli";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-date-kit.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-host-kit.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.paredit-cli.follows = "cl-weave/paredit-cli";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.follows = "cl-codec-kit/cl-weave";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-host-kit.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-prolog.inputs.paredit-cli.follows =
+        "cl-weave/paredit-cli";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-prolog.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.follows =
+        "cl-weave/paredit-cli";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-date-kit.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-host-kit.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.paredit-cli.follows =
+        "cl-weave/paredit-cli";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.paredit-cli.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-nix-forge.follows =
+        "cl-weave/cl-nix-forge";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.inputs.cl-nix-forge.follows =
+        "cl-weave/cl-nix-forge";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-weave.follows =
+        "cl-codec-kit/cl-weave";
       inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
       inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-weave.follows = "cl-codec-kit/cl-weave";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-date-kit.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-date-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-boundary-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-prolog.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-boundary-kit/cl-prolog";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-weave.inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-weave.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-date-kit.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-date-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-boundary-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-prolog.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-boundary-kit/cl-prolog";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-weave.inputs.cl-nix-forge.follows =
+        "cl-weave/cl-nix-forge";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-weave.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.paredit-cli.inputs.treefmt-nix.follows =
+        "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.paredit-cli.follows = "cl-codec-kit/paredit-cli";
       inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-weave.inputs.paredit-cli.follows = "cl-weave/paredit-cli";
-      inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-weave.inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-weave.inputs.paredit-cli.follows =
+        "cl-weave/paredit-cli";
+      inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-weave.inputs.paredit-cli.inputs.treefmt-nix.follows =
+        "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-weave.inputs.treefmt-nix.follows = "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-json-kit.inputs.treefmt-nix.follows = "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
-      inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-weave.inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
+      inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-weave.inputs.cl-nix-forge.follows =
+        "cl-weave/cl-nix-forge";
       inputs.cl-regex-kit.inputs.cl-json-kit.inputs.cl-weave.follows = "cl-codec-kit/cl-weave";
       inputs.cl-regex-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
+        "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.cl-weave.inputs.treefmt-nix.follows = "treefmt-nix";
-      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
+      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.paredit-cli.inputs.treefmt-nix.follows =
+        "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.treefmt-nix.follows = "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-weave.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-weave.inputs.paredit-cli.follows = "cl-weave/paredit-cli";
@@ -155,25 +216,43 @@
       inputs.cl-regex-kit.inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
       inputs.cl-regex-kit.inputs.treefmt-nix.follows = "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-json-kit.follows = "cl-yaml-kit/cl-json-kit";
-      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-host-kit.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-host-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-host-kit.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-host-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-host-kit.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-host-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-boundary-kit.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-boundary-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-host-kit.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-host-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-json-kit.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-json-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-log-kit.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-log-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-process-kit.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-process-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-prolog.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-prolog";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.crane.follows = "cl-weave/paredit-cli/crane";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.rust-overlay.follows = "cl-weave/paredit-cli/rust-overlay";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-weave.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-weave";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-date-kit.inputs.cl-weave.follows = "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-date-kit/cl-weave";
-      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.cl-weave.inputs.cl-nix-forge.follows = "cl-yaml-kit/cl-regex-kit/cl-cli/cl-nix-forge";
-      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.paredit-cli.follows = "cl-yaml-kit/cl-regex-kit/cl-cli/paredit-cli";
-      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.paredit-cli.inputs.crane.follows = "cl-weave/paredit-cli/crane";
-      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.paredit-cli.inputs.rust-overlay.follows = "cl-weave/paredit-cli/rust-overlay";
+      inputs.cl-regex-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-host-kit.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-host-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-boundary-kit.inputs.cl-host-kit.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-host-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-host-kit.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-host-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-boundary-kit.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-boundary-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-host-kit.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-host-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-json-kit.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-json-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-log-kit.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-log-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-process-kit.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-process-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-prolog.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-prolog";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.crane.follows =
+        "cl-weave/paredit-cli/crane";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.paredit-cli.inputs.rust-overlay.follows =
+        "cl-weave/paredit-cli/rust-overlay";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-cli.inputs.cl-weave.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-cli/cl-weave";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-concurrent-kit.inputs.cl-date-kit.inputs.cl-weave.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-concurrent-kit/cl-date-kit/cl-weave";
+      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.cl-weave.inputs.cl-nix-forge.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-cli/cl-nix-forge";
+      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.paredit-cli.follows =
+        "cl-yaml-kit/cl-regex-kit/cl-cli/paredit-cli";
+      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.paredit-cli.inputs.crane.follows =
+        "cl-weave/paredit-cli/crane";
+      inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.paredit-cli.inputs.rust-overlay.follows =
+        "cl-weave/paredit-cli/rust-overlay";
       inputs.cl-regex-kit.inputs.paredit-cli.inputs.crane.follows = "cl-codec-kit/paredit-cli/crane";
-      inputs.cl-regex-kit.inputs.paredit-cli.inputs.rust-overlay.follows = "cl-codec-kit/paredit-cli/rust-overlay";
+      inputs.cl-regex-kit.inputs.paredit-cli.inputs.rust-overlay.follows =
+        "cl-codec-kit/paredit-cli/rust-overlay";
     };
     commonmark-spec = {
       url = "github:commonmark/commonmark-spec/0.31.2";
