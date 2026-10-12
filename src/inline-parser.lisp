@@ -206,11 +206,14 @@
              (ascii-punctuation-p (char text (1+ index))))
     (+ index 2)))
 
-(defun %ip-backtick-run-end (text index end)
-  (loop with cursor = index
-        while (and (< cursor end) (char= (char text cursor) #\`))
-        do (incf cursor)
-        finally (return cursor)))
+(defun %ip-backtick-run-end (text index end &optional backtick-index)
+  (let ((record (and backtick-index (gethash index backtick-index))))
+    (if record
+        (min (car record) end)
+        (loop with cursor = index
+              while (and (< cursor end) (char= (char text cursor) #\`))
+              do (incf cursor)
+              finally (return cursor)))))
 
 (defun %ip-build-backtick-index (text)
   (let ((positions (make-hash-table :test #'eql))
@@ -221,7 +224,9 @@
           do (cond
                ((char= (char text index) #\`)
                 (let* ((run-end (%ip-backtick-run-end text index end))
-                       (run-length (- run-end index)))
+                       (run-length (- run-end index))
+                       (record (cons run-end -1)))
+                  (setf (gethash index next-runs) record)
                   (push index (gethash run-length positions))
                   (setf index run-end)))
                (t (incf index))))
@@ -230,12 +235,13 @@
                (setf run-positions (nreverse run-positions))
                (loop for (left right) on run-positions
                      while right
-                     do (setf (gethash left next-runs) right)))
+                     do (setf (cdr (gethash left next-runs)) right)))
              positions)
     next-runs))
 
 (defun %ip-backtick-close (index position)
-  (gethash position index -1))
+  (let ((record (gethash position index)))
+    (if record (cdr record) -1)))
 
 (defun %ip-tag-name-end (text index end)
   (when (and (< index end) (%ip-ascii-alpha-p (char text index)))
@@ -461,7 +467,8 @@
                 (setf index (or (%ip-backslash-escape-end text index length)
                                 (1+ index))))
                ((char= (char text index) #\`)
-                (let* ((run-end (%ip-backtick-run-end text index length))
+                (let* ((run-end (%ip-backtick-run-end
+                                 text index length backtick-next))
                        (close (%ip-backtick-close backtick-next index)))
                   (setf index (if (and (>= close 0) (< close length))
                                   (+ close (- run-end index))
@@ -1458,7 +1465,9 @@
                     (t (add-text "\\" index (1+ index))
                        (incf index))))
                  ((char= character #\`)
-                  (let* ((run-end (%ip-backtick-run-end text index scan-end))
+                  (let* ((run-end (%ip-backtick-run-end
+                                   text index scan-end
+                                   (%ip-context-backtick-next context)))
                          (close (%ip-backtick-close
                                  (%ip-context-backtick-next context) index)))
                     (if (and (>= close 0) (< close scan-end)

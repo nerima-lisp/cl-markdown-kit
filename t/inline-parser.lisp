@@ -999,7 +999,7 @@
                     (cl-markdown-kit::%ip-backtick-close backtick-index 0)
                     (cl-markdown-kit::%ip-backtick-close backtick-index 4)
                     (cl-markdown-kit::%ip-backtick-close backtick-index 2))
-              :to-equal '(t 2 2 7 -1))
+              :to-equal '(t 4 2 7 -1))
       (expect (coerce html-closes 'list) :to-equal '(nil nil nil nil))
       (expect (cl-markdown-kit::%ip-html-close-at html-closes 0 0 5)
               :to-be nil)
