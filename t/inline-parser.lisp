@@ -10,7 +10,7 @@
      index
      :max-inline-delimiter-depth max-inline-delimiter-depth)))
 
-(defun inline-parser-test-parse-range (text link-allowed)
+(defun inline-parser-test-parse-range (text link-allowed &optional start end)
   (let* ((buffer (cl-markdown-kit:make-source-buffer text))
          (normalized (cl-markdown-kit:source-buffer-normalized-text buffer))
          (boundary-map (cl-markdown-kit::source-buffer-boundary-map buffer))
@@ -25,7 +25,7 @@
        (cl-markdown-kit::%ip-make-context
         normalized boundary-map index limit backtick-next opens closes prefix
         (cl-markdown-kit::%ip-build-bare-links normalized) html-closes)
-       0 (length normalized) link-allowed 0))))
+       (or start 0) (or end (length normalized)) link-allowed 0))))
 
 (defun inline-parser-test-span (node)
   (let ((span (cl-markdown-kit:node-span node)))
@@ -437,15 +437,26 @@
                        (notany #'cl-markdown-kit:html-inline-p
                                (inline-parser-test-parse source)))
                      '("<tag title=>" "<tag title=\"unclosed>"
-                       "<tag" "<tag " "<tag title="
+                       "<tag" "<tag " "<tag title" "<tag title="
+                       "<tag title=bare" "</"
                        "<!-- unclosed" "<?unclosed" "<![CDATA[unclosed"
                        "<!doctype html>"))
               :to-be-truthy)
+      (expect (list (cl-markdown-kit::%ip-tag-name-end "tag" 0 3)
+                    (cl-markdown-kit::%ip-tag-name-end "t" 0 1)
+                    (cl-markdown-kit::%ip-tag-name-end "t" 1 1)
+                    (cl-markdown-kit::%ip-attribute-name-end "title" 0 5)
+                    (cl-markdown-kit::%ip-attribute-name-end "a" 0 1)
+                    (cl-markdown-kit::%ip-attribute-name-end "a" 1 1))
+              :to-equal '(3 1 nil 5 1 nil))
       (expect (list (cl-markdown-kit::%ip-raw-html-end "<!--body-->" 0 11)
                     (cl-markdown-kit::%ip-raw-html-end "<?pi?>" 0 6)
                     (cl-markdown-kit::%ip-raw-html-end "<![CDATA[x]]>" 0 13)
-                    (cl-markdown-kit::%ip-raw-html-end "<!DOCTYPE>" 0 10))
-              :to-equal '(11 6 13 10))))
+                    (cl-markdown-kit::%ip-raw-html-end "<!DOCTYPE>" 0 10)
+                    (cl-markdown-kit::%ip-raw-html-end "<!--" 0 4)
+                    (cl-markdown-kit::%ip-raw-html-end "<!---x" 0 6)
+                    (cl-markdown-kit::%ip-raw-html-end "x!A" 0 3))
+              :to-equal '(11 6 13 10 nil nil nil))))
 
   (it "validates angle email autolinks and links bare email addresses"
     (let* ((uri (first (inline-parser-test-parse "<git+ssh:user@host>")))
@@ -576,3 +587,184 @@
         (expect (cl-markdown-kit:parse-string (spec-example-markdown example))
                 :to-be-truthy))
       (expect (length examples) :to-equal 682))))
+
+(describe "Inline parser edge cases"
+  (it "preserves malformed entities and unresolved inline references"
+    (let* ((invalid-entities '("&" "&x" "&;" "&#" "&#;" "&#x;"
+                               "&#12" "&unknown;"
+                               "&abcdefghijklmnopqrstuvwxyz123456;"))
+           (literal-values
+             (mapcar (lambda (input)
+                       (apply #'concatenate 'string
+                              (mapcar #'cl-markdown-kit:text-value
+                                      (inline-parser-test-parse input))))
+                     invalid-entities))
+           (missing-footnote (inline-parser-test-parse "[^missing]"))
+           (empty-footnote (inline-parser-test-parse "[^]"))
+           (unclosed-footnote (inline-parser-test-parse "[^missing"))
+           (blank-reference (inline-parser-test-parse "[   ]"))
+           (blank-full-reference (inline-parser-test-parse "[missing][   ]"))
+           (unclosed-reference (inline-parser-test-parse "[missing")))
+      (expect literal-values :to-equal invalid-entities)
+      (expect (and (notany #'cl-markdown-kit:footnote-reference-p
+                           missing-footnote)
+                   (notany #'cl-markdown-kit:footnote-reference-p
+                           empty-footnote)
+                   (notany #'cl-markdown-kit:footnote-reference-p
+                           unclosed-footnote)
+                   (notany #'cl-markdown-kit:link-p blank-reference)
+                   (notany #'cl-markdown-kit:link-p blank-full-reference)
+                   (notany #'cl-markdown-kit:link-p unclosed-reference))
+              :to-be-truthy)))
+
+  (it "checks raw HTML names, attributes, and truncated openers"
+    (let ((valid '("<tag _name>" "<tag :name>" "<tag ns:attr=value>"
+                   "<tag title='value'>" "<tag title=bare>"))
+          (invalid '("<1tag>" "<tag .name>" "<tag title=>"
+                     "<tag title=`value`>" "<tag title='unclosed>"
+                     "<tag" "</tag" "<" "<!" "<!D")))
+      (expect (every (lambda (source)
+                       (let ((node (first (inline-parser-test-parse source))))
+                         (and (cl-markdown-kit:html-inline-p node)
+                              (string= (cl-markdown-kit:html-inline-body node)
+                                       source))))
+                     valid)
+              :to-be-truthy)
+      (expect (every (lambda (source)
+                       (notany #'cl-markdown-kit:html-inline-p
+                               (inline-parser-test-parse source)))
+                     invalid)
+              :to-be-truthy)))
+
+  (it "handles empty destinations and dangling link escapes"
+    (let* ((empty (first (inline-parser-test-parse "[x]()")))
+           (angle (first (inline-parser-test-parse "[x](<a\\q>)")))
+           (invalid (mapcar #'inline-parser-test-parse
+                            '("[x](a\\" "[x](/ \"title\\"
+                              "[x](" "[x](<a" "[x](<a\\"))))
+      (expect (list (cl-markdown-kit:link-destination empty)
+                    (cl-markdown-kit:link-destination angle))
+              :to-equal '("" "a%5Cq"))
+      (expect (every (lambda (nodes)
+                       (notany #'cl-markdown-kit:link-p nodes))
+                     invalid)
+              :to-be-truthy)))
+
+  (it "bounds angle and bare autolinks at invalid characters"
+    (let* ((invalid-autolinks
+             (mapcar #'inline-parser-test-parse
+                     '("<a_b:value>" "<https://example.com/<x>>"
+                       "<a@b..c>")))
+           (url-nodes (inline-parser-test-parse
+                       "http://example.com/path<tail"))
+           (url (find-if #'cl-markdown-kit:autolink-p url-nodes))
+           (without-entity
+             "http://example.com/path;")
+           (empty-entity "http://example.com/path&;")
+           (invalid-entity "http://example.com/path&x-y;")
+           (punctuation "?!."))
+      (expect (every (lambda (nodes)
+                       (notany #'cl-markdown-kit:autolink-p nodes))
+                     invalid-autolinks)
+              :to-be-truthy)
+      (expect (and url
+                   (string= (cl-markdown-kit:autolink-display-text url)
+                            "http://example.com/path")
+                   (string= (cl-markdown-kit:text-value (car (last url-nodes)))
+                            "<tail"))
+              :to-be-truthy)
+      (expect (list (cl-markdown-kit::%ip-trim-url-end
+                     without-entity 0 (length without-entity))
+                    (cl-markdown-kit::%ip-trim-url-end
+                     empty-entity 0 (length empty-entity))
+                    (cl-markdown-kit::%ip-trim-url-end
+                     invalid-entity 0 (length invalid-entity))
+                    (cl-markdown-kit::%ip-trim-url-end punctuation 0 0)
+                    (cl-markdown-kit::%ip-trim-url-end
+                     punctuation 0 (length punctuation)))
+              :to-equal (list (length without-entity)
+                              (length empty-entity)
+                              (length invalid-entity) 0 0))))
+
+  (it "handles delimiter leftovers, image link activation, and bounded ranges"
+    (let* ((tilde (inline-parser-test-parse "~~a ~~b~~~"))
+           (crossed (inline-parser-test-parse "*a **b* c**"))
+           (image-text (inline-parser-test-parse "![a [link](/target)]"))
+           (tab-break
+             (inline-parser-test-parse (format nil "a~C~%b" #\Tab)))
+           (middle (inline-parser-test-parse-range "*word*" nil 1 5))
+           (prefix (inline-parser-test-parse-range "*word*" nil 0 5))
+           (suffix (inline-parser-test-parse-range "*word*" nil 1 6)))
+      (expect (some #'cl-markdown-kit:strikethrough-p tilde)
+              :to-be-truthy)
+      (expect (some #'cl-markdown-kit:emphasis-p crossed)
+              :to-be-truthy)
+      (expect (and (notany #'cl-markdown-kit:image-p image-text)
+                   (some #'cl-markdown-kit:link-p image-text))
+              :to-be-truthy)
+      (expect (cl-markdown-kit:soft-break-p (second tab-break))
+              :to-be-truthy)
+      (expect (list (apply #'concatenate 'string
+                           (mapcar #'cl-markdown-kit:text-value middle))
+                    (apply #'concatenate 'string
+                           (mapcar #'cl-markdown-kit:text-value prefix))
+                    (apply #'concatenate 'string
+                           (mapcar #'cl-markdown-kit:text-value suffix)))
+              :to-equal '("word" "*word" "word*"))))
+
+  (it "selects tilde openers only when both runs have two markers"
+    (let* ((openers (make-hash-table :test #'eql))
+           (character (code-char 126))
+           (buckets (cl-markdown-kit::%ip-delimiter-buckets openers character))
+           (opener (cl-markdown-kit::%ip-make-delimiter
+                    character 0 2 t nil))
+           (closer (cl-markdown-kit::%ip-make-delimiter
+                    character 4 2 nil t)))
+      (setf (cl-markdown-kit::%ip-delimiter-remaining opener) 1
+            (aref buckets 6) (list opener)
+            (cl-markdown-kit::%ip-delimiter-remaining closer) 1)
+      (expect (cl-markdown-kit::%ip-best-opener openers closer)
+              :to-equal nil)
+      (setf (cl-markdown-kit::%ip-delimiter-remaining opener) 2)
+      (expect (cl-markdown-kit::%ip-best-opener openers closer)
+              :to-equal nil)
+      (setf (cl-markdown-kit::%ip-delimiter-remaining closer) 2)
+      (expect (cl-markdown-kit::%ip-best-opener openers closer)
+              :to-be opener)))
+
+  (it "keeps only complete atoms and pairs inside a rendered range"
+    (let* ((text "abcdefgh")
+           (buffer (cl-markdown-kit:make-source-buffer text))
+           (context
+             (cl-markdown-kit::%ip-make-context
+              text (cl-markdown-kit::source-buffer-boundary-map buffer)
+              nil 4096 nil nil nil nil nil nil))
+           (atoms (list
+                   (cl-markdown-kit::%ip-make-atom
+                    1 2 (cl-markdown-kit::%ip-text-node context "b" 1 2))
+                   (cl-markdown-kit::%ip-make-atom
+                    3 4 (cl-markdown-kit::%ip-text-node context "d" 3 4))
+                   (cl-markdown-kit::%ip-make-atom
+                    5 7 (cl-markdown-kit::%ip-text-node context "fg" 5 7))
+                   (cl-markdown-kit::%ip-make-atom
+                    6 7 (cl-markdown-kit::%ip-text-node context "g" 6 7))))
+           (pairs (list
+                   (cl-markdown-kit::%ip-make-pair
+                    :emphasis (code-char 42) 0 1 0 0 1 1)
+                   (cl-markdown-kit::%ip-make-pair
+                    :emphasis (code-char 42) 2 5 2 3 5 6)
+                   (cl-markdown-kit::%ip-make-pair
+                    :emphasis (code-char 42) 5 7 5 6 6 7)
+                   (cl-markdown-kit::%ip-make-pair
+                    :emphasis (code-char 42) 6 7 6 7 7 8)))
+           (nodes (cl-markdown-kit::%ip-build-range
+                   context 2 6 atoms pairs))
+           (emphasis (first nodes)))
+      (expect (and (= (length nodes) 1)
+                   (cl-markdown-kit:emphasis-p emphasis)
+                   (string= (apply #'concatenate 'string
+                                   (mapcar #'cl-markdown-kit:text-value
+                                           (cl-markdown-kit:emphasis-children
+                                            emphasis)))
+                            "de"))
+              :to-be-truthy))))

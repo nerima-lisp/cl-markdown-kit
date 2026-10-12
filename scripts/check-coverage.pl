@@ -142,16 +142,31 @@ sub source_exclusion_lines {
               || (defined $form_name && $_->{name} eq $form_name))
       } @$rules;
       if ($rule && $rule->{kind} eq 'defun-header') {
-        my $lambda_list_start;
-        if ($clean =~ /\(\s*\Q$head\E\s+\Q$form_name\E\s*(\()/) {
-          $lambda_list_start = $-[1];
+        my ($lambda_list_line, $lambda_list_start);
+        for my $j ($index .. $#lines) {
+          my $part = strip_lisp_strings_and_comments($lines[$j]);
+          if ($j == $index
+              && $part =~ /\(\s*\Q$head\E\s+\Q$form_name\E\s*(\()/) {
+            $lambda_list_line = $j;
+            $lambda_list_start = $-[1];
+            last;
+          }
+          if ($j > $index) {
+            my $opening = index($part, '(');
+            if ($opening >= 0) {
+              $lambda_list_line = $j;
+              $lambda_list_start = $opening;
+              last;
+            }
+          }
         }
         if (defined $lambda_list_start) {
           my $balance = 0;
           my $header_end;
-          for my $j ($index .. $#lines) {
+          for my $j ($lambda_list_line .. $#lines) {
             my $part = strip_lisp_strings_and_comments($lines[$j]);
-            $part = substr($part, $lambda_list_start) if $j == $index;
+            $part = substr($part, $lambda_list_start)
+              if $j == $lambda_list_line;
             $balance += (() = $part =~ /\(/g);
             $balance -= (() = $part =~ /\)/g);
             if ($balance == 0) {
