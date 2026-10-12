@@ -27,8 +27,9 @@
                (:file "block-parser")
                (:file "inline-parser")
                (:file "parse")
+               (:file "query")
                (:file "html-writer")
-               (:file "query"))
+               (:file "markdown-writer"))
   :in-order-to ((test-op (test-op "cl-markdown-kit/test"))))
 
 (asdf:defsystem "cl-markdown-kit/yaml"
@@ -89,8 +90,9 @@
                (:file "block-parser")
                (:file "inline-parser")
                (:file "character-data")
+               (:file "query")
                (:file "html-writer")
-               (:file "query"))
+               (:file "markdown-writer"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (let* ((condition-class

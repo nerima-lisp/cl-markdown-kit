@@ -254,4 +254,7 @@
    #:section-record-address
    #:document-headings
    #:find-section
-   #:extract))
+   #:extract
+   ;; Markdown writer
+   #:write-markdown
+   #:write-markdown-to-stream))
