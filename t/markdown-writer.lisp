@@ -211,7 +211,7 @@
                            (cl-markdown-kit:make-text :value "---|---"))))))
            (markdown (cl-markdown-kit:write-markdown document))
            (roundtrip (cl-markdown-kit:parse-string markdown)))
-      (expect markdown :to-equal (format nil "a\\|b~%---\\|---"))
+      (expect markdown :to-equal (format nil "a|b~%---\\|---"))
       (expect (markdown-writer-document-signature roundtrip)
               :to-equal (markdown-writer-document-signature document))))
 
@@ -236,7 +236,7 @@
     (flet ((render (text)
              (cl-markdown-kit::%mw-render-inline-string
               (list (cl-markdown-kit:make-text :value text)))))
-      (expect (render (format nil "    x")) :to-equal "   &#32;x")
+      (expect (render (format nil "    x")) :to-equal "&#32;   x")
       (expect (render (format nil "~Cx" #\Tab)) :to-equal "&#9;x")
       (expect (render (format nil " ~C" #\Tab)) :to-equal "&#32;&#9;")
       (expect (render (format nil "## heading~%1. item~%> quote~%---"))
@@ -244,11 +244,11 @@
       (expect (render "&copy; &x &amp;") :to-equal "\\&copy; &x \\&amp;")
       (expect
        (render (format nil "http://a.test https://b.test mailto:c@d.test xmpp:e@f.test"))
-       :to-equal "http\\://a.test https\\://b.test mailto\\:c@d.test xmpp\\:e@f.test")
+       :to-equal "http\\://a.test https\\://b.test mailto:c\\@d.test xmpp:e\\@f.test")
       (expect (render (format nil "x~C!y" #\\))
-              :to-equal (format nil "x~C~C~C!y" #\\ #\\ #\\))
+              :to-equal (format nil "x~C~C!y" #\\ #\\))
       (expect (render (format nil "x~Cay" #\\))
-              :to-equal (format nil "x~C~Cay" #\\ #\\))
+              :to-equal (format nil "x~Cay" #\\))
       (expect (render (format nil "line~%next"))
               :to-equal (format nil "line~%next")))
     (expect (cl-markdown-kit::%mw-heading-marker-p "##" 0 2) :to-be-truthy)
@@ -290,6 +290,217 @@
             :to-equal nil)
     (expect (cl-markdown-kit::%mw-line-prefix-hazard-p "" 0 0)
             :to-equal nil))
+
+  (it "preserves leading spaces through a Markdown HTML round trip"
+    (let* ((document
+             (cl-markdown-kit:make-document
+              :children
+              (list
+               (cl-markdown-kit:make-paragraph
+                :children
+                (list (cl-markdown-kit:make-text :value "    x"))))))
+           (markdown (cl-markdown-kit:write-markdown document))
+           (roundtrip (cl-markdown-kit:parse-string markdown)))
+      (expect markdown :to-equal "&#32;   x")
+      (expect (cl-markdown-kit:write-html
+               roundtrip :raw-html :pass-through :unsafe-urls t)
+              :to-equal
+              (cl-markdown-kit:write-html
+               document :raw-html :pass-through :unsafe-urls t))))
+
+  (it "keeps scheme text from creating an email autolink"
+    (labels ((document (text)
+               (cl-markdown-kit:make-document
+                :children
+                (list
+                 (cl-markdown-kit:make-paragraph
+                  :children (list (cl-markdown-kit:make-text :value text))))))
+             (html (document)
+               (cl-markdown-kit:write-html
+                document :raw-html :pass-through :unsafe-urls t))
+             (expect-roundtrip (text expected-markdown)
+               (let* ((original (document text))
+                      (markdown (cl-markdown-kit:write-markdown original))
+                      (roundtrip (cl-markdown-kit:parse-string markdown)))
+                 (expect markdown :to-equal expected-markdown)
+                 (expect (html roundtrip) :to-equal (html original)))))
+      (expect-roundtrip "mailto:c@d.test" "mailto:c\\@d.test")
+      (expect-roundtrip "xmpp:e@f.test" "xmpp:e\\@f.test")
+      (expect-roundtrip "mailto:literal" "mailto\\:literal")
+      (expect-roundtrip "xmpp:literal" "xmpp\\:literal")))
+
+  (it "keeps direct text newlines within heading and table syntax"
+    (labels ((document (node)
+               (cl-markdown-kit:make-document :children (list node)))
+             (html (document)
+               (cl-markdown-kit:write-html
+                document :raw-html :pass-through :unsafe-urls t)))
+      (let* ((heading-document
+               (document
+                (cl-markdown-kit:make-heading
+                 :level 2
+                 :children
+                 (list (cl-markdown-kit:make-text
+                        :value (format nil "first~%second"))))))
+             (markdown (cl-markdown-kit:write-markdown heading-document))
+             (roundtrip (cl-markdown-kit:parse-string markdown)))
+        (expect markdown :to-equal "## first&#10;second")
+        (expect (html roundtrip) :to-equal (html heading-document)))
+      (let* ((table-document
+               (document
+                (cl-markdown-kit:make-table
+                 :alignments '(:left)
+                 :rows
+                 (list
+                  (cl-markdown-kit:make-table-row
+                   :header-row-p t
+                   :cells
+                   (list
+                    (cl-markdown-kit:make-table-cell
+                     :children
+                     (list (cl-markdown-kit:make-text
+                            :value (format nil "first~%second"))))))))))
+             (markdown (cl-markdown-kit:write-markdown table-document))
+             (roundtrip (cl-markdown-kit:parse-string markdown :gfm t)))
+        (expect markdown
+                :to-equal (format nil "| first&#10;second |~%| :--- |"))
+        (expect (html roundtrip) :to-equal (html table-document)))))
+
+  (it "uses minimum backslash escaping when punctuation needs no escape"
+    (let* ((document
+             (cl-markdown-kit:make-document
+              :children
+              (list
+               (cl-markdown-kit:make-paragraph
+                :children
+                (list (cl-markdown-kit:make-text :value (format nil "x~C!y" #\\)))))))
+           (markdown (cl-markdown-kit:write-markdown document))
+           (roundtrip (cl-markdown-kit:parse-string markdown)))
+      (expect markdown :to-equal (format nil "x~C~C!y" #\\ #\\))
+      (expect (cl-markdown-kit:write-html
+               roundtrip :raw-html :pass-through :unsafe-urls t)
+              :to-equal
+              (cl-markdown-kit:write-html
+               document :raw-html :pass-through :unsafe-urls t))))
+
+  (it "preserves an empty block quote through a Markdown HTML round trip"
+    (let* ((document
+             (cl-markdown-kit:make-document
+              :children
+              (list (cl-markdown-kit:make-block-quote :children nil))))
+           (markdown (cl-markdown-kit:write-markdown document))
+           (roundtrip (cl-markdown-kit:parse-string markdown)))
+      (expect markdown :to-equal ">")
+      (expect (cl-markdown-kit:write-html
+               roundtrip :raw-html :pass-through :unsafe-urls t)
+              :to-equal
+              (cl-markdown-kit:write-html
+               document :raw-html :pass-through :unsafe-urls t))))
+
+  (it "escapes a text backslash only when Markdown needs it"
+    (labels ((html (document)
+               (cl-markdown-kit:write-html
+                document :raw-html :pass-through :unsafe-urls t)))
+      (let* ((document
+               (cl-markdown-kit:make-document
+                :children
+                (list
+                 (cl-markdown-kit:make-paragraph
+                  :children
+                  (list (cl-markdown-kit:make-text
+                         :value (format nil "x~Cay" #\\)))))))
+             (markdown (cl-markdown-kit:write-markdown document))
+             (roundtrip (cl-markdown-kit:parse-string markdown)))
+        (expect markdown :to-equal (format nil "x~Cay" #\\))
+        (expect (html roundtrip) :to-equal (html document)))
+      (let* ((document
+               (cl-markdown-kit:make-document
+                :children
+                (list
+                 (cl-markdown-kit:make-paragraph
+                  :children
+                  (list (cl-markdown-kit:make-text :value "prefix\\")
+                        (cl-markdown-kit:make-strong
+                         :children
+                         (list (cl-markdown-kit:make-text :value "bold"))))))))
+             (markdown (cl-markdown-kit:write-markdown document))
+             (roundtrip (cl-markdown-kit:parse-string markdown)))
+        (expect markdown
+                :to-equal (format nil "prefix~C~C**bold**" #\\ #\\))
+        (expect (html roundtrip) :to-equal (html document)))
+      (let* ((document
+               (cl-markdown-kit:make-document
+                :children
+                (list
+                 (cl-markdown-kit:make-paragraph
+                  :children
+                  (list (cl-markdown-kit:make-text
+                         :value (format nil "tail~C" #\\)))))))
+             (markdown (cl-markdown-kit:write-markdown document))
+             (roundtrip (cl-markdown-kit:parse-string markdown)))
+        (expect markdown :to-equal (format nil "tail~C" #\\))
+        (expect (html roundtrip) :to-equal (html document)))
+      (let* ((document
+               (cl-markdown-kit:make-document
+                :children
+                (list
+                 (cl-markdown-kit:make-paragraph
+                  :children
+                  (list (cl-markdown-kit:make-text
+                         :value (format nil "tail~C" #\\))
+                        (cl-markdown-kit:make-soft-break)
+                        (cl-markdown-kit:make-text :value "next"))))))
+             (markdown (cl-markdown-kit:write-markdown document))
+             (roundtrip (cl-markdown-kit:parse-string markdown)))
+        (expect markdown
+                :to-equal (format nil "tail~C~C~%next" #\\ #\\))
+        (expect (html roundtrip) :to-equal (html document)))
+      (let* ((document
+               (cl-markdown-kit:make-document
+                :children
+                (list
+                 (cl-markdown-kit:make-paragraph
+                  :children (list (cl-markdown-kit:make-text
+                                   :value (format nil "tail~C" #\\))))
+                 (cl-markdown-kit:make-paragraph
+                  :children (list (cl-markdown-kit:make-text :value "next"))))))
+             (markdown (cl-markdown-kit:write-markdown document))
+             (roundtrip (cl-markdown-kit:parse-string markdown)))
+        (expect markdown
+                :to-equal (format nil "tail~C~C~%~%next" #\\ #\\))
+        (expect (html roundtrip) :to-equal (html document)))))
+
+  (it "preserves terminal backslashes before inline closing delimiters"
+    (labels ((html (document)
+               (cl-markdown-kit:write-html
+                document :raw-html :pass-through :unsafe-urls t)))
+      (let* ((text (cl-markdown-kit:make-text
+                    :value (format nil "x~C" #\\)))
+             (cases
+               (list
+                (list (cl-markdown-kit:make-emphasis :children (list text))
+                      (format nil "*x~C~C*" #\\ #\\))
+                (list (cl-markdown-kit:make-strong :children (list text))
+                      (format nil "**x~C~C**" #\\ #\\))
+                (list (cl-markdown-kit:make-strikethrough :children (list text))
+                      (format nil "~~~~x~C~C~~~~" #\\ #\\))
+                (list (cl-markdown-kit:make-link
+                       :destination "target" :children (list text))
+                      (format nil "[x~C~C](<target>)" #\\ #\\))
+                (list (cl-markdown-kit:make-image
+                       :destination "target" :title nil :children (list text))
+                      (format nil "![x~C~C](<target>)" #\\ #\\)))))
+        (dolist (test-case cases)
+          (destructuring-bind (inline expected-markdown) test-case
+            (let* ((document
+                     (cl-markdown-kit:make-document
+                      :children
+                      (list (cl-markdown-kit:make-paragraph
+                             :children (list inline)))))
+                   (markdown (cl-markdown-kit:write-markdown document))
+                   (roundtrip (cl-markdown-kit:parse-string markdown)))
+              (expect markdown :to-equal expected-markdown)
+              (expect (html roundtrip) :to-equal (html document))))))))
 
   (it "renders inline node variants and escapes link components"
     (flet ((render (&rest nodes)
@@ -396,6 +607,12 @@
              (format nil "a|b~%---|---"))
             :to-be-truthy)
     (expect (cl-markdown-kit::%mw-table-start-follows-p
+             (format nil "a|~%---:"))
+            :to-be-truthy)
+    (expect (cl-markdown-kit::%mw-table-start-follows-p
+             (format nil "|a|~%:---"))
+            :to-be-truthy)
+    (expect (cl-markdown-kit::%mw-table-start-follows-p
              (format nil "a|b~%---"))
             :to-equal nil)
     (expect (cl-markdown-kit::%mw-table-start-follows-p "a|b")
@@ -405,7 +622,43 @@
       (cl-markdown-kit:make-paragraph
        :children (list (cl-markdown-kit:make-text
                         :value (format nil "a|b~%---|---")))))
-     :to-equal (format nil "a\\|b~%---\\|---"))
+     :to-equal (format nil "a|b~%---\\|---"))
+    (let* ((document
+             (cl-markdown-kit:make-document
+              :children
+              (list
+               (cl-markdown-kit:make-paragraph
+                :children
+                (list (cl-markdown-kit:make-text
+                       :value (format nil "a|b~%---|---")))))))
+           (markdown (cl-markdown-kit:write-markdown document))
+           (roundtrip (cl-markdown-kit:parse-string markdown :gfm t)))
+      (expect markdown :to-equal (format nil "a|b~%---\\|---"))
+      (expect (cl-markdown-kit:write-html
+               roundtrip :raw-html :pass-through :unsafe-urls t)
+              :to-equal
+              (cl-markdown-kit:write-html
+               document :raw-html :pass-through :unsafe-urls t)))
+    (dolist (test-case
+              (list (list (format nil "a|~%---:")
+                          (format nil "a|~%---\\:"))
+                    (list (format nil "|a|~%:---")
+                          (format nil "|a|~%\\:---"))))
+      (destructuring-bind (text expected-markdown) test-case
+        (let* ((document
+                 (cl-markdown-kit:make-document
+                  :children
+                  (list
+                   (cl-markdown-kit:make-paragraph
+                    :children (list (cl-markdown-kit:make-text :value text))))))
+               (markdown (cl-markdown-kit:write-markdown document))
+               (roundtrip (cl-markdown-kit:parse-string markdown :gfm t)))
+          (expect markdown :to-equal expected-markdown)
+          (expect (cl-markdown-kit:write-html
+                   roundtrip :raw-html :pass-through :unsafe-urls t)
+                  :to-equal
+                  (cl-markdown-kit:write-html
+                   document :raw-html :pass-through :unsafe-urls t)))))
     (expect
      (cl-markdown-kit::%mw-render-blocks
       (list (cl-markdown-kit:make-paragraph
@@ -536,7 +789,7 @@
             :to-equal "<hr>")
     (expect (cl-markdown-kit::%mw-render-block
              (cl-markdown-kit:make-block-quote :children nil))
-            :to-equal "")
+            :to-equal ">")
     (expect
      (cl-markdown-kit::%mw-render-block
       (cl-markdown-kit:make-link-reference-definition
@@ -590,4 +843,472 @@
             (make-string-input-stream "input"))
            nil)
        (type-error () t))
-     :to-be-truthy)))
+     :to-be-truthy))
+
+  (it "covers writer boundaries in directly constructed AST nodes"
+    (labels ((render-nodes (nodes)
+               (cl-markdown-kit:write-markdown
+                (cl-markdown-kit:make-document :children nodes)))
+             (render-block (node)
+               (render-nodes (list node)))
+             (paragraph (children)
+               (cl-markdown-kit:make-paragraph :children children))
+             (text (value)
+               (cl-markdown-kit:make-text :value value))
+             (signals-error-p (thunk)
+               (handler-case
+                   (progn (funcall thunk) nil)
+                 (error () t))))
+      (let* ((raw-inline (format nil " ~CTop~% ~CBottom" #\Tab #\Tab))
+             (raw-inline-output
+               (render-block
+                (paragraph
+                 (list (cl-markdown-kit:make-html-inline :body raw-inline)))))
+             (marker-output
+               (render-block (paragraph (list (text "* * *")))))
+             (minimal-text "a * b _ c ~ d < e [ref")
+             (minimal-text-output
+               (render-block (paragraph (list (text minimal-text)))))
+             (minimal-text-roundtrip
+               (cl-markdown-kit:parse-string minimal-text-output))
+             (minimal-heading-output
+               (render-block
+                (cl-markdown-kit:make-heading
+                 :level 2 :children (list (text "# section")))))
+             (minimal-heading-roundtrip
+               (cl-markdown-kit:parse-string minimal-heading-output))
+             (heading-hash-before-inline
+               (render-block
+                (cl-markdown-kit:make-heading
+                 :level 2
+                 :children
+                 (list (text "section #")
+                       (cl-markdown-kit:make-strong
+                        :children (list (text "bold")))))))
+             (heading-hash-roundtrip
+               (cl-markdown-kit:parse-string heading-hash-before-inline))
+             (unmatched-close-bracket
+               (render-block (paragraph (list (text "close ]")))))
+             (cross-node-autolink
+               (render-block
+                (paragraph
+                 (list (text "https") (text "://example.test")))))
+             (cross-node-entity
+               (render-block
+                (paragraph (list (text "&am") (text "p;")))))
+             (reference-text-markdown
+               (render-nodes
+                (list (paragraph (list (text "see [") (text "ref]")))
+                      (cl-markdown-kit:make-link-reference-definition
+                       :raw-label "ref"
+                       :normalized-label "ref"
+                       :destination "target"
+                       :eligible-p t))))
+             (reference-text-roundtrip
+               (cl-markdown-kit:parse-string reference-text-markdown))
+             (underscore-marker-output
+               (render-block (paragraph (list (text "___  ")))))
+             (trailing-inline-output
+               (render-block
+                (paragraph (list (text (format nil "word  ~C" #\Tab))))))
+             (alignment-output
+               (render-block
+                (paragraph
+                 (list (text "a | b")
+                       (cl-markdown-kit:make-soft-break)
+                       (text ":-: | :")))))
+             (broken-schemes
+               (render-block
+                (paragraph
+                 (list
+                  (text "https://www.example.test._bad http://www.example.test._bad")
+                  (cl-markdown-kit:make-soft-break)
+                  (text "mailto:user@example.test._bad xmpp:user@example.test._bad")))))
+             (definition-output
+               (render-block
+                (cl-markdown-kit:make-link-reference-definition
+                 :raw-label (format nil "raw&~%label")
+                 :normalized-label ""
+                 :destination "destination")))
+             (link-output
+               (render-block
+                (cl-markdown-kit:make-table
+                 :alignments '(:unknown)
+                 :rows
+                 (list
+                  (cl-markdown-kit:make-table-row
+                   :cells
+                   (list
+                    (cl-markdown-kit:make-table-cell
+                     :children
+                     (list
+                      (cl-markdown-kit:make-link
+                       :destination (format nil "a<b>|&amp;~%tail")
+                       :title "say \"hi\""
+                       :children (list (text "label")))))))))))
+             (writer-link (cl-markdown-kit:make-link
+                           :destination "/destination"))
+             (trailing-bang-link
+               (render-block
+                (paragraph (list (text "bang!") writer-link))))
+             (ordinary-text-link
+               (render-block
+                (paragraph (list (text "bang") writer-link))))
+             (empty-text-link
+               (render-block
+                (paragraph (list (text "") writer-link))))
+             (differing-autolink
+               (render-block
+                (paragraph
+                 (list (cl-markdown-kit:make-autolink
+                        :destination "https://example.test"
+                        :display-text "example")))))
+             (front-matter-crlf
+               (render-block
+                (cl-markdown-kit:make-front-matter
+                 :raw-text (format nil "one~C~%two~Cthree" #\Return #\Return))))
+             (front-matter-final-newline
+               (render-block
+                (cl-markdown-kit:make-front-matter
+                 :raw-text (format nil "front~%"))))
+             (front-matter-trailing-cr
+               (render-block
+                (cl-markdown-kit:make-front-matter
+                 :raw-text (format nil "end~C" #\Return))))
+             (empty-front-matter
+               (render-block (cl-markdown-kit:make-front-matter)))
+             (empty-code
+               (render-block
+                (cl-markdown-kit:make-code-block :body "")))
+             (unterminated-code
+               (render-block
+                (cl-markdown-kit:make-code-block :body "body")))
+             (following-code
+               (render-nodes
+                (list (cl-markdown-kit:make-code-block :body "body")
+                      (paragraph (list (text "after"))))))
+             (following-code-nodes
+               (cl-markdown-kit:document-children
+                (cl-markdown-kit:parse-string following-code)))
+             (empty-table
+               (render-block (cl-markdown-kit:make-table)))
+             (empty-footnote
+               (render-block
+                (cl-markdown-kit:make-footnote-definition
+                 :normalized-label "")))
+             (empty-footnote-child
+               (render-block
+                (cl-markdown-kit:make-footnote-definition
+                 :normalized-label "note"
+                 :children (list (paragraph nil)))))
+             (empty-task
+               (render-block
+                (cl-markdown-kit:make-list-node
+                 :kind :unordered
+                 :tight-p t
+                 :items
+                 (list (cl-markdown-kit:make-task-list-item
+                        :checked-p nil)))))
+             (block-task
+               (render-block
+                (cl-markdown-kit:make-list-node
+                 :kind :unordered
+                 :tight-p t
+                 :items
+                 (list (cl-markdown-kit:make-task-list-item
+                        :checked-p t
+                        :children
+                        (list (cl-markdown-kit:make-code-block :body "x")))))))
+             (empty-list
+               (render-block (cl-markdown-kit:make-list-node :items nil)))
+             (list-item
+               (cl-markdown-kit:make-list-item
+                :children (list (paragraph (list (text "item"))))))
+             (separator-label "cl-markdown-kit-writer-list-separator-0")
+             (list-boundary-collision
+               (render-nodes
+                (list (paragraph (list (text separator-label)))
+                      (cl-markdown-kit:make-list-node
+                       :kind :unordered :tight-p t :items (list list-item))
+                      (cl-markdown-kit:make-list-node
+                       :kind :unordered :tight-p t :items (list list-item)))))
+             (token-collision
+               (format nil "~Cmarkdown-writer-list-boundary~C" #\Null #\Null))
+             (list-token-collision
+               (render-nodes
+                (list (cl-markdown-kit:make-list-node
+                       :kind :unordered :tight-p t :items (list list-item))
+                      (cl-markdown-kit:make-list-node
+                       :kind :unordered :tight-p t :items (list list-item))
+                      (paragraph (list (text token-collision))))))
+             (heading-soft-break
+               (render-block
+                (cl-markdown-kit:make-heading
+                 :level 2
+                 :children (list (text "first")
+                                 (cl-markdown-kit:make-soft-break)
+                                 (text "second"))))))
+        (expect raw-inline-output :to-equal raw-inline)
+        (expect marker-output :to-equal "\\* * *")
+        (expect underscore-marker-output :to-equal "\\___&#32;&#32;")
+        (expect minimal-text-output :to-equal minimal-text)
+        (expect (markdown-writer-document-signature minimal-text-roundtrip)
+                :to-equal '((:paragraph ((:text "a * b _ c ~ d < e [ref")))))
+        (expect minimal-heading-output :to-equal "## # section")
+        (expect (markdown-writer-document-signature minimal-heading-roundtrip)
+                :to-equal '((:heading 2 ((:text "# section")))))
+        (expect heading-hash-before-inline :to-equal "## section #**bold**")
+        (expect (markdown-writer-document-signature heading-hash-roundtrip)
+                :to-equal
+                '((:heading 2 ((:text "section #")
+                               (:strong ((:text "bold")))))))
+        (expect unmatched-close-bracket :to-equal "close ]")
+        (expect cross-node-autolink :to-equal "https\\://example.test")
+        (expect cross-node-entity :to-equal "\\&amp;")
+        (expect (search "\\[ref\\]" reference-text-markdown)
+                :to-be-truthy)
+        (expect (markdown-writer-document-signature reference-text-roundtrip)
+                :to-equal
+                '((:paragraph ((:text "see [ref]")))
+                  (:link-reference-definition "ref" "target" nil t)))
+        (expect trailing-inline-output :to-equal "word&#32;&#32;&#9;")
+        (expect alignment-output :to-be-truthy)
+        (expect (search "&#104;ttps://" broken-schemes) :to-be-truthy)
+        (expect (search "&#104;ttp://" broken-schemes) :to-be-truthy)
+        (expect (search "mailto\\:user@example.test._bad" broken-schemes)
+                :to-be-truthy)
+        (expect (search "xmpp\\:user@example.test._bad" broken-schemes)
+                :to-be-truthy)
+        (expect definition-output :to-equal "[raw&amp; label]: <destination>")
+        (expect (search "\\<b\\>\\|\\&amp;&#10;tail" link-output)
+                :to-be-truthy)
+        (expect (search "say \\\"hi\\\"" link-output) :to-be-truthy)
+        (expect trailing-bang-link :to-equal "bang\\![](</destination>)")
+        (expect ordinary-text-link :to-equal "bang[](</destination>)")
+        (expect empty-text-link :to-equal "[](</destination>)")
+        (expect differing-autolink
+                :to-equal "[example](<https://example.test>)")
+        (expect front-matter-crlf :to-equal
+                (format nil "---~%one~%two~%three~%---"))
+        (expect front-matter-final-newline :to-equal
+                (format nil "---~%front~%---"))
+        (expect front-matter-trailing-cr :to-equal
+                (format nil "---~%end~%---"))
+        (expect empty-front-matter :to-equal (format nil "---~%---"))
+        (expect empty-code :to-equal (format nil "```~%```"))
+        (expect unterminated-code :to-equal (format nil "```~%body"))
+        (expect following-code
+                :to-equal (format nil "```~%body~%```~%~%after"))
+        (expect (length following-code-nodes) :to-equal 2)
+        (expect (cl-markdown-kit:code-block-body
+                 (first following-code-nodes))
+                :to-equal (format nil "body~%"))
+        (expect (cl-markdown-kit:text-value
+                 (first (cl-markdown-kit:paragraph-children
+                         (second following-code-nodes))))
+                :to-equal "after")
+        (expect empty-table :to-equal "")
+        (expect empty-footnote :to-equal "[^]:")
+        (expect empty-footnote-child :to-equal (format nil "[^note]:~%"))
+        (expect empty-task :to-equal "- [ ]")
+        (expect (search (format nil "- [x]~%  ```~%  x") block-task)
+                :to-be-truthy)
+        (expect empty-list :to-equal "")
+        (expect (search "[cl-markdown-kit-writer-list-separator-1]: <>"
+                        list-boundary-collision)
+                :to-be-truthy)
+        (expect (search token-collision list-token-collision) :to-be-truthy)
+        (expect heading-soft-break :to-equal "## first&#10;second")
+        (expect (signals-error-p
+                 (lambda ()
+                   (cl-markdown-kit:write-markdown-to-stream
+                    nil (make-string-output-stream))))
+                :to-be-truthy)
+        (expect (signals-error-p
+                 (lambda ()
+                   (cl-markdown-kit:write-markdown-to-stream
+                    (cl-markdown-kit:make-document) nil)))
+                :to-be-truthy)
+        (expect (signals-error-p
+                 (lambda ()
+                   (cl-markdown-kit:write-markdown-to-stream
+                    (cl-markdown-kit:make-document)
+                    (make-string-input-stream ""))))
+                :to-be-truthy)
+        (expect (cl-markdown-kit::%mw-heading-marker-p "" 0 0)
+                :to-equal nil)
+        (expect (cl-markdown-kit::%mw-heading-marker-p "#x" 0 2)
+                :to-equal nil)
+        (expect (cl-markdown-kit::%mw-list-marker-p "" 0 0)
+                :to-equal nil)
+        (expect (cl-markdown-kit::%mw-marker-line-p
+                 "" 0 0 '(#\* #\_ #\-) 3)
+                :to-equal nil)
+        (expect (cl-markdown-kit::%mw-marker-line-p
+                 "___  " 0 5 '(#\* #\_ #\-) 3)
+                :to-be-truthy)
+        (expect (cl-markdown-kit::%mw-setext-marker-line-p "" 0 0)
+                :to-equal nil)
+        (expect (cl-markdown-kit::%mw-setext-marker-line-p "==x" 0 3)
+                :to-equal nil)
+        (expect (cl-markdown-kit::%mw-line-prefix-hazard-p "" 0 0)
+                :to-equal nil)
+        (expect (cl-markdown-kit::%mw-inline-tail-has-nonspace-p
+                 (list (text "visible")))
+                :to-be-truthy)
+        (expect (cl-markdown-kit::%mw-inline-tail-has-nonspace-p
+                 (list (text "  ")))
+                :to-equal nil)
+        (expect (cl-markdown-kit::%mw-inline-tail-has-nonspace-p
+                 (list (cl-markdown-kit:make-html-inline :body "<br>")))
+                :to-be-truthy)
+        (expect (cl-markdown-kit::%mw-inline-tail-has-nonspace-p
+                 (list (cl-markdown-kit:make-html-inline :body " ")))
+                :to-equal nil)
+        (expect (cl-markdown-kit::%mw-inline-tail-has-nonspace-p
+                 (list (cl-markdown-kit:make-soft-break)))
+                :to-be-truthy)
+        (expect (cl-markdown-kit::%mw-table-alignment-line-p ":---||:")
+                :to-equal nil)
+        (expect (signals-error-p
+                 (lambda ()
+                   (render-nodes (list (cl-markdown-kit:make-node)))))
+                :to-be-truthy)
+        (expect (signals-error-p
+                 (lambda ()
+                   (render-block
+                    (paragraph (list (cl-markdown-kit:make-node))))))
+                :to-be-truthy))))
+
+  (it "preserves inline writer context across nested runs"
+    (labels ((text (value)
+               (cl-markdown-kit:make-text :value value))
+             (paragraph (children)
+               (cl-markdown-kit:make-paragraph :children children))
+             (document (block)
+               (cl-markdown-kit:make-document :children (list block)))
+             (roundtrip (document)
+               (cl-markdown-kit:parse-string
+                (cl-markdown-kit:write-markdown document)))
+             (html (document)
+               (cl-markdown-kit:write-html
+                document :raw-html :pass-through :unsafe-urls t))
+             (expect-roundtrip (original expected-markdown expected-signature)
+               (let ((markdown (cl-markdown-kit:write-markdown original))
+                     (parsed (roundtrip original)))
+                 (expect markdown :to-equal expected-markdown)
+                 (expect (markdown-writer-document-signature parsed)
+                         :to-equal expected-signature)
+                 (expect (html parsed) :to-equal (html original)))))
+      (let* ((strong-heading
+               (document
+                (cl-markdown-kit:make-heading
+                 :level 2
+                 :children
+                 (list (cl-markdown-kit:make-strong
+                        :children (list (text "section #")))
+                       (text " follows")))))
+             (strong-heading-end
+               (document
+                (cl-markdown-kit:make-heading
+                 :level 2
+                 :children
+                 (list (cl-markdown-kit:make-strong
+                        :children (list (text "section #")))))))
+             (emphasis-heading
+               (document
+                (cl-markdown-kit:make-heading
+                 :level 2
+                 :children
+                 (list (cl-markdown-kit:make-emphasis
+                        :children (list (text "section #")))
+                       (text " follows")))))
+             (safe-mixed-inline
+               (document
+                (paragraph
+                 (list (text "a ~ b")
+                       (cl-markdown-kit:make-strong
+                        :children (list (text "bold")))))))
+             (mixed-delimiter-boundary
+               (document
+                (paragraph
+                 (list (text "left ~ *")
+                       (cl-markdown-kit:make-strong
+                        :children (list (text "bold")))))))
+             (delimiter-boundary
+               (document
+                (paragraph
+                 (list (text "left*")
+                       (cl-markdown-kit:make-strong
+                        :children (list (text "bold")))
+                       (text "*right")))))
+             (code-span-boundary
+               (document
+                (paragraph
+                 (list (text "`foo")
+                       (cl-markdown-kit:make-code-span
+                        :literal-text "bar")))))
+             (split-autolink
+               (document
+                (paragraph
+                 (list (text "https")
+                       (cl-markdown-kit:make-html-inline :body "")
+                       (text "://example.test")))))
+             (split-entity
+               (document
+                (paragraph
+                 (list (text "&am")
+                       (cl-markdown-kit:make-html-inline :body "")
+                       (text "p;"))))))
+        (expect-roundtrip
+         strong-heading "## **section #** follows"
+         '((:heading 2 ((:strong ((:text "section #")))
+                       (:text " follows")))))
+        (expect-roundtrip
+         strong-heading-end "## **section #**"
+         '((:heading 2 ((:strong ((:text "section #")))))))
+        (expect-roundtrip
+         emphasis-heading "## *section #* follows"
+         '((:heading 2 ((:emphasis ((:text "section #")))
+                       (:text " follows")))))
+        (expect-roundtrip
+         safe-mixed-inline "a ~ b**bold**"
+         '((:paragraph ((:text "a ~ b") (:strong ((:text "bold")))))))
+        (expect-roundtrip
+         mixed-delimiter-boundary "left ~ \\***bold**"
+         '((:paragraph ((:text "left ~ *")
+                        (:strong ((:text "bold")))))))
+        (expect-roundtrip
+         delimiter-boundary "left\\***bold**\\*right"
+         '((:paragraph ((:text "left*")
+                        (:strong ((:text "bold")))
+                        (:text "*right")))))
+        (expect-roundtrip
+         code-span-boundary "\\`foo`bar`"
+         '((:paragraph ((:text "`foo") (:code "bar")))))
+        (expect-roundtrip
+         split-autolink "https\\://example.test"
+         '((:paragraph ((:text "https://example.test")))))
+        (expect-roundtrip
+         split-entity "\\&amp;"
+         '((:paragraph ((:text "&amp;"))))))))
+
+  (it "normalizes front matter line endings without changing HTML round trips"
+    (let* ((source
+             (format nil "---~C~%title: value~Ctail~C---~C~%body"
+                     #\Return #\Return #\Return #\Return))
+           (document (cl-markdown-kit:parse-string source))
+           (markdown (cl-markdown-kit:write-markdown document))
+           (roundtrip (cl-markdown-kit:parse-string markdown))
+           (stream-markdown
+             (with-output-to-string (stream)
+               (cl-markdown-kit:write-markdown-to-stream document stream))))
+      (expect markdown :to-equal
+              (format nil "---~%title: value~%tail~%---~%~%body"))
+      (expect stream-markdown :to-equal markdown)
+      (expect (cl-markdown-kit:write-html
+               roundtrip :raw-html :pass-through :unsafe-urls t)
+              :to-equal
+              (cl-markdown-kit:write-html
+               document :raw-html :pass-through :unsafe-urls t))))
+)

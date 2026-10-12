@@ -1,11 +1,19 @@
 ;;;; src/markdown-writer.lisp
 (in-package #:cl-markdown-kit)
 
-(declaim (special *mw-line-start-p*
-                  *mw-line-indent*
-                  *mw-table-cell-p*
-                  *mw-escape-table-pipes-p*
-                  *mw-text-autolink-breakpoints*))
+(defvar *mw-line-start-p* t)
+(defvar *mw-line-indent* 0)
+(defvar *mw-table-cell-p* nil)
+(defvar *mw-escape-table-pipes-p* nil)
+(defvar *mw-text-autolink-breakpoints* nil)
+(defvar *mw-heading-p* nil)
+(defvar *mw-autolink-label-p* nil)
+(defvar *mw-escape-trailing-bang-p* nil)
+(defvar *mw-list-boundary-token* nil)
+(defvar *mw-list-boundary-count* 0)
+(defvar *mw-following-block-p* nil)
+(defvar *mw-minimize-inline-escapes-p* nil)
+(defvar *mw-heading-closing-hash-allowed-p* nil)
 
 (defun %mw-write-string (string stream)
   (write-string string stream)
@@ -94,6 +102,24 @@
                  (t (return))))
       (and (>= count minimum) (= cursor end)))))
 
+(defun %mw-unparsed-autolink-prefix-length (text index)
+  (cond
+    ((and (%ip-bare-url-start-p text index)
+          (%ip-ascii-prefix-p text index "https://"))
+     (length "https://"))
+    ((and (%ip-bare-url-start-p text index)
+          (%ip-ascii-prefix-p text index "http://"))
+     (length "http://"))
+    ((and (%ip-bare-url-start-p text index)
+          (%ip-ascii-prefix-p text index "www."))
+     (length "www."))
+    ((and (%ip-bare-email-start-p text index)
+          (%ip-ascii-prefix-p text index "mailto:"))
+     (length "mailto:"))
+    ((and (%ip-bare-url-start-p text index)
+          (%ip-ascii-prefix-p text index "xmpp:"))
+     (length "xmpp:"))))
+
 (defun %mw-setext-marker-line-p (text start end)
   (let ((cursor start)
         (marker (and (< start end) (char text start))))
@@ -118,6 +144,123 @@
 (defun %mw-entity-at-p (text index)
   (nth-value 0 (%ip-entity-at text index (length text))))
 
+(defun %mw-fence-marker-line-p (text)
+  (let ((marker (and (plusp (length text)) (char text 0))))
+    (when (find marker '(#\` #\~))
+      (let ((end (or (position-if-not (lambda (character)
+                                        (char= character marker))
+                                      text)
+                     (length text))))
+        (>= end 3)))))
+
+(defun %mw-inline-markup-free-p (text)
+  (let* ((content-end (position-if-not #'%mw-horizontal-space-p
+                                       text :from-end t))
+         ;; Trailing spaces are emitted as character references below, so they
+         ;; should not disable minimal escaping for the preceding text.
+         (content (subseq text 0 (if content-end (1+ content-end) 0)))
+         (source-buffer (make-source-buffer content))
+         (normalized-text (source-buffer-normalized-text source-buffer))
+         (children
+           (parse-inline normalized-text
+                         (source-buffer-boundary-map source-buffer)
+                         (make-hash-table :test #'equal))))
+    (and (string= content normalized-text)
+         (every #'text-p children)
+         (string= normalized-text
+                  (with-output-to-string (stream)
+                    (dolist (child children)
+                      (write-string (text-value child) stream)))))))
+
+(defun %mw-unmatched-bracket-p (text index)
+  (case (char text index)
+    (#\[ (null (position #\] text :start (1+ index))))
+    (#\] (null (position #\[ text :end index)))))
+
+(defun %mw-heading-closing-marker-p (text index)
+  (and (or (zerop index)
+           (%mw-horizontal-space-p (char text (1- index))))
+       (loop for cursor from index below (length text)
+             always (or (char= (char text cursor) #\#)
+                        (%mw-horizontal-space-p (char text cursor))))))
+
+(defun %mw-inline-tail-has-nonspace-p (nodes)
+  (some (lambda (node)
+          (typecase node
+            (text
+             (position-if-not #'%mw-horizontal-space-p (text-value node)))
+            (html-inline
+             (position-if-not #'%mw-horizontal-space-p
+                              (html-inline-body node)))
+            (otherwise t)))
+        nodes))
+
+(defun %mw-inline-text-run-node-p (node)
+  (or (text-p node)
+      (and (html-inline-p node)
+           (zerop (length (html-inline-body node))))))
+
+(defun %mw-inline-delimiter-character (node)
+  (typecase node
+    (emphasis (or (emphasis-delimiter-character node) #\*))
+    (strong (or (strong-delimiter-character node) #\*))
+    (strikethrough (or (strikethrough-delimiter-character node) #\~))
+    (code-span #\`)))
+
+(defun %mw-unmatched-open-bracket-indices (text)
+  (let ((open-indices nil))
+    (loop for character across text
+          for index from 0
+          do (cond
+               ((char= character #\[)
+                (push index open-indices))
+               ((and (char= character #\]) open-indices)
+                (pop open-indices))))
+    open-indices))
+
+(defun %mw-inline-link-like-node-p (node)
+  (or (link-p node)
+      (image-p node)
+      (autolink-p node)
+      (footnote-reference-p node)))
+
+(defun %mw-inline-node-starts-link-label-p (node)
+  (or (link-p node)
+      (footnote-reference-p node)
+      (and (autolink-p node)
+           (not (string= (autolink-display-text node)
+                         (autolink-destination node))))))
+
+(defun %mw-inline-boundary-escape-indices (text previous next)
+  (let ((escape-indices (make-hash-table :test #'eql))
+        (end (length text)))
+    (labels ((force-escape (index)
+               (setf (gethash index escape-indices) t)))
+      (when (plusp end)
+        (let ((delimiter (%mw-inline-delimiter-character previous)))
+          (when (and delimiter (char= (char text 0) delimiter))
+            (force-escape 0)))
+        (let ((delimiter (%mw-inline-delimiter-character next)))
+          (when (and delimiter (char= (char text (1- end)) delimiter))
+            (force-escape (1- end))))
+        (when (or (code-span-p previous) (code-span-p next))
+          (loop for character across text
+                for index from 0
+                when (char= character #\`)
+                  do (force-escape index)))
+        (when (and (%mw-inline-link-like-node-p previous)
+                   (char= (char text 0) #\[))
+          (force-escape 0))
+        (when (%mw-inline-link-like-node-p next)
+          (dolist (index (%mw-unmatched-open-bracket-indices text))
+            (force-escape index))))
+      escape-indices)))
+
+(defun %mw-heading-closing-hash-allowed-after-p (remaining)
+  (and *mw-heading-p*
+       *mw-heading-closing-hash-allowed-p*
+       (not (%mw-inline-tail-has-nonspace-p remaining))))
+
 (defun %mw-autolink-breakpoints (text)
   (let ((breakpoints (make-hash-table :test #'eql))
         (index 0)
@@ -126,8 +269,13 @@
           do (let ((candidate (%ip-bare-candidate-at text index end)))
                (if candidate
                    (let* ((candidate-end (%ip-candidate-end candidate))
+                          (email-scheme-p
+                            (and (or (%ip-ascii-prefix-p text index "mailto:")
+                                     (%ip-ascii-prefix-p text index "xmpp:"))
+                                 (position #\@ text :start index :end candidate-end)))
                           (breakpoint
                             (cond
+                              (email-scheme-p email-scheme-p)
                               ((%ip-ascii-prefix-p text index "www.")
                                (+ index 3))
                               ((or (%ip-ascii-prefix-p text index "http://")
@@ -140,16 +288,60 @@
                                          :end candidate-end)))))
                      (when breakpoint
                        (setf (gethash breakpoint breakpoints) t))
+                     (unless email-scheme-p
+                       (let ((at (position #\@ text :start index
+                                           :end candidate-end)))
+                         (when at
+                           (setf (gethash at breakpoints) t))))
                      (setf index candidate-end))
-                   (incf index))))
+                   (let* ((prefix-length
+                            (%mw-unparsed-autolink-prefix-length text index))
+                          (scheme-colon-index
+                            (cond
+                              ((and prefix-length
+                                    (%ip-ascii-prefix-p text index "mailto:"))
+                               (+ index (1- (length "mailto:"))))
+                              ((and prefix-length
+                                    (%ip-ascii-prefix-p text index "xmpp:"))
+                               (+ index (1- (length "xmpp:")))))))
+                     (cond
+                       (scheme-colon-index
+                        (setf (gethash scheme-colon-index breakpoints) t
+                              index (+ index prefix-length)))
+                       (prefix-length
+                        (setf (gethash index breakpoints) :mask
+                              index (+ index prefix-length)))
+                       (t
+                        (incf index)))))))
     breakpoints))
 
 (defun %mw-write-character-reference (character stream)
   (%mw-write-string (format nil "&#~D;" (char-code character)) stream))
 
-(defun %mw-escape-text-character-p (text index)
+(defun %mw-escape-text-character-p
+    (text index boundary-escapes escape-terminal-backslash-p)
   (let ((character (char text index)))
-    (or (find character '(#\\ #\` #\* #\_ #\[ #\] #\< #\~))
+    (or (and boundary-escapes (gethash index boundary-escapes))
+        (and (char= character #\\)
+             (or (and escape-terminal-backslash-p
+                      (= index (1- (length text))))
+                 (and (< (1+ index) (length text))
+                      (let ((next (char text (1+ index))))
+                        (or (char= next #\Newline)
+                            (ascii-punctuation-p next))))))
+        (and (find character '(#\` #\* #\_ #\< #\~))
+             (not *mw-minimize-inline-escapes-p*))
+        (and (find character '(#\[ #\]))
+             (not (and *mw-minimize-inline-escapes-p*
+                       (%mw-unmatched-bracket-p text index))))
+        (and *mw-heading-p*
+             *mw-heading-closing-hash-allowed-p*
+             (char= character #\#)
+             (%mw-heading-closing-marker-p text index))
+        (and *mw-escape-trailing-bang-p*
+             (char= character #\!)
+             (= index (1- (length text)))
+             (not *mw-heading-p*))
         (and (or *mw-table-cell-p* *mw-escape-table-pipes-p*)
              (char= character #\|))
         (and (char= character #\&)
@@ -157,11 +349,13 @@
         (and *mw-text-autolink-breakpoints*
              (gethash index *mw-text-autolink-breakpoints*))
         (and *mw-line-start-p*
+             (not *mw-heading-p*)
              (<= *mw-line-indent* 3)
              (%mw-line-prefix-hazard-p
               text index (%mw-line-end text index))))))
 
-(defun %mw-write-text (text stream)
+(defun %mw-write-text (text stream &optional boundary-escapes
+                                           escape-terminal-backslash-p)
   (let* ((end (length text))
          (index 0)
          (*mw-text-autolink-breakpoints* (%mw-autolink-breakpoints text)))
@@ -169,7 +363,9 @@
           for character = (char text index)
           do (cond
                ((char= character #\Newline)
-                (%mw-write-character character stream)
+                (if (or *mw-heading-p* *mw-table-cell-p*)
+                    (%mw-write-string "&#10;" stream)
+                    (%mw-write-character character stream))
                 (incf index))
                ((and (%mw-horizontal-space-p character)
                      (let ((line-end (%mw-line-end text index)))
@@ -183,18 +379,18 @@
                             stream)
                            (incf index))))
                ((and *mw-line-start-p*
-                     (%mw-horizontal-space-p character)
-                     (let ((next-indent
-                             (if (char= character #\Tab)
-                                 (+ *mw-line-indent*
-                                    (- 4 (mod *mw-line-indent* 4)))
-                                 (1+ *mw-line-indent*))))
-                       (>= next-indent 4)))
-                (%mw-write-string
-                 (if (char= character #\Tab) "&#9;" "&#32;")
-                 stream)
-                (incf index))
-               ((%mw-escape-text-character-p text index)
+                     (%mw-horizontal-space-p character))
+                (%mw-write-character-reference character stream)
+                (incf index)
+                (loop while (and (< index end)
+                                 (%mw-horizontal-space-p (char text index)))
+                      for current = (char text index)
+                      do (if (char= current #\Tab)
+                             (%mw-write-character-reference current stream)
+                             (%mw-write-character current stream))
+                         (incf index)))
+               ((%mw-escape-text-character-p text index boundary-escapes
+                                             escape-terminal-backslash-p)
                 (cond
                   ((and *mw-line-start-p*
                         (digit-char-p character 10)
@@ -205,9 +401,14 @@
                   ((and (char= character #\\)
                          (< (1+ index) end)
                          (ascii-punctuation-p (char text (1+ index))))
-                   (progn
-                     (%mw-write-string "\\\\" stream)
-                     (%mw-write-character character stream)))
+                   (%mw-write-string "\\\\" stream))
+                  ((and *mw-text-autolink-breakpoints*
+                        (eq (gethash index *mw-text-autolink-breakpoints*) :mask))
+                   (%mw-write-character-reference character stream))
+                  ((and *mw-autolink-label-p*
+                        *mw-text-autolink-breakpoints*
+                        (gethash index *mw-text-autolink-breakpoints*))
+                   (%mw-write-character-reference character stream))
                   (t
                    (%mw-write-character #\\ stream)
                    (%mw-write-character character stream)))
@@ -217,9 +418,51 @@
                 (incf index)))))
   text)
 
-(defun %mw-render-inline-children (children stream)
-  (dolist (child children)
-    (%mw-render-inline-node child stream)))
+(defun %mw-render-inline-children
+    (children stream &optional minimize-escapes-p escape-terminal-backslash-p)
+  (let ((remaining children)
+        (previous nil)
+        (*mw-minimize-inline-escapes-p* minimize-escapes-p))
+    (loop while remaining
+          do (if (%mw-inline-text-run-node-p (first remaining))
+                 (let ((text-nodes nil))
+                   (loop while (and remaining
+                                    (%mw-inline-text-run-node-p
+                                     (first remaining)))
+                         do (push (pop remaining) text-nodes))
+                   (setf text-nodes (nreverse text-nodes))
+                   (let* ((text
+                            (with-output-to-string (output)
+                              (dolist (node text-nodes)
+                                (when (text-p node)
+                                  (write-string (text-value node) output)))))
+                          (*mw-minimize-inline-escapes-p*
+                            (and *mw-minimize-inline-escapes-p*
+                                 (not (%mw-fence-marker-line-p text))
+                                 (%mw-inline-markup-free-p text)))
+                          (boundary-escapes
+                            (and *mw-minimize-inline-escapes-p*
+                                 (%mw-inline-boundary-escape-indices
+                                  text previous (first remaining))))
+                          (*mw-escape-trailing-bang-p*
+                            (and (%mw-inline-node-starts-link-label-p
+                                  (first remaining))
+                                 (plusp (length text))
+                                 (char= (char text (1- (length text))) #\!)))
+                          (*mw-heading-closing-hash-allowed-p*
+                            (%mw-heading-closing-hash-allowed-after-p
+                             remaining)))
+                     (%mw-write-text
+                      text stream boundary-escapes
+                      (or remaining *mw-following-block-p*
+                          escape-terminal-backslash-p)))
+                   (let ((last-text (find-if #'text-p text-nodes :from-end t)))
+                     (when last-text
+                       (setf previous last-text))))
+                 (let ((node (pop remaining)))
+                   (let ((*mw-heading-closing-hash-allowed-p* nil))
+                     (%mw-render-inline-node node stream))
+                   (setf previous node))))))
 
 (defun %mw-escape-label (label)
   (with-output-to-string (stream)
@@ -278,13 +521,18 @@
                                  (code-span-literal-text node)))
             (fence-length (1+ (%mw-longest-run literal #\`)))
             (fence (make-string (max 1 fence-length) :initial-element #\`))
+            (non-space-p
+              (find-if-not (lambda (character)
+                             (char= character #\Space))
+                           literal))
             (pad-p
               (and (plusp (length literal))
-                   (char= (char literal 0) #\Space)
-                   (char= (char literal (1- (length literal))) #\Space)
-                   (find-if-not (lambda (character)
-                                  (char= character #\Space))
-                                literal))))
+                   non-space-p
+                   (or (and (char= (char literal 0) #\Space)
+                            (char= (char literal (1- (length literal)))
+                                   #\Space))
+                       (char= (char literal 0) #\`)
+                       (char= (char literal (1- (length literal))) #\`)))))
        (%mw-write-string fence stream)
        (when pad-p (%mw-write-character #\Space stream))
        (%mw-write-string literal stream)
@@ -293,45 +541,58 @@
     (html-inline
      (%mw-write-string (html-inline-body node) stream))
     (soft-break
-     (%mw-write-character #\Newline stream))
+     (if *mw-heading-p*
+         (%mw-write-string "&#10;" stream)
+         (%mw-write-character #\Newline stream)))
     (hard-break
      (%mw-write-string (format nil "\\~%") stream))
     (emphasis
      (let ((delimiter (or (emphasis-delimiter-character node) #\*)))
        (%mw-write-character delimiter stream)
-       (%mw-render-inline-children (emphasis-children node) stream)
+       (%mw-render-inline-children (emphasis-children node) stream nil t)
        (%mw-write-character delimiter stream)))
     (strong
      (let ((delimiter (or (strong-delimiter-character node) #\*)))
        (%mw-write-character delimiter stream)
        (%mw-write-character delimiter stream)
-       (%mw-render-inline-children (strong-children node) stream)
+       (%mw-render-inline-children (strong-children node) stream nil t)
        (%mw-write-character delimiter stream)
        (%mw-write-character delimiter stream)))
     (strikethrough
      (%mw-write-string "~~" stream)
-     (%mw-render-inline-children (strikethrough-children node) stream)
+     (%mw-render-inline-children
+      (strikethrough-children node) stream nil t)
      (%mw-write-string "~~" stream))
     (link
      (%mw-write-character #\[ stream)
-     (%mw-render-inline-children (link-children node) stream)
+     (%mw-render-inline-children (link-children node) stream nil t)
      (%mw-write-string "](" stream)
      (%mw-write-link-destination (link-destination node) stream)
      (%mw-write-link-title (link-title node) stream)
      (%mw-write-character #\) stream))
     (image
      (%mw-write-string "![" stream)
-     (%mw-render-inline-children (image-children node) stream)
+     (%mw-render-inline-children (image-children node) stream nil t)
      (%mw-write-string "](" stream)
      (%mw-write-link-destination (image-destination node) stream)
      (%mw-write-link-title (image-title node) stream)
      (%mw-write-character #\) stream))
     (autolink
-     (%mw-write-character #\[ stream)
-     (%mw-write-text (autolink-display-text node) stream)
-     (%mw-write-string "](" stream)
-     (%mw-write-link-destination (autolink-destination node) stream)
-     (%mw-write-character #\) stream))
+     (let ((display-text (autolink-display-text node))
+           (destination (autolink-destination node)))
+       (if (string= display-text destination)
+           (progn
+             (%mw-write-character #\< stream)
+             (%mw-write-string display-text stream)
+             (%mw-write-character #\> stream))
+           (progn
+             (%mw-write-character #\[ stream)
+             (let ((*mw-autolink-label-p* t)
+                   (*mw-minimize-inline-escapes-p* nil))
+               (%mw-write-text display-text stream nil t))
+             (%mw-write-string "](" stream)
+             (%mw-write-link-destination destination stream)
+             (%mw-write-character #\) stream)))))
     (footnote-reference
      (%mw-write-string "[^" stream)
      (%mw-write-string
@@ -341,13 +602,14 @@
     (t
      (error "Unsupported inline node ~S." (type-of node)))))
 
-(defun %mw-render-inline-string (children &key table-cell-p escape-table-pipes-p)
+(defun %mw-render-inline-string (children &key table-cell-p escape-table-pipes-p
+                                              minimize-escapes-p)
   (let ((*mw-line-start-p* t)
         (*mw-line-indent* 0)
         (*mw-table-cell-p* table-cell-p)
         (*mw-escape-table-pipes-p* escape-table-pipes-p))
     (with-output-to-string (stream)
-      (%mw-render-inline-children children stream))))
+      (%mw-render-inline-children children stream minimize-escapes-p))))
 
 (defun %mw-table-cell-ranges (line)
   (%bp-table-cells (%make-block-line line #() 0 0 0 0)))
@@ -372,10 +634,10 @@
                       cells))
       (length cells))))
 
-(defun %mw-table-start-follows-p (text)
+(defun %mw-table-alignment-breaker-position (text)
   (let ((lines nil)
         (start 0)
-        (table-start-p nil))
+        (alignment-breaker-position nil))
     (loop for end = (position #\Newline text :start start)
           do (push (cons start (or end (length text))) lines)
           while end
@@ -401,22 +663,48 @@
                                   (subseq text next-start next-end))
                                  0))
                           (< first-non-space next-end))
-                 (setf table-start-p t))))
-    table-start-p))
+                 (setf alignment-breaker-position
+                       (or (position #\| text :start next-start :end next-end)
+                           (position #\: text :start next-start :end next-end)
+                           (position #\- text :start next-start :end next-end)))
+                 (return))))
+    alignment-breaker-position))
+
+(defun %mw-table-start-follows-p (text)
+  (not (null (%mw-table-alignment-breaker-position text))))
 
 (defun %mw-render-paragraph (node)
   (let* ((children (paragraph-children node))
-         (text (%mw-render-inline-string children)))
-    (if (%mw-table-start-follows-p text)
-        (%mw-render-inline-string children :escape-table-pipes-p t)
+         (text (%mw-render-inline-string children :minimize-escapes-p t))
+         (alignment-breaker-position
+           (%mw-table-alignment-breaker-position text)))
+    (if alignment-breaker-position
+        (concatenate 'string
+                     (subseq text 0 alignment-breaker-position)
+                     "\\"
+                     (subseq text alignment-breaker-position))
         text)))
 
 (defun %mw-render-blocks (nodes &optional (separator (format nil "~%~%")))
   (with-output-to-string (stream)
-    (loop for node in nodes
-          for first-p = t then nil
-          do (unless first-p (write-string separator stream))
-             (write-string (%mw-render-block node) stream))))
+    (loop for remaining-nodes on nodes
+          for node = (car remaining-nodes)
+          for index from 0
+          for previous = (and (> index 0) (nth (1- index) nodes))
+          do (when previous
+               (if (and *mw-list-boundary-token*
+                        (list-node-p previous)
+                        (list-node-p node)
+                        (eq (list-node-kind previous) (list-node-kind node)))
+                   (progn
+                     (write-string separator stream)
+                     (write-string *mw-list-boundary-token* stream)
+                     (write-string separator stream)
+                     (incf *mw-list-boundary-count*))
+                   (write-string separator stream)))
+             (let ((*mw-following-block-p*
+                     (or *mw-following-block-p* (cdr remaining-nodes))))
+               (write-string (%mw-render-block node) stream)))))
 
 (defun %mw-prefix-lines (text prefix)
   (if (zerop (length text))
@@ -436,7 +724,8 @@
           for character = (char text index)
           do (write-char character stream)
              (when (and (char= character #\Newline)
-                        (< (1+ index) (length text)))
+                        (< (1+ index) (length text))
+                        (not (char= (char text (1+ index)) #\Newline)))
                (write-string prefix stream)))))
 
 (defun %mw-render-code-block (node)
@@ -455,7 +744,11 @@
       (write-char #\Newline stream)
       (write-string body stream)
       (when (or (zerop (length body))
-                (char= (char body (1- (length body))) #\Newline))
+                (char= (char body (1- (length body))) #\Newline)
+                *mw-following-block-p*)
+        (unless (or (zerop (length body))
+                    (char= (char body (1- (length body))) #\Newline))
+          (write-char #\Newline stream))
         (write-string fence stream)))))
 
 (defun %mw-list-marker (list-node index)
@@ -465,58 +758,67 @@
               (min 999999999
                    (+ (list-node-start-number list-node) index)))))
 
+(defun %mw-trailing-newline-count (text)
+  (loop for index downfrom (1- (length text)) to 0
+        while (char= (char text index) #\Newline)
+        count t))
+
 (defun %mw-render-list (node)
-  (let ((items (list-node-items node))
-        (tight-p (list-node-tight-p node)))
+  (let* ((items (list-node-items node))
+         (tight-p (list-node-tight-p node))
+         (separator-count (if tight-p 1 2))
+         (child-separator (if tight-p (format nil "~%")
+                              (format nil "~%~%"))))
     (with-output-to-string (stream)
-      (loop for item in items
-            for index from 0
-            for marker = (%mw-list-marker node index)
-            for children = (node-children item)
-            for task-p = (task-list-item-p item)
-            for task-marker = (and task-p
-                                   (if (task-list-item-checked-p item)
-                                       "[x] "
-                                       "[ ] "))
-            do (when (plusp index)
-                 (write-string (if tight-p (format nil "~%")
-                                   (format nil "~%~%"))
-                               stream))
-               (write-string marker stream)
-               (cond
-                 ((and task-p children
-                       (paragraph-p (first children)))
-                  (write-string task-marker stream)
-                  (write-string
-                   (%mw-prefix-continuation-lines
-                    (%mw-render-blocks
-                     children
-                     (if tight-p (format nil "~%")
-                         (format nil "~%~%")))
-                    (make-string (length marker) :initial-element #\Space))
-                   stream))
-                 (task-p
-                  (write-string (string-right-trim '(#\Space) task-marker)
-                                stream)
-                  (when children
-                    (write-char #\Newline stream)
-                    (write-string
-                     (%mw-prefix-lines
-                      (%mw-render-blocks
-                       children
-                       (if tight-p (format nil "~%")
-                           (format nil "~%~%")))
-                      (make-string (length marker) :initial-element #\Space))
-                     stream)))
-                 (children
-                  (write-string
-                   (%mw-prefix-continuation-lines
-                    (%mw-render-blocks
-                     children
-                     (if tight-p (format nil "~%")
-                         (format nil "~%~%")))
-                    (make-string (length marker) :initial-element #\Space))
-                   stream)))))))
+      (let ((previous-content ""))
+        (loop for remaining-items on items
+              for item = (car remaining-items)
+              for index from 0
+              for marker = (%mw-list-marker node index)
+              for continuation-prefix =
+                (make-string (length marker) :initial-element #\Space)
+              for children = (node-children item)
+              for task-p = (task-list-item-p item)
+              for task-marker = (and task-p
+                                     (if (task-list-item-checked-p item)
+                                         "[x] "
+                                         "[ ] "))
+              for child-markdown = (when children
+                                     (let ((*mw-following-block-p*
+                                             (or *mw-following-block-p*
+                                                 (cdr remaining-items))))
+                                       (%mw-render-blocks children
+                                                          child-separator)))
+              for content =
+                (cond
+                  ((and task-p children
+                        (paragraph-p (first children)))
+                   (%mw-prefix-continuation-lines child-markdown
+                                                  continuation-prefix))
+                  (task-p
+                   (if children
+                       (concatenate
+                        'string (format nil "~%")
+                        (%mw-prefix-lines child-markdown continuation-prefix))
+                       ""))
+                  (children
+                   (%mw-prefix-continuation-lines child-markdown
+                                                  continuation-prefix))
+                  (t ""))
+              do (when (plusp index)
+                   (loop repeat
+                         (max 0 (- separator-count
+                                   (%mw-trailing-newline-count
+                                    previous-content)))
+                         do (write-char #\Newline stream)))
+                 (write-string marker stream)
+                 (when task-marker
+                   (if (and children (paragraph-p (first children)))
+                       (write-string task-marker stream)
+                       (write-string
+                        (string-right-trim '(#\Space) task-marker) stream)))
+                 (write-string content stream)
+                 (setf previous-content content))))))
 
 (defun %mw-render-table-row (row)
   (with-output-to-string (stream)
@@ -524,7 +826,8 @@
     (dolist (cell (table-row-cells row))
       (write-char #\Space stream)
       (write-string (%mw-render-inline-string (table-cell-children cell)
-                                               :table-cell-p t)
+                                               :table-cell-p t
+                                               :minimize-escapes-p t)
                     stream)
       (write-string " |" stream))))
 
@@ -580,7 +883,9 @@
                        stream)
          (unless (null (heading-children node))
            (write-char #\Space stream)
-           (%mw-render-inline-children (heading-children node) stream)))
+           (let ((*mw-heading-p* t)
+                 (*mw-heading-closing-hash-allowed-p* t))
+             (%mw-render-inline-children (heading-children node) stream t))))
         (thematic-break
          (write-string "---" stream))
         (code-block
@@ -588,10 +893,12 @@
         (html-block
          (write-string (html-block-body node) stream))
         (block-quote
-         (write-string
-          (%mw-prefix-lines (%mw-render-blocks (block-quote-children node))
-                            "> ")
-          stream))
+         (if (null (block-quote-children node))
+             (write-string ">" stream)
+             (write-string
+              (%mw-prefix-lines (%mw-render-blocks (block-quote-children node))
+                                "> ")
+              stream)))
         (list-node
          (write-string (%mw-render-list node) stream))
         (table
@@ -638,12 +945,66 @@
         (t
          (error "Unsupported block node ~S." (type-of node)))))))
 
+(defun %mw-substring-count (string substring)
+  (loop with start = 0
+        for position = (search substring string :start2 start)
+        while position
+        sum 1
+        do (setf start (+ position (length substring)))))
+
+(defun %mw-replace-substring (string substring replacement)
+  (with-output-to-string (stream)
+    (loop with start = 0
+          for position = (search substring string :start2 start)
+          while position
+          do (write-string string stream :start start :end position)
+             (write-string replacement stream)
+             (setf start (+ position (length substring)))
+          finally (write-string string stream :start start))))
+
+(defun %mw-list-boundary-definition (markdown)
+  (loop for index from 0
+        for label = (format nil "cl-markdown-kit-writer-list-separator-~D"
+                            index)
+        unless (search label markdown :test #'char-equal)
+          return (format nil "[~A]: <>" label)))
+
+(defun %mw-render-document-markdown (document)
+  (loop with token-length = 1
+        for token = (concatenate
+                     'string
+                     (make-string token-length :initial-element #\Null)
+                     "markdown-writer-list-boundary"
+                     (make-string token-length :initial-element #\Null))
+        do (let* ((boundary-count 0)
+                  (markdown
+                    (let ((*mw-line-start-p* t)
+                          (*mw-line-indent* 0)
+                          (*mw-table-cell-p* nil)
+                          (*mw-escape-table-pipes-p* nil)
+                          (*mw-text-autolink-breakpoints* nil)
+                          (*mw-heading-p* nil)
+                          (*mw-autolink-label-p* nil)
+                          (*mw-escape-trailing-bang-p* nil)
+                          (*mw-following-block-p* nil)
+                          (*mw-minimize-inline-escapes-p* nil)
+                          (*mw-list-boundary-token* token)
+                          (*mw-list-boundary-count* 0))
+                      (prog1 (%mw-render-blocks (document-children document))
+                        (setf boundary-count *mw-list-boundary-count*))))
+                  (token-count (%mw-substring-count markdown token)))
+             (when (= boundary-count token-count)
+               (return
+                 (%mw-replace-substring
+                  markdown token (%mw-list-boundary-definition markdown))))
+             (incf token-length))))
+
 (defun write-markdown-to-stream (document stream)
   (check-type document document)
   (unless (output-stream-p stream)
     (error 'type-error :datum stream
            :expected-type '(satisfies output-stream-p)))
-  (write-string (%mw-render-blocks (document-children document)) stream))
+  (write-string (%mw-render-document-markdown document) stream))
 
 (defun write-markdown (document)
   (with-output-to-string (stream)
