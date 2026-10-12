@@ -728,4 +728,70 @@
         (expect (edit-heading-texts
                  (cl-markdown-kit:parse-string edited :gfm nil))
                 :to-equal (list "A" "B"))
-        (expect (search "| a |" edited) :to-be-truthy))))
+        (expect (search "| a |" edited) :to-be-truthy)))
+  (it "preserves the prefix before an EOF section insertion"
+      (let* ((source (edit-lines "# A" "x" "" "" "" ""))
+             (document (cl-markdown-kit:parse-string source))
+             (section-span
+              (cl-markdown-kit:section-record-span
+               (cl-markdown-kit:find-section document "/A")))
+             (insert-offset (cl-parser-kit:span-end section-span))
+             (suffix-octets (edit-utf8 (subseq source insert-offset)))
+             (edited (cl-markdown-kit:insert-section document "/A" "# B"))
+             (edited-octets (edit-utf8 edited)))
+        (expect (and (<= insert-offset (length edited))
+                     (equalp (edit-utf8 (subseq source 0 insert-offset))
+                             (edit-utf8 (subseq edited 0 insert-offset))))
+                :to-be-truthy)
+        (expect (and (<= (length suffix-octets) (length edited-octets))
+                     (equalp suffix-octets
+                             (subseq edited-octets
+                                     (- (length edited-octets)
+                                        (length suffix-octets)))))
+                :to-be-truthy)
+        (expect (edit-heading-texts (cl-markdown-kit:parse-string edited))
+                :to-equal (list "A" "B"))))
+  (it "preserves the prefix before an EOF section replacement"
+      (let* ((source (edit-lines "# Before" "keep" "" "# A" "x" "" "" "" ""))
+             (document (cl-markdown-kit:parse-string source))
+             (section-span
+              (cl-markdown-kit:section-record-span
+               (cl-markdown-kit:find-section document "/A")))
+             (prefix-end (cl-parser-kit:span-start section-span))
+             (suffix-start (cl-parser-kit:span-end section-span))
+             (suffix-octets (edit-utf8 (subseq source suffix-start)))
+             (edited (cl-markdown-kit:replace-section
+                      document "/A" (edit-lines "## New" "changed")))
+             (edited-octets (edit-utf8 edited)))
+        (expect (and (<= prefix-end (length edited))
+                     (equalp (edit-utf8 (subseq source 0 prefix-end))
+                             (edit-utf8 (subseq edited 0 prefix-end))))
+                :to-be-truthy)
+        (expect (and (<= (length suffix-octets) (length edited-octets))
+                     (equalp suffix-octets
+                             (subseq edited-octets
+                                     (- (length edited-octets)
+                                        (length suffix-octets)))))
+                :to-be-truthy)
+        (expect (search "changed" edited) :to-be-truthy)))
+  (it "preserves the prefix before deleting an EOF section"
+      (let* ((source (edit-lines "# Before" "keep" "" "# A" "x" "" "" "" ""))
+             (document (cl-markdown-kit:parse-string source))
+             (section-span
+              (cl-markdown-kit:section-record-span
+               (cl-markdown-kit:find-section document "/A")))
+             (prefix-end (cl-parser-kit:span-start section-span))
+             (suffix-start (cl-parser-kit:span-end section-span))
+             (suffix-octets (edit-utf8 (subseq source suffix-start)))
+             (edited (cl-markdown-kit:delete-section document "/A"))
+             (edited-octets (edit-utf8 edited)))
+        (expect (and (<= prefix-end (length edited))
+                     (equalp (edit-utf8 (subseq source 0 prefix-end))
+                             (edit-utf8 (subseq edited 0 prefix-end))))
+                :to-be-truthy)
+        (expect (and (<= (length suffix-octets) (length edited-octets))
+                     (equalp suffix-octets
+                             (subseq edited-octets
+                                     (- (length edited-octets)
+                                        (length suffix-octets)))))
+                :to-be-truthy))))

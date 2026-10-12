@@ -341,8 +341,10 @@ All edit functions return a new source string and never mutate the document.
 Replacement Markdown is normalized to the detected source newline convention;
 text outside the target range, BOM presence, and trailing-newline presence
 remain unchanged. When an edit touches EOF, its candidate is adjusted to have
-the original document's trailing-newline state: exactly one final line ending
-if the original had one, and none if it did not. For a mixed-newline source,
+the original document's trailing-newline presence. Any adjustment is confined
+to the inserted or replacement Markdown; untouched source text, including
+trailing blank lines and their line endings, remains unchanged. The candidate
+is not normalized to exactly one final line ending. For a mixed-newline source,
 replacement uses the first line ending inside the replaced range; if there is
 none, it uses the nearest preceding line ending, then the nearest following
 one, then LF. A node

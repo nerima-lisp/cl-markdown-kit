@@ -160,13 +160,13 @@
   (and (plusp (length source))
        (find (char source (1- (length source))) '(#\Return #\Newline))))
 
-(defun %set-trailing-newline-state (candidate original line-ending)
-  (let ((end (length candidate)))
+(defun %set-trailing-newline-state (replacement original line-ending)
+  (let ((end (length replacement)))
     (loop while (and (plusp end)
-                     (find (char candidate (1- end)) '(#\Return #\Newline)))
+                     (find (char replacement (1- end)) '(#\Return #\Newline)))
           do (decf end))
     (concatenate 'string
-                 (subseq candidate 0 end)
+                 (subseq replacement 0 end)
                  (if (%trailing-newline-p original) line-ending ""))))
 
 (defun %span-range (span source)
@@ -384,14 +384,14 @@
     (%projection-difference before after start end replacement-length)))
 
 (defun %edit-candidate (source start end replacement original line-ending)
-  (let ((candidate
-          (concatenate 'string
-                       (subseq source 0 start)
-                       replacement
-                       (subseq source end))))
-    (if (= end (length source))
-        (%set-trailing-newline-state candidate original line-ending)
-        candidate)))
+  (let* ((replacement
+           (if (= end (length source))
+               (%set-trailing-newline-state replacement original line-ending)
+               replacement)))
+    (concatenate 'string
+                 (subseq source 0 start)
+                 replacement
+                 (subseq source end))))
 
 (defun %perform-edit (document start end markdown target target-range)
   (let ((source (%edit-document-source document)))
