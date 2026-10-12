@@ -96,11 +96,11 @@
   (character-data-probe "probe 32: letter is not Unicode whitespace"
       cl-markdown-kit::unicode-whitespace-p (#\A) nil)
 
-  (it "recognizes the remaining Unicode White_Space characters"
+  (it "rejects non-CommonMark Unicode whitespace separators"
     (expect (mapcar #'cl-markdown-kit::unicode-whitespace-p
                     (mapcar #'character-data-codepoint
                             '(#x0085 #x2028 #x2029 #x180E)))
-            :to-equal '(t t t nil)))
+            :to-equal '(nil nil nil nil)))
 
   (character-data-probe "probe 33: connector punctuation"
       cl-markdown-kit::unicode-punctuation-p

@@ -29,8 +29,9 @@ MIT. See [`LICENSE`](LICENSE).
 ## Character data
 
 The HTML5 named character reference table in `src/html-entities-data.lisp` is
-generated from the WHATWG HTML Standard entity data. The vendored source
-snapshot is the immutable
+generated from the `entities.json` snapshot in the `w3c/html` repository. This
+snapshot contains the WHATWG HTML Standard's named character reference data.
+The vendored source snapshot is the immutable
 [`entities.json`](https://raw.githubusercontent.com/w3c/html/2ef7a579bcfd2693b98df35f20e51dff60e3fbef/entities.json)
 file at W3C archive commit
 `2ef7a579bcfd2693b98df35f20e51dff60e3fbef`; its SHA-256 is
