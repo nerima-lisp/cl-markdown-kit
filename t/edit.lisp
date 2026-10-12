@@ -601,7 +601,7 @@
       (let* ((bad-document (cl-markdown-kit:parse-string source))
              (bad-node (second (cl-markdown-kit:document-children bad-document))))
         (setf (cl-markdown-kit:node-span bad-node)
-              (cl-parser-kit:make-span :source source :start -1 :end 1))
+              (cl-parser-kit:make-span :source (cl-markdown-kit:document-source bad-document) :start -1 :end 1))
         (expect (typep (edit-condition
                         (lambda ()
                           (cl-markdown-kit:replace-node bad-document bad-node "changed")))

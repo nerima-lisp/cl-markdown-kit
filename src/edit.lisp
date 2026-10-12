@@ -46,14 +46,11 @@
                  (incf index (max width 1))))
         finally (return nearest)))
 
-(defun %nearest-line-ending-after (source offset)
-  (%find-line-ending source offset (length source)))
-
 (defun %edit-line-ending (source start end)
   (%line-ending-string
    (or (%find-line-ending source start end)
        (%nearest-line-ending-before source start)
-       (%nearest-line-ending-after source end)
+       (%find-line-ending source end (length source))
        :lf)))
 
 (defun %normalize-newlines (text line-ending)
@@ -170,8 +167,9 @@
                  (if (%trailing-newline-p original) line-ending ""))))
 
 (defun %span-range (span source)
+  ;; Parsed spans share the document's source snapshot by identity.
   (unless (and (typep span 'cl-parser-kit:span)
-               (string= (cl-parser-kit:span-source span) source))
+               (eq (cl-parser-kit:span-source span) source))
     (error "The edit target must have a source span from this document."))
   (let ((start (cl-parser-kit:span-start span))
         (end (cl-parser-kit:span-end span)))
@@ -544,9 +542,7 @@
                        &key (position (%default-insert-position)))
   (check-type document document)
   (check-type markdown string)
-  (unless (member position '(:before :after :last-child))
-    (error 'type-error :datum position
-           :expected-type '(member :before :after :last-child)))
+  (check-type position (member :before :after :last-child))
   (let* ((source (%edit-document-source document))
          (offset (%insert-section-offset document address position source)))
     (%perform-edit document offset offset markdown address nil)))
