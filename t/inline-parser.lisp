@@ -506,7 +506,7 @@
               :to-be-truthy)))
 
   (it "keeps a bare-link candidate inside its containing link text"
-    (let ((link (first (inline-parser-test-parse "[www.example.com](/target)"))))
+    (let ((link (first (inline-parser-test-parse "[x www.example.com](/target)"))))
       (expect (and (cl-markdown-kit:link-p link)
                    (string= (cl-markdown-kit:link-destination link) "/target")
                    (some (lambda (node)
