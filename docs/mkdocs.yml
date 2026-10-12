@@ -1,0 +1,13 @@
+site_name: cl-markdown-kit
+site_description: Common Lisp project scaffold for a CommonMark and GFM parser
+site_author: cl-markdown-kit contributors
+site_url: https://nerima-lisp.github.io/cl-markdown-kit/
+repo_name: nerima-lisp/cl-markdown-kit
+repo_url: https://github.com/nerima-lisp/cl-markdown-kit
+docs_dir: src
+site_dir: ../site
+strict: true
+theme:
+  name: material
+nav:
+  - Home: index.md

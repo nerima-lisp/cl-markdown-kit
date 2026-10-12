@@ -1,0 +1,3 @@
+(:kind top-level-form :head "in-package" :reason "Package selection is a compile-time form without an executable coverage location." :reproduction "scripts/coverage-reproductions/in-package.lisp")
+(:kind top-level-form :head "defpackage" :reason "Package definitions are compile-time metadata without an executable coverage location." :reproduction "scripts/coverage-reproductions/defpackage.lisp")
+(:kind top-level-form :head "define-condition" :reason "Condition class metadata is expanded during compilation; behavior is covered through condition reports and readers." :reproduction "scripts/coverage-reproductions/define-condition.lisp")
