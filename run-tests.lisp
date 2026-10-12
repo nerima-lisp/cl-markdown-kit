@@ -20,6 +20,8 @@
       (handler-bind ((warning #'record-warning))
         (asdf:operate 'asdf:compile-op "cl-markdown-kit" :force t)
         (asdf:operate 'asdf:compile-op "cl-markdown-kit/test" :force t)
+        (asdf:operate 'asdf:compile-op "cl-markdown-kit/yaml" :force t)
+        (asdf:operate 'asdf:compile-op "cl-markdown-kit/yaml/test" :force t)
         (compile-file (merge-pathnames "run-tests.lisp" root)
                       :output-file
                       (merge-pathnames "run-tests-check.fasl"
@@ -46,4 +48,5 @@
 
 (compile-warning-check)
 (asdf:test-system "cl-markdown-kit")
+(asdf:test-system "cl-markdown-kit/yaml")
 (uiop:quit 0)

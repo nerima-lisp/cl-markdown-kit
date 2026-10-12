@@ -19,6 +19,14 @@
       url = "github:nerima-lisp/cl-codec-kit/v0.6.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    cl-yaml-kit = {
+      url = "github:nerima-lisp/cl-yaml-kit/v0.1.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-nix-forge.follows = "cl-nix-forge";
+      inputs.cl-weave.follows = "cl-weave";
+      inputs.cl-codec-kit.follows = "cl-codec-kit";
+      inputs.treefmt-nix.follows = "treefmt-nix";
+    };
     commonmark-spec = {
       url = "github:commonmark/commonmark-spec/0.31.2";
       flake = false;
@@ -41,6 +49,7 @@
       cl-weave,
       cl-parser-kit,
       cl-codec-kit,
+      cl-yaml-kit,
       commonmark-spec,
       cmark-gfm,
       treefmt-nix,
@@ -57,6 +66,7 @@
       ];
       lispCheckDependencies = ctx: [
         cl-weave.packages.${ctx.system}.cl-weave
+        cl-yaml-kit.packages.${ctx.system}.cl-yaml-kit
       ];
       packageArgs = ctx: {
         COMMONMARK_TEST_SUITE = "${commonmark-spec}/spec.txt";

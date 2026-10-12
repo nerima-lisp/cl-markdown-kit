@@ -46,9 +46,13 @@
                    root))
 
 (defun source-lisp-files (source-directory)
-  (sort (directory (merge-pathnames "*.lisp" source-directory)
-                   :resolve-symlinks t)
-        #'string< :key #'file-namestring))
+  (labels ((files-under (directory)
+             (append (directory (merge-pathnames "*.lisp" directory)
+                                :resolve-symlinks t)
+                     (mapcan #'files-under (uiop:subdirectories directory)))))
+    (sort (files-under (uiop:ensure-directory-pathname source-directory))
+          #'string<
+          :key (lambda (file) (enough-namestring file source-directory)))))
 
 (defun coverage-source-table ()
   (let ((value (symbol-value (sb-cover-symbol "*CODE-COVERAGE-INFO*"))))
@@ -162,7 +166,7 @@
                    (setf first nil))
         (when first (write-char #\- stream))))))
 
-(defun source-coverage-row (file)
+(defun source-coverage-row (file source-directory)
   (multiple-value-bind (counts states source)
       (funcall (sb-cover-function "COMPUTE-FILE-INFO")
                (namestring file) :default)
@@ -170,7 +174,8 @@
         (list (file-namestring file) 0 0 0 0 "-" "-")
         (multiple-value-bind (line-covered line-total) (sample-counts counts :expression)
           (multiple-value-bind (branch-covered branch-total) (sample-counts counts :branch)
-            (list (file-namestring file) line-covered line-total branch-covered branch-total
+            (list (enough-namestring file source-directory)
+                  line-covered line-total branch-covered branch-total
                   (or (and states source
                            (compress-line-ranges
                             (uncovered-line-numbers states (source-line-lengths source))))
@@ -227,8 +232,13 @@
     (uiop:symbol-call :cl-weave :reset-coverage)
     (asdf:operate 'asdf:compile-op "cl-markdown-kit" :force t)
     (asdf:operate 'asdf:compile-op "cl-markdown-kit/test" :force t)
+    (asdf:operate 'asdf:compile-op "cl-markdown-kit/yaml" :force t)
+    (asdf:operate 'asdf:compile-op "cl-markdown-kit/yaml/test" :force t)
     (asdf:load-system "cl-markdown-kit/test")
-    (let ((passed (handler-case (uiop:symbol-call :cl-markdown-kit/test :run-tests)
+    (asdf:load-system "cl-markdown-kit/yaml/test")
+    (let ((passed (handler-case
+                      (and (uiop:symbol-call :cl-markdown-kit/test :run-tests)
+                           (uiop:symbol-call :cl-markdown-kit/yaml/test :run-tests))
                     (serious-condition (condition)
                       (format *error-output* "~&cl-markdown-kit test run failed: ~A~%" condition)
                       nil)))
@@ -244,7 +254,10 @@
         (write-html-report report-directory source-directory)
         (let ((table (coverage-source-table)))
           (require-coverage-entries table files)
-          (write-summary summary-file (mapcar #'source-coverage-row files)))
+          (write-summary summary-file
+                         (mapcar (lambda (file)
+                                   (source-coverage-row file source-directory))
+                                 files)))
         (uiop:run-program
          (list "perl" "scripts/check-coverage.pl"
                "--input" (namestring summary-file)
