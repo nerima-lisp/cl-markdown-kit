@@ -25,3 +25,14 @@ spelling, source spans, delimiter choices, list marker characters, or source
 line endings. HTML nodes are emitted as stored. Front matter uses `---`
 delimiters. Use `write-markdown` for a string result or
 `write-markdown-to-stream` when writing directly to a character stream.
+
+## HTML writer
+
+`write-html` returns rendered HTML. `write-html-to-stream` writes the same
+output to a character stream. The `:gfm` option defaults to `t`.
+
+The `:raw-html` option accepts `:omit` (the default), `:escape`, or
+`:pass-through`. With `:raw-html :pass-through`, the GFM tagfilter applies when
+`:gfm` is true. Set `:gfm nil` to pass raw HTML through without that filter.
+The tagfilter is not a sanitizer, and raw HTML passed through with `:gfm nil`
+is not sanitized either.

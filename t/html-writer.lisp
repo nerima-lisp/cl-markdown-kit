@@ -15,6 +15,28 @@
         count position
         do (setf offset (+ position (length needle)))))
 
+(defun html-writer-test-attribute-values (attribute html)
+  (let ((needle (format nil "~A=\"" attribute))
+        (offset 0)
+        (values nil))
+    (loop for start = (search needle html :start2 offset)
+          while start
+          do (let* ((value-start (+ start (length needle)))
+                    (end (position #\" html :start value-start)))
+               (push (subseq html value-start end) values)
+               (setf offset (1+ end))))
+    (nreverse values)))
+
+(defun html-writer-test-footnote-links-valid-p (html)
+  (let ((ids (html-writer-test-attribute-values "id" html))
+        (hrefs (html-writer-test-attribute-values "href" html)))
+    (and (= (length ids) (length (remove-duplicates ids :test #'equal)))
+         (every (lambda (href)
+                  (and (> (length href) 1)
+                       (char= (char href 0) #\#)
+                       (= 1 (count (subseq href 1) ids :test #'equal))))
+                hrefs))))
+
 (describe "HTML writer"
   (it "renders escaped text in a paragraph"
     (expect
@@ -155,6 +177,58 @@
       (expect (search "<li id=\"fn-note\">" output) :to-be-truthy)
       (expect (search "href=\"#fnref-note\"" output) :to-be-truthy)
       (expect (search "data-footnote-backref data-footnote-backref-idx" output)
+              :to-be-truthy)))
+
+  (it "keeps footnote IDs unique when a repeated reference meets a suffix label"
+    (let ((output
+            (cl-markdown-kit:write-html
+             (cl-markdown-kit:parse-string
+              (format nil "[^a] [^a] [^a-2]~%~%[^a]: one~%~%[^a-2]: two~%")))))
+      (expect (html-writer-test-footnote-links-valid-p output)
+              :to-be-truthy)
+      (expect (search "href=\"#fn-a\" id=\"fnref-a\"" output)
+              :to-be-truthy)
+      (expect (search "href=\"#fn-a\" id=\"fnref-a-2\"" output)
+              :to-be-truthy)
+      (expect (search "href=\"#fn-a-2\" id=\"fnref-a-2-2\"" output)
+              :to-be-truthy)
+      (expect (search "<li id=\"fn-a\">" output) :to-be-truthy)
+      (expect (search "<li id=\"fn-a-2\">" output) :to-be-truthy)
+      (expect (search "href=\"#fnref-a\" class=\"footnote-backref\""
+                      output)
+              :to-be-truthy)
+      (expect (search "href=\"#fnref-a-2\" class=\"footnote-backref\""
+                      output)
+              :to-be-truthy)
+      (expect (search "href=\"#fnref-a-2-2\" class=\"footnote-backref\""
+                      output)
+              :to-be-truthy)
+      (expect
+       (cl-markdown-kit::%hw-allocate-footnote-ids
+        '("fnref-a-2" "fnref-a-2" "fnref-a-2" "fnref-a-2-2"))
+       :to-equal
+       '("fnref-a-2" "fnref-a-2-3" "fnref-a-2-4" "fnref-a-2-2"))))
+
+  (it "keeps footnote IDs unique when labels percent-encode to the same ID"
+    (let ((output
+            (cl-markdown-kit:write-html
+             (cl-markdown-kit:parse-string
+              (format nil
+                      "[^a b] [^a%20b]~%~%[^a b]: space~%~%[^a%20b]: percent~%")))))
+      (expect (html-writer-test-footnote-links-valid-p output)
+              :to-be-truthy)
+      (expect (search "href=\"#fn-a%20b\" id=\"fnref-a%20b\"" output)
+              :to-be-truthy)
+      (expect (search "href=\"#fn-a%20b-2\" id=\"fnref-a%20b-2\""
+                      output)
+              :to-be-truthy)
+      (expect (search "<li id=\"fn-a%20b\">" output) :to-be-truthy)
+      (expect (search "<li id=\"fn-a%20b-2\">" output) :to-be-truthy)
+      (expect (search "href=\"#fnref-a%20b\" class=\"footnote-backref\""
+                      output)
+              :to-be-truthy)
+      (expect (search "href=\"#fnref-a%20b-2\" class=\"footnote-backref\""
+                      output)
               :to-be-truthy)))
 
   (it "omits raw script blocks by default"
