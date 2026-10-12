@@ -117,6 +117,32 @@
                (cl-markdown-kit:source-buffer-format stream-buffer))
               :to-equal :crlf)))
 
+  (it "stores source boundaries compactly and maps mixed newline offsets"
+    (let* ((prefix (make-string 8192 :initial-element #\x))
+           (source (concatenate 'string prefix (format nil "~C~%yz~Cq"
+                                                       #\Return #\Return)))
+           (buffer (cl-markdown-kit:make-source-buffer source))
+           (boundary-map
+             (cl-markdown-kit::source-buffer-boundary-map buffer)))
+      (expect (cl-markdown-kit:source-buffer-normalized-text buffer)
+              :to-equal (concatenate 'string prefix (format nil "~%yz~%q")))
+      (expect (cl-markdown-kit::boundary-map-boundaries boundary-map)
+              :to-equal nil)
+      (expect (length
+               (cl-markdown-kit::boundary-map-normalized-line-starts
+                boundary-map))
+              :to-equal 3)
+      (expect (length
+               (cl-markdown-kit::boundary-map-source-line-starts boundary-map))
+              :to-equal 3)
+      (expect (cl-markdown-kit::boundary-map-length boundary-map)
+              :to-equal 8197)
+      (expect (source-contract-boundary buffer 8192) :to-equal '(8192 1 8193))
+      (expect (source-contract-boundary buffer 8193) :to-equal '(8194 2 1))
+      (expect (source-contract-boundary buffer 8195) :to-equal '(8196 2 3))
+      (expect (source-contract-boundary buffer 8196) :to-equal '(8197 3 1))
+      (expect (source-contract-boundary buffer 8197) :to-equal '(8198 3 2))))
+
   (it "keeps an initial BOM in the source span and starts visible text at 1:1"
     (let* ((bom (or (code-char #xfeff) (error "No BOM character available")))
            (source (concatenate 'string (string bom) (format nil "A~%B")))
@@ -184,6 +210,15 @@
            (trailing-cr-buffer
              (cl-markdown-kit:make-source-buffer
               (concatenate 'string "x" (string #\Return))))
+           (mapped-buffer
+             (cl-markdown-kit:make-source-buffer
+              (format nil "A~C~%B" #\Return)))
+           (composed-map
+             (cl-markdown-kit::%make-boundary-map
+              (cl-markdown-kit:source-buffer-source mapped-buffer)
+              nil 3 #() #()
+              (cl-markdown-kit::source-buffer-boundary-map mapped-buffer)
+              #(0 2) #(#(0 1) #(2 3))))
            (default-format (cl-markdown-kit:make-source-format)))
       (expect (list (cl-markdown-kit::source-boundary-offset initial)
                     (cl-markdown-kit::source-boundary-line initial)
@@ -218,6 +253,19 @@
               :to-be-truthy)
       (expect (source-contract-signals-p
                (lambda () (cl-markdown-kit:source-buffer-span empty-buffer 1 0)))
+              :to-be-truthy)
+      (expect (cl-markdown-kit::source-boundary-offset
+               (cl-markdown-kit::boundary-map-boundary composed-map 2))
+              :to-equal 3)
+      (expect (source-contract-signals-p
+               (lambda ()
+                 (cl-markdown-kit::boundary-map-boundary
+                  (cl-markdown-kit::source-buffer-boundary-map mapped-buffer)
+                  4)))
+              :to-be-truthy)
+      (expect (source-contract-signals-p
+               (lambda ()
+                 (cl-markdown-kit::boundary-map-boundary composed-map 4)))
               :to-be-truthy)
       (with-open-file (stream "/dev/null" :direction :input
                                        :element-type '(unsigned-byte 8))

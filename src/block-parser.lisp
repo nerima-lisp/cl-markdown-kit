@@ -242,37 +242,38 @@
                          normalized-index))
 
 (defun %bp-add-fragment (source-buffer owner lines)
-  (let* ((characters (make-array 0 :element-type 'character
-                                 :adjustable t :fill-pointer 0))
-         (boundaries (make-array 0 :adjustable t :fill-pointer 0)))
+  (let* ((line-vector (coerce lines 'vector))
+         (line-count (length line-vector)))
     (when lines
-      (vector-push-extend
-       (%bp-source-boundary-at source-buffer
-                               (%bp-line-boundary (first lines) 0))
-       boundaries)
-      (loop for tail on lines
-            for line = (car tail)
-            for text = (%block-line-text line)
-            do (loop for index from 0 below (length text)
-                     do (vector-push-extend (char text index) characters)
-                        (vector-push-extend
-                         (%bp-source-boundary-at
-                          source-buffer (%bp-line-boundary line (1+ index)))
-                         boundaries))
-               (when (cdr tail)
-                 (vector-push-extend #\Newline characters)
-                 (vector-push-extend
-                  (%bp-source-boundary-at
-                   source-buffer (%bp-line-boundary (cadr tail) 0))
-                  boundaries)))
-      (let* ((text (coerce characters 'string))
+      (let* ((text-length
+               (+ (1- line-count)
+                  (loop for line across line-vector
+                        sum (length (%block-line-text line)))))
+             (text (make-string text-length))
+             (segment-starts (make-array line-count))
+             (segment-maps (make-array line-count))
+             (text-index 0))
+        (loop for line across line-vector
+              for line-index from 0
+              for line-text = (%block-line-text line)
+              do (setf (aref segment-starts line-index) text-index
+                       (aref segment-maps line-index)
+                       (%block-line-boundaries line))
+                 (replace text line-text :start1 text-index)
+                 (incf text-index (length line-text))
+                 (when (< line-index (1- line-count))
+                   (setf (char text text-index) #\Newline)
+                   (incf text-index))
+              finally (assert (= text-index text-length)))
+        (let* ((parent-map (source-buffer-boundary-map source-buffer))
              (boundary-map
-               (make-boundary-map (source-buffer-source source-buffer)
-                                  boundaries))
+               (%make-boundary-map
+                (source-buffer-source source-buffer) nil text-length #() #()
+                parent-map segment-starts segment-maps))
              (fragment
                (make-inline-fragment
                 :node owner :text text :boundary-map boundary-map)))
-        (push fragment *block-inline-fragments*)))
+          (push fragment *block-inline-fragments*))))
     owner))
 
 (defun %bp-footnote-index-key (normalized-label)
@@ -1804,18 +1805,21 @@
                (block process-leaf-line
                  (case (%bp-open-leaf-kind leaf)
                  (:paragraph
-                  (let* ((paragraph-lines
-                           (reverse (%bp-open-leaf-lines leaf)))
+                  (let* ((paragraph-lines-reversed
+                           (%bp-open-leaf-lines leaf))
+                         (only-paragraph-line
+                           (and (null (cdr paragraph-lines-reversed))
+                                (car paragraph-lines-reversed)))
                          (alignments (and gfm (%bp-table-alignments content))))
-                    (when (and gfm (= (length paragraph-lines) 1)
+                    (when (and gfm only-paragraph-line
                                alignments
                                (= (length alignments)
                                   (length (%bp-table-cells
-                                           (first paragraph-lines))))
+                                           only-paragraph-line)))
                                (or (find #\| (%block-line-text
-                                              (first paragraph-lines)))
+                                              only-paragraph-line))
                                    (find #\| (%block-line-text content))))
-                      (let* ((header (first paragraph-lines))
+                      (let* ((header only-paragraph-line)
                              (table-context (%bp-open-leaf-context leaf))
                              (node (make-table
                                     :span nil :continuation-prefix table-context
@@ -1841,7 +1845,9 @@
                         (%bp-setext-level content)
                       (declare (ignore indent))
                       (when level
-                        (let* ((prepared
+                        (let* ((paragraph-lines
+                                 (reverse paragraph-lines-reversed))
+                               (prepared
                                  (%bp-prepared-paragraph-lines paragraph-lines))
                                (setext-prepared
                                  (append (butlast prepared)
