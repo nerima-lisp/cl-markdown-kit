@@ -346,10 +346,8 @@
                           (equal (nth 4 old-entry) (nth 4 new-entry)))
                (return-from %projection-difference
                  (format nil
-                         "Non-target block ~D changed at [~D,~D): expected ~S, found ~S."
-                         index mapped-start mapped-end
-                         (list (nth 2 old-entry) (nth 3 old-entry) (nth 4 old-entry))
-                         (list (nth 2 new-entry) (nth 3 new-entry) (nth 4 new-entry)))))))
+                         "Non-target block ~D changed at [~D,~D)."
+                         index mapped-start mapped-end)))))
   (cond
     ((> (length before) (length after))
      (format nil "Non-target block ~D was removed." (1+ (length after))))
@@ -453,14 +451,24 @@
         (%section-edit-range document address source)
       (let* ((heading (section-record-heading section))
              (target-range (cons section-start section-end))
+             (heading-end
+               (when heading
+                 (cl-parser-kit:span-end
+                  (node-span (heading-record-node heading)))))
              (body-start
                (if heading
-                   (%after-line-ending
-                    source
-                    (cl-parser-kit:span-end
-                     (node-span (heading-record-node heading))))
+                   (%after-line-ending source heading-end)
                    section-start)))
-        (%perform-edit document body-start section-end markdown section target-range)))))
+        (let ((replacement
+                (if (and heading
+                         (= heading-end (length source))
+                         (plusp (length markdown)))
+                    (concatenate 'string
+                                 (%edit-line-ending source body-start section-end)
+                                 markdown)
+                    markdown)))
+          (%perform-edit document body-start section-end replacement
+                         section target-range))))))
 
 (defun replace-section (document address markdown)
   (check-type document document)

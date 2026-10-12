@@ -21,6 +21,24 @@
 (defun edit-utf8 (string)
   (sb-ext:string-to-octets string :external-format :utf-8))
 
+(defun edit-source-octets (document string)
+  (let* ((source-format (cl-markdown-kit:document-source-format document))
+         (encoding (cl-markdown-kit:source-format-encoding source-format))
+         (bom-character (string (code-char #xfeff)))
+         (has-leading-bom
+           (and (cl-markdown-kit:source-format-bom-p source-format)
+                (plusp (length string))
+                (char= (char string 0) (char bom-character 0))))
+         (payload (if has-leading-bom (subseq string 1) string))
+         (payload-octets (sb-ext:string-to-octets
+                          payload :external-format encoding)))
+    (if has-leading-bom
+        (concatenate '(vector (unsigned-byte 8))
+                     (sb-ext:string-to-octets
+                      bom-character :external-format encoding)
+                     payload-octets)
+        payload-octets)))
+
 (defun edit-has-final-newline-p (source)
   (and (plusp (length source))
        (not (null
@@ -58,6 +76,60 @@
               :to-equal (subseq source section-end))
       (expect (edit-heading-texts (cl-markdown-kit:parse-string edited))
               :to-equal '("A" "B"))))
+
+  (it "starts a replacement body after an unterminated final heading"
+    (let* ((source "# Heading")
+           (document (cl-markdown-kit:parse-string source))
+           (edited (cl-markdown-kit:replace-section-body
+                    document "/Heading" "body"))
+           (empty (cl-markdown-kit:replace-section-body
+                   document "/Heading" "")))
+      (expect edited :to-equal (concatenate 'string source (edit-line-ending :lf)
+                                            "body"))
+      (expect (edit-heading-texts (cl-markdown-kit:parse-string edited))
+              :to-equal '("Heading"))
+      (expect empty :to-equal source)))
+
+  (it "preserves bytes outside an edited node for BOM-marked octet input"
+    (let* ((source (concatenate 'string
+                                (string (code-char #xfeff))
+                                "before café" (edit-line-ending :crlf)
+                                (edit-line-ending :crlf)
+                                "old A" (edit-line-ending :crlf) "old B"
+                                (edit-line-ending :crlf)
+                                (edit-line-ending :crlf) "tail déjà"))
+           (source-octets (edit-utf8 source))
+           (document (cl-markdown-kit:parse-octets source-octets))
+           (source-format (cl-markdown-kit:document-source-format document))
+           (target (second (cl-markdown-kit:document-children document)))
+           (edited (cl-markdown-kit:replace-node document target "new text"))
+           (edited-octets (edit-source-octets document edited))
+           (prefix-octets
+             (edit-source-octets
+              document (subseq source 0 (car (edit-node-range target)))))
+           (suffix-octets
+             (edit-source-octets
+              document (subseq source (cdr (edit-node-range target)))))
+           (bom-octets
+             (sb-ext:string-to-octets (string (code-char #xfeff))
+                                      :external-format
+                                      (cl-markdown-kit:source-format-encoding
+                                       source-format))))
+      (expect (cl-markdown-kit:source-format-input-kind source-format)
+              :to-equal :octets)
+      (expect (cl-markdown-kit:source-format-encoding source-format)
+              :to-equal :utf-8)
+      (expect (cl-markdown-kit:source-format-bom-p source-format)
+              :to-be-truthy)
+      (expect (edit-source-octets document source) :to-equalp source-octets)
+      (expect (subseq edited-octets 0 (length bom-octets))
+              :to-equalp bom-octets)
+      (expect (subseq edited-octets 0 (length prefix-octets))
+              :to-equalp (subseq source-octets 0 (length prefix-octets)))
+      (expect (subseq edited-octets (- (length edited-octets)
+                                       (length suffix-octets)))
+              :to-equalp (subseq source-octets (- (length source-octets)
+                                                 (length suffix-octets))))))
 
   (it "replaces and deletes complete sections"
     (let* ((source (edit-lines "# A" "old" "" "# B" "keep"))
@@ -607,8 +679,12 @@
               :to-be-truthy)
       (expect (cl-markdown-kit:markdown-structure-changed-error-target condition)
               :to-be-truthy)
-      (expect (cl-markdown-kit:markdown-structure-changed-error-difference condition)
-              :to-be-truthy)
+      (let ((difference
+              (cl-markdown-kit:markdown-structure-changed-error-difference
+               condition)))
+        (expect difference :to-be-truthy)
+        (expect (< (length difference) 80) :to-be-truthy)
+        (expect (search "keep" difference) :to-equal nil))
       (let* ((reference-source
                (edit-lines "[ref]: /old" "" "[label][ref]" "" "target"))
              (reference-document (cl-markdown-kit:parse-string reference-source))

@@ -1,11 +1,11 @@
 ;;;; src/markdown-writer.lisp
 (in-package #:cl-markdown-kit)
 
-(defvar *mw-line-start-p* t)
-(defvar *mw-line-indent* 0)
-(defvar *mw-table-cell-p* nil)
-(defvar *mw-escape-table-pipes-p* nil)
-(defvar *mw-text-autolink-breakpoints* nil)
+(declaim (special *mw-line-start-p*
+                  *mw-line-indent*
+                  *mw-table-cell-p*
+                  *mw-escape-table-pipes-p*
+                  *mw-text-autolink-breakpoints*))
 
 (defun %mw-write-string (string stream)
   (write-string string stream)
@@ -96,18 +96,16 @@
 
 (defun %mw-setext-marker-line-p (text start end)
   (let ((cursor start)
-        (count 0)
         (marker (and (< start end) (char text start))))
     (when (find marker '(#\= #\-))
       (loop while (< cursor end)
             do (cond
                  ((char= (char text cursor) marker)
-                  (incf count)
                   (incf cursor))
                  ((%mw-horizontal-space-p (char text cursor))
                   (incf cursor))
                  (t (return))))
-      (and (plusp count) (= cursor end)))))
+      (= cursor end))))
 
 (defun %mw-line-prefix-hazard-p (text start end)
   (or (%mw-heading-marker-p text start end)
@@ -570,7 +568,8 @@
 (defun %mw-render-block (node)
   (let ((*mw-line-start-p* t)
         (*mw-line-indent* 0)
-        (*mw-table-cell-p* nil))
+        (*mw-table-cell-p* nil)
+        (*mw-escape-table-pipes-p* nil))
     (with-output-to-string (stream)
       (typecase node
         (paragraph
