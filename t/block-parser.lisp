@@ -244,23 +244,6 @@
            (block-parser-test-short-value expected)
            (block-parser-test-short-value actual)))))
 
-(defun block-parser-test-exclusions-valid-p (exclusions examples)
-  (let ((known-ids (mapcar #'spec-example-id examples)))
-    (and (listp exclusions)
-         (every (lambda (entry)
-                  (and (listp entry)
-                       (= (length entry) 2)
-                       (stringp (first entry))
-                       (member (first entry) known-ids :test #'string=)
-                       (stringp (second entry))
-                       (plusp (length
-                               (string-trim '(#\Space #\Tab #\Newline #\Return)
-                                            (second entry))))))
-                exclusions)
-         (= (length exclusions)
-            (length (remove-duplicates exclusions
-                                       :key #'first :test #'string=))))))
-
 (defun block-parser-test-structure-signature (example)
   (handler-case
       (values
@@ -330,22 +313,15 @@
            (known-ids (mapcar #'spec-example-id examples))
            (fixture-ids (mapcar #'first fixtures))
            (fixture-index (make-hash-table :test 'equal))
-           (exclusion-index (make-hash-table :test 'equal))
            (matches 0)
-           (excluded-mismatches 0)
-           (stale-exclusions 0)
-           (excluded-failures nil)
            (failures nil))
       (expect (length commonmark) :to-equal 652)
       (expect (length gfm) :to-equal 30)
       (expect (length fixtures) :to-equal 682)
       (expect fixture-ids :to-equal known-ids)
-      (expect (block-parser-test-exclusions-valid-p exclusions examples)
-              :to-be-truthy)
+      (expect exclusions :to-equal nil)
       (dolist (entry fixtures)
         (setf (gethash (first entry) fixture-index) (second entry)))
-      (dolist (entry exclusions)
-        (setf (gethash (first entry) exclusion-index) (second entry)))
       (dolist (example examples)
         (let* ((id (spec-example-id example))
                (expected (gethash id fixture-index)))
@@ -356,27 +332,16 @@
                      expected actual error-message id)))
               (cond
                 ((null difference)
-                 (incf matches)
-                 (when (gethash id exclusion-index)
-                   (incf stale-exclusions)))
-                ((gethash id exclusion-index)
-                 (incf excluded-mismatches)
-                 (push (list id difference) excluded-failures))
+                 (incf matches))
                 (t
                  (push (list id difference) failures)))))))
       (dolist (failure (nreverse failures))
         (format t "block structure mismatch ~A: ~S~%"
                 (first failure) (second failure)))
-      (dolist (failure (nreverse excluded-failures))
-        (format t "active block structure exclusion ~A: ~S~%"
-                (first failure) (second failure)))
-      (format t "Block structures: ~D CommonMark + ~D GFM; ~D match, ~D reasoned exclusions active, ~D exclusions now matching.~%"
-              (length commonmark) (length gfm) matches
-              excluded-mismatches stale-exclusions)
+      (format t "Block structures: ~D CommonMark + ~D GFM; ~D match, 0 exclusions.~%"
+              (length commonmark) (length gfm) matches)
       (expect failures :to-equal nil)
-      (expect excluded-failures :to-equal nil)
-      (expect matches :to-equal 682)
-      (expect stale-exclusions :to-equal 44)))
+      (expect matches :to-equal 682)))
 
   (it "parses thematic breaks, blank separators, and excludes line endings from spans"
     (let* ((source (format nil "***~%~%---~%"))
