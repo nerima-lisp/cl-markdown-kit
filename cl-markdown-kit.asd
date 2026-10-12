@@ -28,7 +28,13 @@
   :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")
-  :depends-on ("cl-markdown-kit")
+  :depends-on ("cl-markdown-kit" "cl-weave")
+  :pathname "t"
+  :serial t
+  :components ((:file "package")
+               (:file "conformance-spec")
+               (:file "conformance-test")
+               (:file "helpers"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (let* ((condition-class
@@ -57,4 +63,6 @@
                            :markdown-resource-limit-error-actual
                            condition)))
                (assert (search "maximum nesting depth exceeded" report))
-               (format t "cl-markdown-kit startup tests: 4 passed~%"))))
+               (format t "cl-markdown-kit startup tests: 4 passed~%")
+               (unless (uiop:symbol-call :cl-markdown-kit/test :run-tests)
+                 (error "cl-markdown-kit test suite failed")))))
