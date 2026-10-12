@@ -290,13 +290,21 @@ constructor, predicate, and documented readers. The contract is:
 |---|---|
 | `document-headings` | `(document-headings document)`: ordered heading records with node, level, plain text, source form, and section span. All headings are listed; only direct document children participate in section hierarchy/spans, per D-2. Nested headings have no section span. |
 | `find-section` | `(find-section document address)`, where `address` is an RFC 6901 string or a 1-based heading line number. `""` denotes the whole document. A nonempty pointer must begin with `/`; components decode only `~0` to `~` and `~1` to `/`, and compare exactly with heading plain text after inline markup is stripped. It returns a section record; signals no-match for zero matches, ambiguous with candidate headings/1-based line numbers for duplicate sibling matches, and invalid-address for malformed pointer escapes. |
-| `extract` | `(extract document kind &key section info-string language include-source-slice)`: ordered values for `:code-block`, `:link`, `:image`, `:table`, `:task-item`, `:heading`, or `:front-matter`, optionally restricted to a section. `section` is `nil`, a section address accepted by `find-section`, or a section record; scope includes its heading and body. Code filters match the code info string or its first language token. Link/image values include destination and title; table values include header/cell strings; task values include checked state; `include-source-slice` adds the exact source substring for each result. |
+| `extract` | `(extract document kind &key section info-string language include-source-slice)`: ordered values for `:code-block`, `:link`, `:image`, `:table`, `:task-item`, `:heading`, or `:front-matter`, optionally restricted to a section. `section` is `nil`, a section address accepted by `find-section`, or a section record; scope includes its heading and body. Each supplied code filter must match: `info-string` matches the complete info string and `language` matches its first token. Link/image values include destination and title; table values include header/cell strings; task values include checked state. Front matter returns its raw text and source range without YAML interpretation. `include-source-slice` adds the exact source substring for each result when requested. |
 | `replace-section-body` | `(replace-section-body document address markdown)`: replaces content after the selected heading through its section end, retaining the heading itself. The empty address targets the whole document body. |
 | `replace-section` | `(replace-section document address markdown)`: replaces the heading and its section body. |
 | `delete-section` | `(delete-section document address)`: removes the heading and body. |
 | `insert-section` | `(insert-section document address markdown &key (position :after))`: `position` is `:before`, `:after`, or `:last-child`; the last means the last child heading in the selected heading's implied section hierarchy. |
 | `replace-node` | `(replace-node document node markdown)`: replaces one source-backed block node. |
 | `set-task-checked` | `(set-task-checked document task-item checked-p)`: toggles only the task marker and returns edited source. |
+
+`document-headings` returns `heading-record` values with the exported readers
+`heading-record-node`, `heading-record-level`, `heading-record-plain-text`,
+`heading-record-source-form`, and `heading-record-section-span`. `find-section`
+returns a `section-record` with the exported readers
+`section-record-heading`, `section-record-span`, and
+`section-record-address`. The heading reader returns a heading record, or `nil`
+for the whole-document address; the span is a `cl-parser-kit:span`.
 
 All edit functions return a new source string and never mutate the document.
 Replacement Markdown is normalized to the detected source newline convention;

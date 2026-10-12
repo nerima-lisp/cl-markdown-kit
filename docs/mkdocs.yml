@@ -13,3 +13,4 @@ nav:
   - Home: index.md
   - Reference:
       - AST and source: reference/nodes.md
+      - Query API: reference/query.md
