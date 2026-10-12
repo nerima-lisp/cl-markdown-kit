@@ -25,3 +25,29 @@
                      (markdown-resource-limit-error-actual condition))
              (when (markdown-kit-error-message condition)
                (format stream "; ~A" (markdown-kit-error-message condition))))))
+
+(define-condition markdown-no-match-error (markdown-kit-error)
+  ((address :initarg :address :reader markdown-no-match-error-address)))
+
+(define-condition markdown-ambiguous-match-error (markdown-kit-error)
+  ((address :initarg :address :reader markdown-ambiguous-match-error-address)
+   (candidates :initarg :candidates
+               :reader markdown-ambiguous-match-error-candidates)))
+
+(define-condition markdown-invalid-section-address-error (markdown-kit-error)
+  ((address :initarg :address
+            :reader markdown-invalid-section-address-error-address)
+   (reason :initarg :reason
+           :reader markdown-invalid-section-address-error-reason)))
+
+(define-condition markdown-nesting-depth-exceeded
+    (markdown-resource-limit-error))
+
+(define-condition markdown-inline-delimiter-depth-exceeded
+    (markdown-resource-limit-error))
+
+(define-condition markdown-structure-changed-error (markdown-kit-error)
+  ((target :initarg :target
+           :reader markdown-structure-changed-error-target)
+   (difference :initarg :difference
+               :reader markdown-structure-changed-error-difference)))
