@@ -216,7 +216,21 @@
    #:make-footnote-reference
    #:footnote-reference-raw-label
    #:footnote-reference-normalized-label
+   ;; Block parser results and deferred inline fragments
+   #:inline-fragment
+   #:inline-fragment-p
+   #:make-inline-fragment
+   #:inline-fragment-node
+   #:inline-fragment-text
+   #:inline-fragment-boundary-map
+   #:block-parse-result
+   #:block-parse-result-p
+   #:make-block-parse-result
+   #:block-parse-result-document
+   #:block-parse-result-inline-fragments
+   #:block-parse-result-reference-index
    ;; Parser facade
+   #:parse-blocks
    #:parse
    #:parse-string
    #:parse-stream

@@ -21,6 +21,7 @@
                (:file "conditions")
                (:file "source")
                (:file "nodes")
+               (:file "block-parser")
                (:file "parse"))
   :in-order-to ((test-op (test-op "cl-markdown-kit/test"))))
 
@@ -42,7 +43,8 @@
                (:file "helpers")
                (:file "source")
                (:file "nodes")
-               (:file "parse"))
+               (:file "parse")
+               (:file "block-parser"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (let* ((condition-class
