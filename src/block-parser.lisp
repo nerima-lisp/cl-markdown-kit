@@ -10,9 +10,8 @@
   (raw-end 0 :type (integer 0 *))
   (after 0 :type (integer 0 *)))
 
-(defvar *block-inline-fragments* nil)
-(defvar *block-reference-index* nil)
-
+(declaim (special *block-inline-fragments* *block-reference-index*
+                  *block-lazy-paragraph-cache*))
 (declaim (ftype function %bp-parse-lines %bp-check-depth))
 (declaim (ftype function parse-inline))
 
@@ -22,10 +21,24 @@
 (defun %bp-line-boundary (line index)
   (aref (%block-line-boundaries line) index))
 
+(defun %bp-array-slice-view (array start end)
+  (let ((base array)
+        (offset start))
+    (loop
+      (multiple-value-bind (displaced-to displacement-offset)
+          (array-displacement base)
+        (unless displaced-to (return))
+        (setf base displaced-to
+              offset (+ offset displacement-offset))))
+    (make-array (- end start)
+                :element-type (array-element-type base)
+                :displaced-to base
+                :displaced-index-offset offset)))
+
 (defun %bp-line-slice (line start &optional (end (length (%block-line-text line))))
   (%make-block-line
-   (subseq (%block-line-text line) start end)
-   (subseq (%block-line-boundaries line) start (1+ end))
+   (%bp-array-slice-view (%block-line-text line) start end)
+   (%bp-array-slice-view (%block-line-boundaries line) start (1+ end))
    (%block-line-raw-start line)
    (%block-line-raw-end line)
    (%block-line-after line)))
@@ -200,7 +213,17 @@
         (push fragment *block-inline-fragments*)))
     owner))
 
-(defun %bp-normalize-label-fallback (label)
+(defun %bp-casefold-label (label casefold-function)
+  (if casefold-function
+      (funcall casefold-function label)
+      (string-downcase label)))
+
+(defun %bp-unicode-casefold-function (package)
+  (let ((casefold (and package (find-symbol "CASEFOLD" package))))
+    (when (and casefold (fboundp casefold))
+      (symbol-function casefold))))
+
+(defun %bp-normalize-label (label)
   (let* ((collapsed
            (with-output-to-string (output)
              (let ((pending-space nil)
@@ -214,19 +237,9 @@
                                 (setf pending-space nil))
                               (write-char character output)
                               (setf started t)))))))
-         (unicode-package (find-package "SB-UNICODE"))
-         (casefold (and unicode-package
-                        (find-symbol "CASEFOLD" unicode-package))))
-    (if (and casefold (fboundp casefold))
-        (funcall (symbol-function casefold) collapsed)
-        (string-downcase collapsed))))
-
-(defun %bp-normalize-label (label)
-  (let ((normalizer (find-symbol "NORMALIZE-LINK-LABEL"
-                                 (find-package '#:cl-markdown-kit))))
-    (if (and normalizer (fboundp normalizer))
-        (funcall (symbol-function normalizer) label)
-        (%bp-normalize-label-fallback label))))
+         (casefold (%bp-unicode-casefold-function
+                    (find-package "SB-UNICODE"))))
+    (%bp-casefold-label collapsed casefold)))
 
 (defun %bp-footnote-index-key (normalized-label)
   (cons :footnote normalized-label))
@@ -396,9 +409,6 @@
                   (when (< after-space length)
                     (if (find (char text after-space) '(#\" #\' #\())
                         (progn
-                          (unless (every #'%bp-link-whitespace-p
-                                         (subseq text destination-end after-space))
-                            (return-from %bp-link-definition nil))
                           (multiple-value-bind (parsed-title title-end)
                               (%bp-parse-title text after-space)
                             (unless parsed-title
@@ -421,15 +431,7 @@
                           (unless (every #'%bp-link-whitespace-p
                                          (subseq text destination-end
                                                  destination-line-end))
-                            (return-from %bp-link-definition nil))
-                          (unless (position #\Newline text
-                                            :start destination-end
-                                            :end after-space)
                             (return-from %bp-link-definition nil)))))
-                  (when (= after-space length)
-                    (unless (every #'%bp-link-whitespace-p
-                                   (subseq text destination-end length))
-                      (return-from %bp-link-definition nil)))
                   (values raw-label normalized destination title end))))))))))
 
 (defun %bp-link-label-final-line (lines index)
@@ -762,16 +764,6 @@
                  (not (find (char text cursor) '(#\> #\/))))
         (return nil)))))
 
-(defparameter +bp-block-html-tags+
-  '("address" "article" "aside" "base" "basefont" "blockquote" "body"
-    "caption" "center" "col" "colgroup" "dd" "details" "dialog" "dir"
-    "div" "dl" "dt" "fieldset" "figcaption" "figure" "footer" "form"
-    "frame" "frameset" "h1" "h2" "h3" "h4" "h5" "h6" "head" "header"
-    "hr" "html" "iframe" "legend" "li" "link" "main" "menu" "menuitem"
-    "nav" "noframes" "ol" "optgroup" "option" "p" "param" "search"
-    "section" "summary" "table" "tbody" "td" "tfoot" "th" "thead"
-    "title" "tr" "track" "ul"))
-
 (defun %bp-html-block-type (line)
   (let* ((text (%block-line-text line))
          (length (length text)))
@@ -791,12 +783,22 @@
          (multiple-value-bind (name name-end) (%bp-tag-name-at text indent)
            (when name
              (cond
-               ((and (not (and (< (1+ indent) length)
-                               (char= (char text (1+ indent)) #\/)))
+               ((and (not (char= (char text (1+ indent)) #\/))
                      (member name '("script" "pre" "style" "textarea")
                              :test #'string=))
                 (values 1 (concatenate 'string "</" name) name))
-               ((member name +bp-block-html-tags+ :test #'string=)
+               ((member name '("address" "article" "aside" "base" "basefont"
+                               "blockquote" "body" "caption" "center" "col"
+                               "colgroup" "dd" "details" "dialog" "dir" "div"
+                               "dl" "dt" "fieldset" "figcaption" "figure"
+                               "footer" "form" "frame" "frameset" "h1" "h2"
+                               "h3" "h4" "h5" "h6" "head" "header" "hr"
+                               "html" "iframe" "legend" "li" "link" "main"
+                               "menu" "menuitem" "nav" "noframes" "ol"
+                               "optgroup" "option" "p" "param" "search"
+                               "section" "summary" "table" "tbody" "td"
+                               "tfoot" "th" "thead" "title" "tr" "track" "ul")
+                          :test #'string=)
                 (values 6 nil name))
                ((and (not (member name '("pre" "script" "style" "textarea")
                                   :test #'string=))
@@ -882,7 +884,11 @@
 (defun %bp-code-indent-line (line columns)
   (%bp-strip-columns line columns))
 
-(defun %bp-body-from-lines (lines &key (trailing-newline t))
+(defun %bp-default-body-trailing-newline-p ()
+  t)
+
+(defun %bp-body-from-lines
+    (lines &key (trailing-newline (%bp-default-body-trailing-newline-p)))
   (let ((lines (if (listp lines) (coerce lines 'vector) lines)))
   (with-output-to-string (output)
     (loop for index from 0 below (length lines)
@@ -1214,7 +1220,7 @@
        (< (%bp-indent-columns (%block-line-text line)) 4)
        (not (%bp-interrupts-paragraph-p line))))
 
-(defun %bp-lazy-paragraph-open-p (line)
+(defun %bp-lazy-paragraph-open-p-compute (line)
   (multiple-value-bind (quote-indent content-start) (%bp-quote-marker line)
     (declare (ignore quote-indent))
     (if content-start
@@ -1228,6 +1234,27 @@
               (and (< content-end (length (%block-line-text line)))
                    (%bp-lazy-paragraph-open-p (%bp-line-slice line content-end)))
               (%bp-paragraphish-p line))))))
+
+(defun %bp-lazy-paragraph-open-p (line)
+  (if *block-lazy-paragraph-cache*
+      (let* ((text (%block-line-text line))
+             (base text)
+             (offset 0))
+        (multiple-value-bind (displaced-to displacement-offset)
+            (array-displacement text)
+          (when displaced-to
+            (setf base displaced-to
+                  offset displacement-offset)))
+        ;; Nested containers repeatedly ask about the same line suffix.
+        (let ((by-offset (or (gethash base *block-lazy-paragraph-cache*)
+                             (setf (gethash base *block-lazy-paragraph-cache*)
+                                   (make-hash-table :test 'eql)))))
+          (multiple-value-bind (cached present-p) (gethash offset by-offset)
+            (if present-p
+                cached
+                (setf (gethash offset by-offset)
+                      (%bp-lazy-paragraph-open-p-compute line))))))
+      (%bp-lazy-paragraph-open-p-compute line)))
 
 (defun %bp-collect-quote-lines (lines index)
   (let ((cursor index)
@@ -1326,12 +1353,11 @@
     (loop while (< cursor (length lines))
           for marker-line = (aref lines cursor)
           for record = (%bp-list-marker-record marker-line)
-          do (unless (and record
-                          (eq (first record) kind)
-                          (char= (third record) delimiter)
-                          (= (fourth record) base-indent))
-               (return))
-             (%bp-check-depth (+ depth 2) limit)
+          while (and record
+                     (eq (first record) kind)
+                     (char= (third record) delimiter)
+                     (= (fourth record) base-indent))
+          do (%bp-check-depth (+ depth 2) limit)
              (let* ((content-end (sixth record))
                     (item-indent (seventh record))
                     (content-prefix
@@ -1372,8 +1398,7 @@
                              (push content item-lines)
                              (setf item-last-index item-next
                                    paragraph-open
-                                   (and (not (%bp-blank-line-p content))
-                                        (not (%bp-interrupts-paragraph-p content))))
+                                   (not (%bp-interrupts-paragraph-p content)))
                              (incf item-next)))
                           (t (return))))
                (setf item-lines (nreverse item-lines))
@@ -1413,12 +1438,7 @@
                              :children children))))
                  (push item items))
                (setf list-end-index item-last-index
-                     cursor item-next)
-               (unless (and (< cursor (length lines))
-                            (%bp-list-marker-same-level-p
-                             (aref lines cursor) kind delimiter base-indent))
-                 (return))))
-    (when (null items) (return-from %bp-parse-list nil))
+                     cursor item-next)))
     (setf items (nreverse items))
     (setf loose-p (or loose-p (%bp-list-items-loose-p items)))
     (let ((node (make-list-node
@@ -1516,8 +1536,7 @@
                   (push (%bp-strip-columns line 4) inner-lines)
                   (setf last-line-index cursor)
                   (incf cursor))
-                 ((and (not (%bp-blank-line-p line))
-                       (%bp-paragraphish-p line))
+                 ((%bp-paragraphish-p line)
                   (push line inner-lines)
                   (setf last-line-index cursor)
                   (incf cursor))
@@ -1725,7 +1744,11 @@
                       :closing-delimiter "---")))
           (values node (1+ closing-index)))))))
 
-(defun parse-blocks (source-buffer &key (max-nesting-depth 256))
+(defun %bp-default-nesting-depth ()
+  256)
+
+(defun parse-blocks
+    (source-buffer &key (max-nesting-depth (%bp-default-nesting-depth)))
   "Parse block structure and defer paragraph, heading, and table-cell inlines."
   (check-type source-buffer source-buffer)
   (unless (and (integerp max-nesting-depth) (plusp max-nesting-depth))
@@ -1733,6 +1756,7 @@
            :expected-type '(integer 1 *)))
   (let* ((*block-inline-fragments* nil)
          (*block-reference-index* (make-hash-table :test 'equal))
+         (*block-lazy-paragraph-cache* (make-hash-table :test 'eq))
          (lines (%bp-split-lines (source-buffer-normalized-text source-buffer)))
          (children nil))
     (multiple-value-bind (front-matter next)
