@@ -32,7 +32,8 @@
   (table-rows nil))
 
 (declaim (special *block-inline-fragments* *block-reference-index*))
-(declaim (ftype function %bp-parse-lines %bp-check-depth))
+(declaim (ftype function %bp-parse-lines %bp-check-depth
+                make-inline-fragment make-block-parse-result))
 (declaim (ftype function parse-inline))
 
 (defun %bp-space-p (character)
@@ -225,9 +226,7 @@
 (defun %bp-add-fragment (source-buffer owner lines)
   (let* ((characters (make-array 0 :element-type 'character
                                  :adjustable t :fill-pointer 0))
-         (boundaries (make-array 0 :adjustable t :fill-pointer 0))
-         (source (source-buffer-source source-buffer)))
-    (declare (ignore source))
+         (boundaries (make-array 0 :adjustable t :fill-pointer 0)))
     (when lines
       (vector-push-extend
        (%bp-source-boundary-at source-buffer
@@ -253,8 +252,8 @@
                (make-boundary-map (source-buffer-source source-buffer)
                                   boundaries))
              (fragment
-               (funcall (symbol-function 'make-inline-fragment)
-                        :node owner :text text :boundary-map boundary-map)))
+               (make-inline-fragment
+                :node owner :text text :boundary-map boundary-map)))
         (push fragment *block-inline-fragments*)))
     owner))
 
@@ -276,12 +275,9 @@
         do (incf index)
         finally (return index)))
 
-(defun %bp-link-whitespace-p (character)
-  (unicode-whitespace-p character))
-
 (defun %bp-link-skip-whitespace (text index)
   (loop while (and (< index (length text))
-                   (%bp-link-whitespace-p (char text index)))
+                   (unicode-whitespace-p (char text index)))
         do (incf index)
         finally (return index)))
 
@@ -394,7 +390,7 @@
                        (return)
                        (decf depth)))
                   ((and (zerop depth)
-                        (or (%bp-link-whitespace-p character)
+                        (or (unicode-whitespace-p character)
                             (find character '(#\< #\>))))
                    (return)))
                 (incf index))
@@ -484,12 +480,12 @@
                             (let ((title-line-end
                                     (or (position #\Newline text :start title-end)
                                         length)))
-                              (unless (every #'%bp-link-whitespace-p
+                              (unless (every #'unicode-whitespace-p
                                              (subseq text title-end title-line-end))
                                 (return-from %bp-link-definition nil)))
                             (setf title parsed-title end title-end)))
                         (progn
-                          (unless (every #'%bp-link-whitespace-p
+                          (unless (every #'unicode-whitespace-p
                                          (subseq text destination-end
                                                  destination-line-end))
                             (return-from %bp-link-definition nil)))))
@@ -960,23 +956,15 @@
         (and type (<= type 6)))
       (nth-value 0 (%bp-footnote-start line))))
 
-(defun %bp-code-indent-line (line columns)
-  (%bp-strip-columns line columns))
-
-(defun %bp-default-body-trailing-newline-p ()
-  t)
-
-(defun %bp-body-from-lines
-    (lines &key (trailing-newline (%bp-default-body-trailing-newline-p)))
+(defun %bp-body-from-lines (lines)
   (let ((lines (if (listp lines) (coerce lines 'vector) lines)))
   (with-output-to-string (output)
     (loop for index from 0 below (length lines)
           for line = (aref lines index)
           do (write-string (%block-line-text line) output)
              (when (or (< index (1- (length lines)))
-                       (and trailing-newline
-                            (> (%block-line-after line)
-                               (%block-line-raw-end line))))
+                       (> (%block-line-after line)
+                          (%block-line-raw-end line)))
                (write-char #\Newline output))))))
 
 (defun %bp-html-terminator-p (line terminator kind)
@@ -1133,7 +1121,7 @@
      :header-row-p header-p
      :cells (nreverse cells))))
 
-(defun %bp-make-theta (source-buffer line context marker count start)
+(defun %bp-make-thematic-break (source-buffer line context marker count start)
   (make-thematic-break
    :span (%bp-line-span source-buffer line start
                         (length (%block-line-text line)))
@@ -1656,8 +1644,9 @@
                              (multiple-value-bind (marker count start)
                                  (%bp-thematic-break content)
                                (append-to-current
-                                (%bp-make-theta source-buffer content
-                                                (current-context) marker count start))))
+                                (%bp-make-thematic-break
+                                 source-buffer content (current-context)
+                                 marker count start))))
                             ((nth-value 0 (%bp-atx-heading content))
                              (mark-container-content)
                              (multiple-value-bind (level indent content-start content-end
@@ -1819,7 +1808,7 @@
                         (close-leaf)
                         :consumed)
                       (progn
-                        (push (%bp-code-indent-line
+                        (push (%bp-strip-columns
                                content (%bp-open-leaf-indentation leaf))
                               (%bp-open-leaf-lines leaf))
                         (setf (%bp-open-leaf-end-line leaf) physical-line)
@@ -2008,7 +1997,7 @@
                       :source-format (source-buffer-format source-buffer)
                       :reference-index reference-index
                       :max-nesting-depth max-nesting-depth)))
-      (funcall (symbol-function 'make-block-parse-result)
-               :document document
-               :inline-fragments (nreverse *block-inline-fragments*)
-               :reference-index reference-index))))
+      (make-block-parse-result
+       :document document
+       :inline-fragments (nreverse *block-inline-fragments*)
+       :reference-index reference-index))))
