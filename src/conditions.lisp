@@ -41,10 +41,12 @@
            :reader markdown-invalid-section-address-error-reason)))
 
 (define-condition markdown-nesting-depth-exceeded
-    (markdown-resource-limit-error))
+    (markdown-resource-limit-error)
+  ())
 
 (define-condition markdown-inline-delimiter-depth-exceeded
-    (markdown-resource-limit-error))
+    (markdown-resource-limit-error)
+  ())
 
 (define-condition markdown-structure-changed-error (markdown-kit-error)
   ((target :initarg :target
