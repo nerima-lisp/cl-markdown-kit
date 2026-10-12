@@ -59,4 +59,7 @@ respectively. It also reuses the document's `:max-nesting-depth` and
 `:max-inline-delimiter-depth`. The edit is rejected with
 `markdown-structure-changed-error` if a non-target block's source interval,
 kind, semantic text, or semantic attributes change. The condition exposes the
-edit target and the first difference; it does not contain candidate source.
+edit target and the first difference through the
+`markdown-structure-changed-error-target` and
+`markdown-structure-changed-error-difference` readers; it does not contain
+candidate source.

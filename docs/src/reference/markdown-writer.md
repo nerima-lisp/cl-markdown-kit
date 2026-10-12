@@ -30,9 +30,19 @@ delimiters. Use `write-markdown` for a string result or
 
 `write-html` returns rendered HTML. `write-html-to-stream` writes the same
 output to a character stream. The `:gfm` option defaults to `t`.
+The `:unsafe-urls` option defaults to `nil` and accepts a boolean.
 
 The `:raw-html` option accepts `:omit` (the default), `:escape`, or
 `:pass-through`. With `:raw-html :pass-through`, the GFM tagfilter applies when
 `:gfm` is true. Set `:gfm nil` to pass raw HTML through without that filter.
 The tagfilter is not a sanitizer, and raw HTML passed through with `:gfm nil`
 is not sanitized either.
+
+The URL filter applies to link and image destinations. With the default
+`:unsafe-urls nil`, it suppresses
+`javascript:`, `vbscript:`, and `file:` URLs, and `data:` URLs other than those
+with `image/png`, `image/gif`, `image/jpeg`, or `image/webp` prefixes. A
+suppressed destination is written as an empty `href` or `src` value.
+`:unsafe-urls t` disables this scheme filter, so those destinations are written
+to the attributes with normal HTML attribute escaping and URI percent encoding.
+This option does not change raw HTML handling.

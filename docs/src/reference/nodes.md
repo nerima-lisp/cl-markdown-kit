@@ -126,6 +126,28 @@ The public parser entry points are:
 (parse-octets octet-vector &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
 ```
 
+`parse-blocks` exposes the block-parsing stage used by the parser facade:
+
+```lisp
+(parse-blocks source-buffer &key (front-matter t) (gfm t) (max-nesting-depth 256))
+```
+
+It returns a `block-parse-result`. The result contains the block `document`,
+the reference index, and inline fragments whose contents have not yet been
+parsed. `block-parse-result` has predicate `block-parse-result-p`, constructor
+`make-block-parse-result` with `:document`, `:inline-fragments`, and
+`:reference-index` keywords, and readers `block-parse-result-document`,
+`block-parse-result-inline-fragments`, and
+`block-parse-result-reference-index`.
+
+Each `inline-fragment` associates a block node with its deferred inline text
+and boundary map. Its predicate is `inline-fragment-p`; its constructor is
+`make-inline-fragment` with `:node`, `:text`, and `:boundary-map` keywords; and
+its readers are `inline-fragment-node`, `inline-fragment-text`, and
+`inline-fragment-boundary-map`. The text and map provide the input needed to
+parse that node's inline content while retaining source boundaries. The normal
+`parse` entry points complete this inline stage before returning a document.
+
 `:front-matter` defaults to `t`. When true, a leading `---` line and a later
 closing `---` line are read as a front-matter node, after an optional byte
 order mark. Set it to `nil` to parse those lines as ordinary Markdown blocks.
