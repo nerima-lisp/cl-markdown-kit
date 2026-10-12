@@ -88,7 +88,245 @@
         count position
         do (setf start (+ position (length needle)))))
 
+(defun block-parser-test-data-path (name)
+  (merge-pathnames (format nil "t/data/~A" name)
+                   (asdf:system-source-directory :cl-markdown-kit)))
+
+(defun block-parser-test-read-data (name)
+  (with-open-file (stream (block-parser-test-data-path name)
+                          :direction :input :external-format :utf-8)
+    (let* ((*read-eval* nil)
+           (eof (gensym "EOF"))
+           (data (read stream nil eof)))
+      (when (eq data eof)
+        (error "The block structure data file is empty: ~A" name))
+      (unless (eq (read stream nil eof) eof)
+        (error "The block structure data file has multiple forms: ~A" name))
+      data)))
+
+(declaim (ftype function block-parser-test-node-sequence-signature
+                  block-parser-test-node-signature))
+
+(defun block-parser-test-node-sequence-signature (nodes)
+  (let* ((nodes (remove-if (lambda (node)
+                             (typep node
+                                    'cl-markdown-kit:link-reference-definition))
+                           nodes))
+         (count (length nodes)))
+    (loop for node in nodes
+          for index from 0
+          collect
+          (block-parser-test-node-signature
+           node
+           (cond ((= count 1) :only)
+                 ((zerop index) :first)
+                 ((= index (1- count)) :last)
+                 (t :middle))))))
+
+(defun block-parser-test-node-form (kind attributes children)
+  (append (list kind attributes) children))
+
+(defun block-parser-test-node-signature (node &optional placement)
+  (typecase node
+    (cl-markdown-kit:document
+     (block-parser-test-node-form
+      :document nil
+      (block-parser-test-node-sequence-signature
+       (cl-markdown-kit:document-children node))))
+    (cl-markdown-kit:block-quote
+     (block-parser-test-node-form
+      :block-quote nil
+      (block-parser-test-node-sequence-signature
+       (cl-markdown-kit:block-quote-children node))))
+    (cl-markdown-kit:list-node
+     (block-parser-test-node-form
+      :list
+      (list :kind (cl-markdown-kit:list-node-kind node)
+            :start (cl-markdown-kit:list-node-start-number node)
+            :tight (cl-markdown-kit:list-node-tight-p node)
+            :delimiter
+            (let ((delimiter (cl-markdown-kit:list-node-delimiter-character node)))
+              (cond ((null delimiter) nil)
+                    ((char= delimiter #\.) :period)
+                    ((char= delimiter #\)) :paren)
+                    (t delimiter))))
+      (block-parser-test-node-sequence-signature
+       (cl-markdown-kit:list-node-items node))))
+    (cl-markdown-kit:task-list-item
+     (block-parser-test-node-form
+      :item (list :task-checked (cl-markdown-kit:task-list-item-checked-p node))
+      (block-parser-test-node-sequence-signature
+       (cl-markdown-kit:list-item-children node))))
+    (cl-markdown-kit:list-item
+     (block-parser-test-node-form
+      :item nil
+      (block-parser-test-node-sequence-signature
+       (cl-markdown-kit:list-item-children node))))
+    (cl-markdown-kit:paragraph
+     (block-parser-test-node-form :paragraph (list :placement placement) nil))
+    (cl-markdown-kit:heading
+     (block-parser-test-node-form
+      :heading (list :level (cl-markdown-kit:heading-level node)) nil))
+    (cl-markdown-kit:thematic-break
+     (block-parser-test-node-form :thematic-break nil nil))
+    (cl-markdown-kit:code-block
+     (block-parser-test-node-form
+      :code-block
+      (list :info (or (cl-markdown-kit:code-block-info-string node) "")
+            :literal (cl-markdown-kit:code-block-body node))
+      nil))
+    (cl-markdown-kit:html-block
+     (block-parser-test-node-form
+      :html-block (list :literal (cl-markdown-kit:html-block-body node)) nil))
+    (cl-markdown-kit:table
+     (let* ((rows (cl-markdown-kit:table-rows node))
+            (alignments (cl-markdown-kit:table-alignments node)))
+       (block-parser-test-node-form
+        :table
+        (list :columns (length alignments)
+              :alignments alignments
+              :row-cells (mapcar
+                          (lambda (row)
+                            (length (cl-markdown-kit:table-row-cells row)))
+                          rows))
+        (mapcar #'block-parser-test-node-signature rows))))
+    (cl-markdown-kit:table-row
+     (block-parser-test-node-form
+      :row (list :header (cl-markdown-kit:table-row-header-row-p node))
+      (mapcar #'block-parser-test-node-signature
+              (cl-markdown-kit:table-row-cells node))))
+    (cl-markdown-kit:table-cell
+     (block-parser-test-node-form :cell nil nil))
+    (cl-markdown-kit:footnote-definition
+     (block-parser-test-node-form
+      :footnote-definition
+      (list :label (cl-markdown-kit:footnote-definition-raw-label node))
+      (block-parser-test-node-sequence-signature
+       (cl-markdown-kit:footnote-definition-children node))))
+    (cl-markdown-kit:front-matter
+     (block-parser-test-node-form :front-matter nil nil))
+    (cl-markdown-kit:link-reference-definition
+     (block-parser-test-node-form
+      :link-reference-definition
+      (list :label (cl-markdown-kit:link-reference-definition-raw-label node)
+            :destination (cl-markdown-kit:link-reference-definition-destination node)
+            :title (cl-markdown-kit:link-reference-definition-title node))
+      nil))
+    (otherwise
+     (error "Unsupported block node in structural signature: ~S" node))))
+
+(defun block-parser-test-short-value (value)
+  (if (and (stringp value) (> (length value) 120))
+      (list :string-length (length value)
+            :prefix (subseq value 0 80)
+            :suffix (subseq value (- (length value) 24)))
+      value))
+
+(defun block-parser-test-first-difference (expected actual &optional path)
+  (cond
+    ((equal expected actual) nil)
+    ((and (consp expected) (consp actual))
+     (loop for left in expected
+           for right in actual
+           for index from 0
+           for difference =
+             (block-parser-test-first-difference
+              left right (cons index path))
+           when difference do (return-from block-parser-test-first-difference
+                                difference))
+     (unless (= (length expected) (length actual))
+       (list (reverse path)
+             (list :length (length expected))
+             (list :length (length actual)))))
+    (t
+     (list (reverse path)
+           (block-parser-test-short-value expected)
+           (block-parser-test-short-value actual)))))
+
+(defun block-parser-test-exclusions-valid-p (exclusions examples)
+  (let ((known-ids (mapcar #'spec-example-id examples)))
+    (and (listp exclusions)
+         (every (lambda (entry)
+                  (and (listp entry)
+                       (= (length entry) 2)
+                       (stringp (first entry))
+                       (member (first entry) known-ids :test #'string=)
+                       (stringp (second entry))
+                       (plusp (length
+                               (string-trim '(#\Space #\Tab #\Newline #\Return)
+                                            (second entry))))))
+                exclusions)
+         (= (length exclusions)
+            (length (remove-duplicates exclusions
+                                       :key #'first :test #'string=))))))
+
+(defun block-parser-test-structure-signature (example)
+  (handler-case
+      (values
+       (block-parser-test-node-signature
+        (block-parser-test-document
+         (block-parser-test-result (spec-example-markdown example))))
+       nil)
+    (error (condition)
+      (values nil (princ-to-string condition)))))
+
+(defun block-parser-test-structure-difference (expected actual error-message)
+  (if error-message
+      (list :parse-error error-message)
+      (block-parser-test-first-difference expected actual)))
+
 (describe "Leaf block parser"
+  (it "compares every CommonMark and GFM block structure with pinned cmark output"
+    (let* ((commonmark (commonmark-spec-examples))
+           (gfm (gfm-extension-examples))
+           (examples (append commonmark gfm))
+           (fixtures (block-parser-test-read-data "block-structure-fixtures.lisp"))
+           (exclusions (block-parser-test-read-data
+                        "block-structure-exclusions.lisp"))
+           (known-ids (mapcar #'spec-example-id examples))
+           (fixture-ids (mapcar #'first fixtures))
+           (fixture-index (make-hash-table :test 'equal))
+           (exclusion-index (make-hash-table :test 'equal))
+           (matches 0)
+           (excluded-mismatches 0)
+           (stale-exclusions 0)
+           (failures nil))
+      (expect (length commonmark) :to-equal 652)
+      (expect (length gfm) :to-equal 30)
+      (expect (length fixtures) :to-equal 682)
+      (expect fixture-ids :to-equal known-ids)
+      (expect (block-parser-test-exclusions-valid-p exclusions examples)
+              :to-be-truthy)
+      (dolist (entry fixtures)
+        (setf (gethash (first entry) fixture-index) (second entry)))
+      (dolist (entry exclusions)
+        (setf (gethash (first entry) exclusion-index) (second entry)))
+      (dolist (example examples)
+        (let* ((id (spec-example-id example))
+               (expected (gethash id fixture-index)))
+          (multiple-value-bind (actual error-message)
+              (block-parser-test-structure-signature example)
+            (let ((difference
+                    (block-parser-test-structure-difference
+                     expected actual error-message)))
+              (cond
+                ((null difference)
+                 (incf matches)
+                 (when (gethash id exclusion-index)
+                   (incf stale-exclusions)))
+                ((gethash id exclusion-index)
+                 (incf excluded-mismatches))
+                (t
+                 (push (list id difference) failures)))))))
+      (dolist (failure (nreverse failures))
+        (format t "block structure mismatch ~A: ~S~%"
+                (first failure) (second failure)))
+      (format t "Block structures: ~D CommonMark + ~D GFM; ~D match, ~D reasoned exclusions active, ~D exclusions now matching.~%"
+              (length commonmark) (length gfm) matches
+              excluded-mismatches stale-exclusions)
+      (expect failures :to-equal nil)
+      (expect stale-exclusions :to-equal 0)))
+
   (it "parses thematic breaks, blank separators, and excludes line endings from spans"
     (let* ((source (format nil "***~%~%---~%"))
            (document
