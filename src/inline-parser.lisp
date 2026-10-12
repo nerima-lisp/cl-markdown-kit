@@ -3,7 +3,6 @@
 
 (declaim (ftype function %ip-angle-email-p %ip-decode-numeric-reference
                 %ip-reference-label-valid-p
-                %ip-linkish-in-tree-p
                 %ip-parse-range %ip-parse-title))
 
 (defstruct (%ip-context
@@ -36,16 +35,18 @@
 
 (defstruct (%ip-pair
              (:constructor %ip-make-pair
-                 (kind delimiter-character open-run-start close-run-start
-                  start inner-start inner-end end)))
+                 (kind delimiter-character start inner-start inner-end end
+                  &optional destination title reference-kind reference-label)))
   kind
   delimiter-character
-  (open-run-start 0 :type (integer 0 *))
-  (close-run-start 0 :type (integer 0 *))
   (start 0 :type (integer 0 *))
   (inner-start 0 :type (integer 0 *))
   (inner-end 0 :type (integer 0 *))
-  (end 0 :type (integer 0 *)))
+  (end 0 :type (integer 0 *))
+  destination
+  title
+  reference-kind
+  reference-label)
 
 (defstruct (%ip-atom (:constructor %ip-make-atom (start end node)))
   (start 0 :type (integer 0 *))
@@ -53,11 +54,10 @@
   node)
 
 (defstruct (%ip-bracket
-             (:constructor %ip-make-bracket (open close image-p active-p)))
+             (:constructor %ip-make-bracket (open close image-p)))
   (open 0 :type (integer 0 *))
   close
-  (image-p nil :type boolean)
-  (active-p t :type boolean))
+  (image-p nil :type boolean))
 
 (defstruct (%ip-candidate
              (:constructor %ip-make-candidate
@@ -214,9 +214,6 @@
         (end (length text)))
     (loop while (< index end)
           do (cond
-               ((char= (char text index) #\\)
-                (setf index (or (%ip-backslash-escape-end text index end)
-                                (1+ index))))
                ((char= (char text index) #\`)
                 (let* ((run-end (%ip-backtick-run-end text index end))
                        (run-length (- run-end index)))
@@ -284,23 +281,23 @@
           (%ip-build-pattern-next-indexes text "]]>")))
 
 (defun %ip-html-close-at (html-closes pattern-index start end)
-  (let* ((indexes (and html-closes (aref html-closes pattern-index)))
-         (close (and indexes (< start (length indexes))
-                     (aref indexes start))))
+  (let* ((indexes (aref html-closes pattern-index))
+         (close (and (< start (length indexes)) (aref indexes start))))
     (and (>= (or close -1) 0) (< close end) close)))
 
 (defun %ip-raw-html-open-tag-end (text name-end end)
   (let ((cursor name-end))
     (loop
-      (setf cursor (%ip-skip-html-space text cursor end))
-      (when (>= cursor end)
-        (return-from %ip-raw-html-open-tag-end nil))
-      (when (char= (char text cursor) #\>)
-        (return-from %ip-raw-html-open-tag-end (1+ cursor)))
-      (when (and (char= (char text cursor) #\/)
-                 (< (1+ cursor) end)
-                 (char= (char text (1+ cursor)) #\>))
-        (return-from %ip-raw-html-open-tag-end (+ cursor 2)))
+      (let ((after-space (%ip-skip-html-space text cursor end)))
+        (when (>= after-space end)
+          (return-from %ip-raw-html-open-tag-end nil))
+        (when (char= (char text after-space) #\>)
+          (return-from %ip-raw-html-open-tag-end (1+ after-space)))
+        (when (and (char= (char text after-space) #\/)
+                   (< (1+ after-space) end)
+                   (char= (char text (1+ after-space)) #\>))
+          (return-from %ip-raw-html-open-tag-end (+ after-space 2)))
+        (setf cursor after-space))
       (let ((attribute-end (%ip-attribute-name-end text cursor end)))
         (unless attribute-end
           (return-from %ip-raw-html-open-tag-end nil))
@@ -323,7 +320,7 @@
                   (when (= value-start cursor)
                     (return-from %ip-raw-html-open-tag-end nil))))))))))
 
-(defun %ip-raw-html-end (text start end &optional html-closes)
+(defun %ip-raw-html-end (text start end html-closes)
   (cond
     ((and (<= (+ start 4) end)
           (string= text "<!--" :start1 start :end1 (+ start 4)))
@@ -335,32 +332,23 @@
              (string= text "<!--->" :start1 start :end1 (+ start 6)))
         (+ start 6))
        (t
-        (let ((close (or (%ip-html-close-at html-closes 1 (+ start 4) end)
-                         (and (null html-closes)
-                              (search "-->" text :start2 (+ start 4)
-                                      :end2 end)))))
+        (let ((close (%ip-html-close-at html-closes 1 (+ start 4) end)))
           (when close (+ close 3))))))
     ((and (< (1+ start) end)
           (char= (char text start) #\<)
           (char= (char text (1+ start)) #\?))
-     (let ((close (or (%ip-html-close-at html-closes 2 (+ start 2) end)
-                      (and (null html-closes)
-                           (search "?>" text :start2 (+ start 2) :end2 end)))))
+     (let ((close (%ip-html-close-at html-closes 2 (+ start 2) end)))
        (when close (+ close 2))))
     ((and (<= (+ start 9) end)
           (string= text "<![CDATA[" :start1 start :end1 (+ start 9)))
-     (let ((close (or (%ip-html-close-at html-closes 3 (+ start 9) end)
-                      (and (null html-closes)
-                           (search "]]>" text :start2 (+ start 9) :end2 end)))))
+     (let ((close (%ip-html-close-at html-closes 3 (+ start 9) end)))
        (when close (+ close 3))))
     ((and (< (+ start 2) end)
           (char= (char text start) #\<)
           (char= (char text (1+ start)) #\!)
           (let ((code (char-code (char text (+ start 2)))))
             (<= (char-code #\A) code (char-code #\Z))))
-     (let ((close (or (%ip-html-close-at html-closes 0 (+ start 2) end)
-                      (and (null html-closes)
-                           (position #\> text :start (+ start 2) :end end)))))
+     (let ((close (%ip-html-close-at html-closes 0 (+ start 2) end)))
        (when close (1+ close))))
     ((and (< (1+ start) end)
           (char= (char text start) #\<)
@@ -378,11 +366,9 @@
          (%ip-raw-html-open-tag-end text name-end end))))
     (t nil)))
 
-(defun %ip-angle-autolink (text start end &optional html-closes)
+(defun %ip-angle-autolink (text start end html-closes)
   (when (and (< (1+ start) end) (char= (char text start) #\<))
-    (let ((close (if html-closes
-                     (%ip-html-close-at html-closes 0 (1+ start) end)
-                     (position #\> text :start (1+ start) :end end))))
+    (let ((close (%ip-html-close-at html-closes 0 (1+ start) end)))
       (when close
         (let ((inner-start (1+ start))
               (inner-end close))
@@ -782,14 +768,10 @@
                    for character = (char text index)
                    thereis (not (find character '(#\Space #\Tab #\Newline))))))))
 
-(defun %ip-link-candidate (context open image-p range-end link-allowed
-                           base-depth)
+(defun %ip-link-candidate (context open close image-p range-end link-allowed)
   (let* ((text (%ip-context-text context))
-         (close (aref (%ip-context-bracket-opens context) open)))
-    (unless (and (>= (or close -1) 0) (< close range-end))
-      (return-from %ip-link-candidate nil))
-    (let ((suffix-start (1+ close))
-          (reference-suffix-p
+         (suffix-start (1+ close)))
+    (let ((reference-suffix-p
             (and (< (1+ close) range-end)
                  (char= (char text (1+ close)) #\[)
                  (let ((suffix-close
@@ -841,37 +823,9 @@
                       (link-reference-definition-destination reference)
                       title (link-reference-definition-title reference)
                       link-end suffix-start))))))
-      (unless link-end (return-from %ip-link-candidate nil))
-      (%ip-check-depth (1+ base-depth) (%ip-context-limit context))
-      (let* ((children (%ip-parse-range context (1+ open) close
-                                        link-allowed
-                                        (1+ base-depth)))
-             (nested-link-p
-               (and (not image-p)
-                    (%ip-linkish-in-tree-p children))))
-        (when nested-link-p
-          (return-from %ip-link-candidate nil))
-        (let ((span-start (if image-p (1- open) open))
-              (span-end link-end))
-          (values (if image-p
-                      (make-image :span (%ip-span context span-start span-end)
-                                  :destination destination :title title
-                                  :reference-kind (or kind :inline)
-                                  :reference-label label :children children)
-                      (make-link :span (%ip-span context span-start span-end)
-                                 :destination destination :title title
-                                 :reference-kind (or kind :inline)
-                                 :reference-label label :children children))
-                  link-end))))))
-
-(defun %ip-node-link-like-p (node)
-  (or (link-p node) (autolink-p node)))
-
-(defun %ip-linkish-in-tree-p (nodes)
-  (some (lambda (node)
-          (or (%ip-node-link-like-p node)
-              (%ip-linkish-in-tree-p (node-children node))))
-        nodes))
+      (if link-end
+          (values destination title kind label link-end)
+          (values nil nil nil nil nil)))))
 
 (defun %ip-flanking (text start end run-end)
   (let* ((before (if (> start 0) (char text (1- start)) nil))
@@ -939,11 +893,8 @@
       (setf (%ip-delimiter-open-bucket delimiter) nil)
       (decf (car active-count)))))
 
-(defun %ip-add-delimiter (context text start end character can-open can-close
-                          openers delimiters pairs active-count active-stack
-                          bracket-count
-                          base-depth)
-  (declare (ignore text))
+(defun %ip-add-delimiter (start end character can-open can-close
+                          openers delimiters pairs active-count active-stack)
   (let* ((length (- end start))
          (run (%ip-make-delimiter character start length can-open can-close)))
     (setf (%ip-delimiter-remaining run) length)
@@ -956,7 +907,6 @@
             for closer-remaining = (%ip-delimiter-remaining run)
             for use-count =
               (cond
-                ;; %ip-best-opener requires two remaining markers on each side.
                 ((char= character #\~) 2)
                 ((and (>= opener-remaining 2) (>= closer-remaining 2)) 2)
                 (t 1))
@@ -978,8 +928,7 @@
                       (cond ((char= character #\~) :strikethrough)
                             ((= use-count 2) :strong)
                             (t :emphasis))
-                      character (%ip-delimiter-start opener) start
-                      open-start (+ open-start use-count)
+                      character open-start (+ open-start use-count)
                       close-start (+ close-start use-count))
                      pairs)
                (decf (%ip-delimiter-remaining opener) use-count)
@@ -994,8 +943,6 @@
     (when (and can-open (plusp (%ip-delimiter-remaining run))
                (or (not (char= character #\~))
                    (>= (%ip-delimiter-remaining run) 2)))
-      (%ip-check-depth (+ base-depth (car active-count) bracket-count 1)
-                       (%ip-context-limit context))
       (let* ((bucket-index (%ip-delimiter-bucket-index run))
              (buckets (%ip-delimiter-buckets openers character)))
         (setf (%ip-delimiter-open-bucket run) bucket-index)
@@ -1003,6 +950,53 @@
         (push run (car active-stack))
         (incf (car active-count))))
     (values delimiters pairs)))
+
+(defun %ip-resolve-delimiter-runs (runs pairs)
+  (let* ((containers
+           (coerce (sort (copy-list pairs)
+                         #'< :key #'%ip-pair-inner-start)
+                   'vector))
+         (container-index 0)
+         (container-stack nil)
+         (groups (make-hash-table :test #'eq)))
+    (dolist (run (sort (copy-list runs) #'< :key #'%ip-delimiter-start))
+      (let ((position (%ip-delimiter-start run)))
+        (loop while (and container-stack
+                         (>= position
+                             (%ip-pair-inner-end (first container-stack))))
+              do (pop container-stack))
+        (loop while (and (< container-index (length containers))
+                         (<= (%ip-pair-inner-start
+                              (aref containers container-index))
+                             position))
+              for container = (aref containers container-index)
+              do (when (< position (%ip-pair-inner-end container))
+                   (push container container-stack))
+                 (incf container-index))
+        (push run (gethash (first container-stack) groups))))
+    (let ((resolved-delimiters nil)
+          (resolved-pairs pairs))
+      (maphash
+       (lambda (scope scoped-runs)
+         (declare (ignore scope))
+         (let ((openers (make-hash-table :test #'eql))
+               (delimiters nil)
+               (matched-pairs nil)
+               (active-count (list 0))
+               (active-stack (list nil)))
+           (dolist (run (nreverse scoped-runs))
+             (multiple-value-setq (delimiters matched-pairs)
+               (%ip-add-delimiter
+                (%ip-delimiter-start run)
+                (+ (%ip-delimiter-start run) (%ip-delimiter-length run))
+                (%ip-delimiter-character run)
+                (%ip-delimiter-can-open run)
+                (%ip-delimiter-can-close run)
+                openers delimiters matched-pairs active-count active-stack)))
+           (setf resolved-delimiters (nconc delimiters resolved-delimiters)
+                 resolved-pairs (nconc matched-pairs resolved-pairs))))
+       groups)
+      (values resolved-delimiters resolved-pairs))))
 
 (defun %ip-delimiter-text-atoms (context delimiters pairs)
   (let* ((text (%ip-context-text context))
@@ -1037,6 +1031,20 @@
 (defun %ip-pair-node (context pair children)
   (let ((span (%ip-span context (%ip-pair-start pair) (%ip-pair-end pair))))
     (case (%ip-pair-kind pair)
+      (:link
+       (make-link :span span
+                  :destination (%ip-pair-destination pair)
+                  :title (%ip-pair-title pair)
+                  :reference-kind (%ip-pair-reference-kind pair)
+                  :reference-label (%ip-pair-reference-label pair)
+                  :children children))
+      (:image
+       (make-image :span span
+                   :destination (%ip-pair-destination pair)
+                   :title (%ip-pair-title pair)
+                   :reference-kind (%ip-pair-reference-kind pair)
+                   :reference-label (%ip-pair-reference-label pair)
+                   :children children))
       (:emphasis
        (make-emphasis :span span
                       :delimiter-character (%ip-pair-delimiter-character pair)
@@ -1049,7 +1057,7 @@
        (make-strikethrough :span span :delimiter-character #\~
                            :children children)))))
 
-(defun %ip-build-range (context start end atoms pairs)
+(defun %ip-build-range (context start end atoms pairs &optional (base-depth 0))
   (let* ((events (make-array (- end start) :initial-element nil))
          (children (make-hash-table :test #'eq))
          (child-tails (make-hash-table :test #'eq))
@@ -1079,6 +1087,8 @@
                (let ((owner (first pair-stack)))
                  (append-entry owner event))
                (when (eq (car event) :pair)
+                 (%ip-check-depth (+ base-depth (length pair-stack) 1)
+                                  (%ip-context-limit context))
                  (push (cdr event) pair-stack)))
              (render (entries range-start range-end)
                (let ((output nil)
@@ -1148,52 +1158,85 @@
             do (dolist (event queued) (attach-event event position)))
       (render root start end))))
 
-(defun %ip-register-atom (context atoms node start end)
-  (declare (ignore context))
+(defun %ip-register-atom (atoms node start end)
   (push (%ip-make-atom start end node) atoms)
   atoms)
-
-(defun %ip-bracket-stack-pop (stack open)
-  (let ((entry (find open stack :key #'%ip-bracket-open :test #'eql)))
-    (when entry
-      (setf stack (remove entry stack :test #'eq :count 1))
-      (values stack entry))))
 
 (defun %ip-parse-range (context start end link-allowed base-depth)
   (let* ((text (%ip-context-text context))
          (atoms nil)
-         (delimiters nil)
+         (delimiter-runs nil)
          (pairs nil)
-         (openers (make-hash-table :test #'eql))
-         (active-count (list 0))
-         (active-stack (list nil))
          (bracket-stack nil)
          (bracket-count 0)
+         (link-opener-barrier -1)
          (index start))
     (labels ((add-node (node node-start node-end)
-               (setf atoms (%ip-register-atom context atoms node node-start node-end)))
+               (setf atoms (%ip-register-atom atoms node node-start node-end)))
              (add-text (value node-start node-end)
                (add-node (%ip-text-node context value node-start node-end)
                          node-start node-end))
-             (push-bracket (open close image-p active-p)
-               (%ip-check-depth (+ base-depth (car active-count)
-                                   bracket-count 1)
+             (current-range-end ()
+               (let ((bracket (first bracket-stack)))
+                 (if (and bracket (< index (%ip-bracket-close bracket)))
+                     (min end (%ip-bracket-close bracket))
+                     end)))
+             (parent-range-end ()
+               (let ((parent (second bracket-stack)))
+                 (if parent
+                     (min end (%ip-bracket-close parent))
+                     end)))
+             (push-bracket (open close image-p)
+               (%ip-check-depth (+ base-depth bracket-count 1)
                                 (%ip-context-limit context))
-               (push (%ip-make-bracket open close image-p active-p)
-                     bracket-stack)
+               (push (%ip-make-bracket open close image-p) bracket-stack)
                (incf bracket-count))
-             (pop-bracket-at (close)
-               (let ((open (aref (%ip-context-bracket-closes context) close)))
-                 (when (>= open 0)
-                   (multiple-value-bind (new-stack entry)
-                       (%ip-bracket-stack-pop bracket-stack open)
-                     (when entry
-                       (setf bracket-stack new-stack)
-                       (decf bracket-count))))))
-             (deactivate-links ()
-               (dolist (bracket bracket-stack)
-                 (unless (%ip-bracket-image-p bracket)
-                   (setf (%ip-bracket-active-p bracket) nil))))
+             (pop-bracket ()
+               (pop bracket-stack)
+               (decf bracket-count))
+             (add-bracket-opener-text (bracket)
+               (let* ((open (%ip-bracket-open bracket))
+                      (image-p (%ip-bracket-image-p bracket))
+                      (text-start (if image-p (1- open) open))
+                      (text-value (if image-p "![" "[")))
+                 (add-text text-value text-start (1+ open))))
+             (close-bracket ()
+               (let* ((open (aref (%ip-context-bracket-closes context) index))
+                      (bracket (first bracket-stack)))
+                 (when (and bracket (>= open 0)
+                            (= open (%ip-bracket-open bracket)))
+                   (let ((image-p (%ip-bracket-image-p bracket)))
+                     (multiple-value-bind (destination title kind label link-end)
+                         (if (or image-p link-allowed)
+                             (%ip-link-candidate
+                              context open index image-p (parent-range-end)
+                              link-allowed)
+                             (values nil nil nil nil nil))
+                       (if (and link-end
+                                (or image-p (> open link-opener-barrier)))
+                           (progn
+                             (push (%ip-make-pair
+                                    (if image-p :image :link)
+                                    nil
+                                    (if image-p (1- open) open)
+                                    (1+ open)
+                                    index
+                                    link-end
+                                    destination
+                                    title
+                                    (or kind :inline)
+                                    label)
+                                   pairs)
+                             (unless image-p
+                               (setf link-opener-barrier open))
+                             (pop-bracket)
+                             (setf index link-end))
+                           (progn
+                             (add-bracket-opener-text bracket)
+                             (pop-bracket)
+                             (add-text "]" index (1+ index))
+                             (incf index)))))
+                   t)))
              (emit-delimiter (run-end character)
                (multiple-value-bind (left right before-punctuation after-punctuation)
                    (%ip-flanking text index (length text) run-end)
@@ -1208,210 +1251,189 @@
                    (if (and (char= character #\~) (< run-length 2))
                        (add-text (subseq text index run-end) index run-end)
                        (if (or can-open can-close)
-                           (multiple-value-setq (delimiters pairs)
-                             (%ip-add-delimiter
-                              context text index run-end character can-open can-close
-                              openers delimiters pairs active-count active-stack
-                              bracket-count
-                              base-depth))
+                           (push (%ip-make-delimiter
+                                  character index run-length can-open can-close)
+                                 delimiter-runs)
                            (add-text (subseq text index run-end) index run-end))))
                  (setf index run-end))))
       (loop while (< index end)
             for character = (char text index)
-            do (let ((candidate (gethash index (%ip-context-bare-links context))))
-                 (cond
-                   ((and candidate (<= (%ip-candidate-end candidate) end))
-                    (if link-allowed
+            for scan-end = (current-range-end)
+            for candidate = (gethash index (%ip-context-bare-links context))
+            do (cond
+                 ((and candidate (<= (%ip-candidate-end candidate) scan-end))
+                  (if link-allowed
+                      (progn
                         (add-node (%ip-make-autolink
                                    context (%ip-candidate-destination candidate)
                                    (%ip-candidate-display-text candidate)
                                    (%ip-candidate-kind candidate)
                                    index (%ip-candidate-end candidate))
                                   index (%ip-candidate-end candidate))
-                        (add-text (subseq text index (%ip-candidate-end candidate))
-                                  index (%ip-candidate-end candidate)))
-                    (setf index (%ip-candidate-end candidate)))
-                   ((char= character #\\)
-                    (cond
-                      ((and (< (1+ index) end)
-                            (char= (char text (1+ index)) #\Newline))
-                       (add-node (make-hard-break
-                                  :span (%ip-span context index (+ index 2)))
-                                 index (+ index 2))
-                       (incf index 2))
-                      ((%ip-backslash-escape-end text index end)
-                       (add-text (string (char text (1+ index))) index (+ index 2))
-                       (incf index 2))
-                      (t (add-text "\\" index (1+ index))
-                         (incf index))))
-                   ((char= character #\`)
-                    (let* ((run-end (%ip-backtick-run-end text index end))
-                           (close (aref (%ip-context-backtick-next context) index)))
-                      (if (and (>= close 0) (< close end)
-                               (<= (+ close (- run-end index)) end))
-                          (let* ((close-end (+ close (- run-end index)))
-                                 (literal (subseq text run-end close)))
-                            (setf literal (substitute #\Space #\Newline literal))
-                            (when (and (> (length literal) 0)
-                                       (char= (char literal 0) #\Space)
-                                       (char= (char literal (1- (length literal)))
-                                              #\Space)
-                                       (find-if-not (lambda (char)
-                                                      (char= char #\Space))
-                                                    literal))
-                              (setf literal (subseq literal 1 (1- (length literal)))))
-                            (add-node (make-code-span
-                                       :span (%ip-span context index close-end)
-                                       :literal-text literal
-                                       :backtick-run-length (- run-end index))
-                                      index close-end)
-                            (setf index close-end))
-                          (progn
-                            (add-text (subseq text index run-end) index run-end)
-                            (setf index run-end)))))
-                   ((char= character #\&)
-                    (multiple-value-bind (value next) (%ip-entity-at text index end)
-                      (if value
-                          (progn (add-text value index next) (setf index next))
-                          (progn (add-text "&" index (1+ index)) (incf index)))))
-                   ((char= character #\<)
-                    (multiple-value-bind (destination display kind autolink-end)
-                        (%ip-angle-autolink text index end
-                                            (%ip-context-html-closes context))
-                      (let ((html-end (and (not autolink-end)
-                                           (%ip-raw-html-end
-                                            text index end
-                                            (%ip-context-html-closes context)))))
-                        (cond
-                          ((and autolink-end link-allowed)
-                           (add-node (%ip-make-autolink context destination display kind
-                                                        index autolink-end)
-                                     index autolink-end)
-                           (setf index autolink-end))
-                          ((and autolink-end (not link-allowed))
-                           (add-text (subseq text index autolink-end)
-                                     index autolink-end)
-                           (setf index autolink-end))
-                          (html-end
-                           (let ((html-end html-end))
-                           (add-node (make-html-inline
-                                      :span (%ip-span context index html-end)
-                                      :body (subseq text index html-end))
-                                     index html-end)
-                           (setf index html-end)))
-                          (t (add-text "<" index (1+ index)) (incf index))))))
-                   ((char= character #\Newline)
-                    (add-node (make-soft-break :span (%ip-span context index (1+ index)))
-                              index (1+ index))
-                    (incf index))
-                   ((find character '(#\Space #\Tab))
-                    (let ((space-end (%ip-skip-space text index end)))
-                      (if (and (< space-end end)
-                               (char= (char text space-end) #\Newline))
-                          (let ((spaces (loop for position from index below space-end
-                                              count (char= (char text position)
-                                                           #\Space))))
-                            (if (>= spaces 2)
-                                (add-node (make-hard-break
-                                           :span (%ip-span context index
-                                                           (1+ space-end)))
-                                          index (1+ space-end))
-                                (add-node
-                                 (make-soft-break
-                                  :span (%ip-span context space-end (1+ space-end)))
-                                 space-end (1+ space-end)))
-                            (setf index (1+ space-end)))
-                          (let ((space-end (loop with cursor = index
-                                                 while (and (< cursor end)
-                                                            (find (char text cursor)
-                                                                  '(#\Space #\Tab)))
-                                                 do (incf cursor)
-                                                 finally (return cursor))))
-                            (add-text (subseq text index space-end)
-                                      index space-end)
-                            (setf index space-end)))))
-                   ((and (char= character #\[)
-                         (<= (+ index 2) end)
-                         (char= (char text (1+ index)) #\^)
-                         (let ((close (aref (%ip-context-bracket-opens context) index)))
-                           (and (>= close 0) (< close end)
-                                (let ((normalized
-                                        (%ip-footnote-reference
-                                         context
-                                         (%ip-unescape text (+ index 2) close))))
-                                  (when normalized
-                                    (add-node
-                                     (make-footnote-reference
-                                      :span (%ip-span context index (1+ close))
-                                      :raw-label (subseq text (+ index 2) close)
-                                      :normalized-label normalized)
-                                     index (1+ close))
-                                    (setf index (1+ close))
-                                    t)))))
-                    nil)
-                   ((char= character #\!)
-                    (if (and (< (1+ index) end)
-                             (char= (char text (1+ index)) #\[))
-                        (let ((open (1+ index)))
-                          (multiple-value-bind (node link-end)
-                              (%ip-link-candidate context open t end link-allowed
-                                                  (+ base-depth (car active-count)
-                                                     bracket-count))
-                            (if node
-                                (progn (add-node node index link-end)
-                                       (setf index link-end))
-                                (let ((close
-                                        (aref (%ip-context-bracket-opens context)
-                                              open)))
-                                  (add-text "![" index (+ index 2))
-                                  (push-bracket open (and (>= close 0) close) t nil)
-                                  (incf index 2)))))
-                        (progn (add-text "!" index (1+ index)) (incf index))))
-                   ((char= character #\[)
-                    (multiple-value-bind (node link-end)
-                        (if link-allowed
-                            (%ip-link-candidate context index nil end t
-                                                (+ base-depth (car active-count)
-                                                   bracket-count))
-                            (values nil nil))
-                      (if node
-                          (progn (add-node node index link-end)
-                                 (deactivate-links)
-                                 (setf index link-end))
-                          (let ((close
-                                  (aref (%ip-context-bracket-opens context) index)))
-                            (add-text "[" index (1+ index))
-                            (push-bracket index (and (>= close 0) close) nil t)
-                            (incf index)))))
-                   ((char= character #\])
-                    (pop-bracket-at index)
+                        (setf link-opener-barrier index))
+                      (add-text (subseq text index (%ip-candidate-end candidate))
+                                index (%ip-candidate-end candidate)))
+                  (setf index (%ip-candidate-end candidate)))
+                 ((char= character #\\)
+                  (cond
+                    ((and (< (1+ index) scan-end)
+                          (char= (char text (1+ index)) #\Newline))
+                     (add-node (make-hard-break
+                                :span (%ip-span context index (+ index 2)))
+                               index (+ index 2))
+                     (incf index 2))
+                    ((%ip-backslash-escape-end text index scan-end)
+                     (add-text (string (char text (1+ index))) index (+ index 2))
+                     (incf index 2))
+                    (t (add-text "\\" index (1+ index))
+                       (incf index))))
+                 ((char= character #\`)
+                  (let* ((run-end (%ip-backtick-run-end text index scan-end))
+                         (close (aref (%ip-context-backtick-next context) index)))
+                    (if (and (>= close 0) (< close scan-end)
+                             (<= (+ close (- run-end index)) scan-end))
+                        (let* ((close-end (+ close (- run-end index)))
+                               (literal (subseq text run-end close)))
+                          (setf literal (substitute #\Space #\Newline literal))
+                          (when (and (> (length literal) 0)
+                                     (char= (char literal 0) #\Space)
+                                     (char= (char literal (1- (length literal)))
+                                            #\Space)
+                                     (find-if-not (lambda (char)
+                                                    (char= char #\Space))
+                                                  literal))
+                            (setf literal (subseq literal 1 (1- (length literal)))))
+                          (add-node (make-code-span
+                                     :span (%ip-span context index close-end)
+                                     :literal-text literal
+                                     :backtick-run-length (- run-end index))
+                                    index close-end)
+                          (setf index close-end))
+                        (progn
+                          (add-text (subseq text index run-end) index run-end)
+                          (setf index run-end)))))
+                 ((char= character #\&)
+                  (multiple-value-bind (value next) (%ip-entity-at text index scan-end)
+                    (if value
+                        (progn (add-text value index next) (setf index next))
+                        (progn (add-text "&" index (1+ index)) (incf index)))))
+                 ((char= character #\<)
+                  (multiple-value-bind (destination display kind autolink-end)
+                      (%ip-angle-autolink text index scan-end
+                                          (%ip-context-html-closes context))
+                    (let ((html-end (and (not autolink-end)
+                                         (%ip-raw-html-end
+                                          text index scan-end
+                                          (%ip-context-html-closes context)))))
+                      (cond
+                        ((and autolink-end link-allowed)
+                         (add-node (%ip-make-autolink context destination display kind
+                                                      index autolink-end)
+                                   index autolink-end)
+                         (setf link-opener-barrier index
+                               index autolink-end))
+                        ((and autolink-end (not link-allowed))
+                         (add-text (subseq text index autolink-end)
+                                   index autolink-end)
+                         (setf index autolink-end))
+                        (html-end
+                         (add-node (make-html-inline
+                                    :span (%ip-span context index html-end)
+                                    :body (subseq text index html-end))
+                                   index html-end)
+                         (setf index html-end))
+                        (t (add-text "<" index (1+ index)) (incf index))))))
+                 ((char= character #\Newline)
+                  (add-node (make-soft-break :span (%ip-span context index (1+ index)))
+                            index (1+ index))
+                  (incf index))
+                 ((find character '(#\Space #\Tab))
+                  (let ((space-end (%ip-skip-space text index scan-end)))
+                    (if (and (< space-end scan-end)
+                             (char= (char text space-end) #\Newline))
+                        (let ((spaces (loop for position from index below space-end
+                                            count (char= (char text position)
+                                                         #\Space))))
+                          (if (>= spaces 2)
+                              (add-node (make-hard-break
+                                         :span (%ip-span context index
+                                                         (1+ space-end)))
+                                        index (1+ space-end))
+                              (add-node
+                               (make-soft-break
+                                :span (%ip-span context space-end (1+ space-end)))
+                               space-end (1+ space-end)))
+                          (setf index (1+ space-end)))
+                        (progn
+                          (add-text (subseq text index space-end) index space-end)
+                          (setf index space-end)))))
+                 ((and (char= character #\[)
+                       (<= (+ index 2) scan-end)
+                       (char= (char text (1+ index)) #\^)
+                       (let ((close (aref (%ip-context-bracket-opens context) index)))
+                         (and (>= close 0) (< close scan-end)
+                              (let ((normalized
+                                      (%ip-footnote-reference
+                                       context
+                                       (%ip-unescape text (+ index 2) close))))
+                                (when normalized
+                                  (add-node
+                                   (make-footnote-reference
+                                    :span (%ip-span context index (1+ close))
+                                    :raw-label (subseq text (+ index 2) close)
+                                    :normalized-label normalized)
+                                   index (1+ close))
+                                  (setf index (1+ close))
+                                  t)))))
+                  nil)
+                 ((char= character #\!)
+                  (if (and (< (1+ index) scan-end)
+                           (char= (char text (1+ index)) #\[))
+                      (let* ((open (1+ index))
+                             (close (aref (%ip-context-bracket-opens context) open)))
+                        (if (and (>= close 0) (< close scan-end))
+                            (push-bracket open close t)
+                            (add-text "![" index (+ index 2)))
+                        (incf index 2))
+                      (progn (add-text "!" index (1+ index)) (incf index))))
+                 ((char= character #\[)
+                  (let ((close (aref (%ip-context-bracket-opens context) index)))
+                    (if (and (>= close 0) (< close scan-end))
+                        (push-bracket index close nil)
+                        (add-text "[" index (1+ index)))
+                    (incf index)))
+                 ((char= character #\])
+                  (unless (close-bracket)
                     (add-text "]" index (1+ index))
-                    (incf index))
-                   ((find character '(#\* #\_ #\~))
-                    (let ((run-end index))
-                      (loop while (and (< run-end end)
-                                       (char= (char text run-end) character))
-                            do (incf run-end))
-                      (emit-delimiter run-end character)))
-                   (t
-                    (let ((run-end index))
-                      (loop while (and (< run-end end)
-                       (not (find (char text run-end)
-                                  '(#\\ #\` #\& #\< #\Newline #\Space #\Tab
-                                    #\! #\[ #\] #\* #\_ #\~)))
-                                       (not (gethash run-end
-                                                     (%ip-context-bare-links context))))
-                            do (incf run-end))
-                      (when (= run-end index) (incf run-end))
-                      (add-text (subseq text index run-end) index run-end)
-                      (setf index run-end)))))))
-      (let* ((literal-atoms (%ip-delimiter-text-atoms
-                             context delimiters pairs))
-             (all-atoms (nconc (nreverse atoms) literal-atoms)))
-        (%ip-build-range context start end all-atoms pairs))))
+                    (incf index)))
+                 ((find character '(#\* #\_ #\~))
+                  (let ((run-end index))
+                    (loop while (and (< run-end scan-end)
+                                     (char= (char text run-end) character))
+                          do (incf run-end))
+                    (emit-delimiter run-end character)))
+                 (t
+                  (let ((run-end index))
+                    (loop while (and (< run-end scan-end)
+                                     (not (find (char text run-end)
+                                                '(#\\ #\` #\& #\< #\Newline
+                                                  #\Space #\Tab #\! #\[ #\]
+                                                  #\* #\_ #\~)))
+                                     (not (gethash run-end
+                                                   (%ip-context-bare-links context))))
+                          do (incf run-end))
+                    (when (= run-end index) (incf run-end))
+                    (add-text (subseq text index run-end) index run-end)
+                    (setf index run-end)))))
+      (multiple-value-bind (delimiters resolved-pairs)
+          (%ip-resolve-delimiter-runs delimiter-runs pairs)
+        (let* ((literal-atoms (%ip-delimiter-text-atoms
+                               context delimiters resolved-pairs))
+               (all-atoms (nconc (nreverse atoms) literal-atoms)))
+          (%ip-build-range context start end all-atoms resolved-pairs
+                           base-depth))))))
 
-(defun parse-inline (text boundary-map reference-index
-                     &key (max-inline-delimiter-depth 4096))
+(defun parse-inline (text boundary-map reference-index &key (max-inline-delimiter-depth 4096))
   "Parse inline Markdown TEXT using its source map and reference index."
   (check-type text string)
   (check-type boundary-map boundary-map)
