@@ -261,6 +261,7 @@
 (defconstant +resource-scaling-target-cpu-seconds+ 0.06d0)
 (defconstant +resource-scaling-minimum-cpu-seconds+ 0.05d0)
 (defconstant +resource-scaling-sample-count+ 3)
+(defconstant +resource-scaling-sample-attempts+ 4)
 
 (defun resource-scaling-batch (input iterations)
   (sb-ext:gc :full t)
@@ -297,6 +298,36 @@
                                       +resource-scaling-target-cpu-seconds+)
                                    cpu)))))))))
 
+;; Calibration accepts the first batch that reaches the target. When another
+;; process slowed that batch, the iteration count is too small and later batches
+;; fall below the minimum. Rescale from the shortest batch and sample again so
+;; every compared batch uses the same iteration count.
+(defun resource-sample-scaling-batches (input)
+  (let ((iterations (resource-calibrate-scaling-iterations input)))
+    (dotimes (attempt +resource-scaling-sample-attempts+
+                      (error "Scaling batches stayed below ~Fs CPU after ~D attempts."
+                             +resource-scaling-minimum-cpu-seconds+
+                             +resource-scaling-sample-attempts+))
+      (declare (ignorable attempt))
+      (let ((walls nil)
+            (cpus nil))
+        (dotimes (trial +resource-scaling-sample-count+)
+          (declare (ignore trial))
+          (multiple-value-bind (wall cpu)
+              (resource-scaling-batch input iterations)
+            (push wall walls)
+            (push cpu cpus)))
+        (let ((shortest (reduce #'min cpus)))
+          (when (<= +resource-scaling-minimum-cpu-seconds+ shortest)
+            (return (values iterations (nreverse walls) (nreverse cpus))))
+          (setf iterations
+                (if (zerop shortest)
+                    (* iterations 2)
+                    (max (1+ iterations)
+                         (ceiling (/ (* iterations
+                                        +resource-scaling-target-cpu-seconds+)
+                                     shortest))))))))))
+
 (defun resource-time-ratio (larger smaller)
   (assert (plusp smaller))
   (/ larger smaller))
@@ -328,21 +359,11 @@
     (loop for input in inputs
           for index from 0
           do (resource-scaling-batch input 1)
-             (let ((iterations
-                     (resource-calibrate-scaling-iterations input)))
-               (setf (nth index iteration-counts) iterations)
-               (dotimes (trial +resource-scaling-sample-count+)
-                 (declare (ignore trial))
-                 (multiple-value-bind (wall cpu)
-                     (resource-scaling-batch input iterations)
-                   (push wall (nth index wall-samples))
-                   (push cpu (nth index cpu-samples))))))
-    (setf wall-samples (mapcar #'nreverse wall-samples)
-          cpu-samples (mapcar #'nreverse cpu-samples))
-    (loop for samples in cpu-samples
-          do (loop for cpu in samples
-                   do (assert (<= +resource-scaling-minimum-cpu-seconds+
-                                  cpu))))
+             (multiple-value-bind (iterations walls cpus)
+                 (resource-sample-scaling-batches input)
+               (setf (nth index iteration-counts) iterations
+                     (nth index wall-samples) walls
+                     (nth index cpu-samples) cpus)))
     (let* ((median-walls (mapcar #'resource-median wall-samples))
            (median-cpus
              (mapcar (lambda (samples iterations)
