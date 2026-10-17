@@ -59,13 +59,12 @@
                    (string-equal tag string :start2 index :end2 end)
                    (< end length)
                    (let ((next (char string end)))
-                     (or (find next '(#\Space #\Tab #\Newline #\Return #\Page))
+                     (or (%pc-html-space-p next)
                          (char= next #\>)
                          (and (char= next #\/)
                               (< (1+ end) length)
                               (char= (char string (1+ end)) #\>)))))))
-          '("title" "textarea" "style" "xmp" "iframe" "noembed"
-            "noframes" "script" "plaintext"))))
+          +gfm-tagfilter-tags+)))
 
 (defun %hw-filter-html (context string)
   (loop with start = 0

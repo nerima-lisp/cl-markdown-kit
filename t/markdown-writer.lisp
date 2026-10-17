@@ -727,23 +727,6 @@
             :to-equal nil)
     (expect (cl-markdown-kit::%mw-table-alignment-line-p "||")
             :to-equal nil)
-    (expect (cl-markdown-kit::%mw-table-start-follows-p
-             (format nil "a|b~%---|---"))
-            :to-be-truthy)
-    (expect (cl-markdown-kit::%mw-table-start-follows-p
-             (format nil "a|~%---:"))
-            :to-be-truthy)
-    (expect (cl-markdown-kit::%mw-table-start-follows-p
-             (format nil "a|~%---"))
-            :to-be-truthy)
-    (expect (cl-markdown-kit::%mw-table-start-follows-p
-             (format nil "|a|~%:---"))
-            :to-be-truthy)
-    (expect (cl-markdown-kit::%mw-table-start-follows-p
-             (format nil "a|b~%---"))
-            :to-equal nil)
-    (expect (cl-markdown-kit::%mw-table-start-follows-p "a|b")
-            :to-equal nil)
     (with-mw-writer-state
       (expect
        (cl-markdown-kit::%mw-render-paragraph

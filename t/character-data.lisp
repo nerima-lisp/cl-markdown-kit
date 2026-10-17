@@ -102,25 +102,6 @@
                             '(#x0085 #x2028 #x2029 #x180E)))
             :to-equal '(nil nil nil nil)))
 
-  (character-data-probe "probe 33: connector punctuation"
-      cl-markdown-kit::unicode-punctuation-p
-      ((character-data-codepoint #x203F)) t)
-  (character-data-probe "probe 34: dash punctuation"
-      cl-markdown-kit::unicode-punctuation-p
-      ((character-data-codepoint #x2014)) t)
-  (character-data-probe "probe 35: open punctuation"
-      cl-markdown-kit::unicode-punctuation-p (#\() t)
-  (character-data-probe "probe 36: final quote punctuation"
-      cl-markdown-kit::unicode-punctuation-p
-      ((character-data-codepoint #x2019)) t)
-  (character-data-probe "probe 37: math symbol"
-      cl-markdown-kit::unicode-punctuation-p (#\+) t)
-  (character-data-probe "probe 38: other symbol"
-      cl-markdown-kit::unicode-punctuation-p
-      ((character-data-codepoint #x2603)) t)
-  (character-data-probe "probe 39: letter is not Unicode punctuation"
-      cl-markdown-kit::unicode-punctuation-p (#\A) nil)
-
   (it "decodes the named references in CommonMark Example 25"
     (expect (mapcar #'cl-markdown-kit::lookup-html5-entity
                     '("nbsp;" "amp;" "copy;" "AElig;" "Dcaron;"

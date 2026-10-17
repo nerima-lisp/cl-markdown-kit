@@ -32,12 +32,9 @@
   (table-rows nil))
 
 (declaim (special *block-inline-fragments* *block-reference-index*))
-(declaim (ftype function %bp-parse-lines %bp-check-depth
+(declaim (ftype function %bp-parse-lines %pc-check-depth
                 make-inline-fragment make-block-parse-result))
 (declaim (ftype function parse-inline))
-
-(defun %bp-space-p (character)
-  (or (char= character #\Space) (char= character #\Tab)))
 
 (defun %bp-line-boundary (line index)
   (aref (%block-line-boundaries line) index))
@@ -122,7 +119,7 @@
         (column initial-column))
     (loop while (< index (length text))
           for character = (char text index)
-          while (%bp-space-p character)
+          while (%pc-space-p character)
           for next-column =
             (if (char= character #\Tab)
                 (+ column (- 4 (mod column 4)))
@@ -140,7 +137,7 @@
   (loop with column = initial-column
         for index from 0 below end
         for character = (char text index)
-        while (%bp-space-p character)
+        while (%pc-space-p character)
         do (setf column
                  (if (char= character #\Tab)
                      (+ column (- 4 (mod column 4)))
@@ -169,7 +166,7 @@
          (partial-spaces 0))
     (loop while (and (< index (length text))
                      (< (- column (%block-line-column-start line)) columns)
-                     (%bp-space-p (char text index)))
+                     (%pc-space-p (char text index)))
           for character = (char text index)
           for width = (if (char= character #\Tab)
                           (- 4 (mod column 4))
@@ -213,18 +210,7 @@
     (%bp-line-slice line index)))
 
 (defun %bp-blank-line-p (line)
-  (every #'%bp-space-p (%block-line-text line)))
-
-(defun %bp-trim-indices (text start end)
-  (loop while (and (< start end) (%bp-space-p (char text start)))
-        do (incf start))
-  (loop while (and (< start end) (%bp-space-p (char text (1- end))))
-        do (decf end))
-  (values start end))
-
-(defun %bp-trimmed-string (text)
-  (multiple-value-bind (start end) (%bp-trim-indices text 0 (length text))
-    (subseq text start end)))
+  (every #'%pc-space-p (%block-line-text line)))
 
 (defun %bp-line-span (source-buffer line start end)
   (source-buffer-span source-buffer
@@ -279,18 +265,15 @@
 (defun %bp-footnote-index-key (normalized-label)
   (cons :footnote normalized-label))
 
-(defun %bp-prefix-p (string prefix &optional (start 0) (case-insensitive nil))
-  (and (<= (+ start (length prefix)) (length string))
-       (loop for offset from 0 below (length prefix)
-             for left = (char string (+ start offset))
-             for right = (char prefix offset)
-             always (if case-insensitive
-                        (char-equal left right)
-                        (char= left right)))))
+(defun %bp-prefix-p (string prefix &optional (start 0))
+ (and (<= (+ start (length prefix)) (length string))
+      (loop for offset below (length prefix)
+            always (char= (char string (+ start offset))
+                          (char prefix offset)))))
 
 (defun %bp-skip-whitespace (text index)
   (loop while (and (< index (length text))
-                   (%bp-space-p (char text index)))
+                   (%pc-space-p (char text index)))
         do (incf index)
         finally (return index)))
 
@@ -325,17 +308,6 @@
                         (%block-line-after (aref lines (1- (length lines))))
                         (%block-line-column-start (aref lines 0))))))
 
-(defun %bp-unescape-punctuation (text)
-  (with-output-to-string (output)
-    (loop for index from 0 below (length text)
-          for character = (char text index)
-          do (if (and (char= character #\\)
-                      (< (1+ index) (length text))
-                      (ascii-punctuation-p (char text (1+ index))))
-                 (progn (write-char (char text (1+ index)) output)
-                        (incf index))
-                 (write-char character output)))))
-
 (defun %bp-decode-character-references (text)
   (with-output-to-string (output)
     (loop with index = 0
@@ -350,10 +322,8 @@
                                         (char= (char reference 0) #\#))
                                    (if (and (> (length reference) 2)
                                             (find (char reference 1) '(#\x #\X)))
-                                       (decode-numeric-character-reference
-                                        (subseq reference 2) 16)
-                                       (decode-numeric-character-reference
-                                        (subseq reference 1) 10)))
+                                       (%pc-decode-numeric-reference (subseq reference 2) 16)
+                                       (%pc-decode-numeric-reference (subseq reference 1) 10)))
                                   ((plusp (length reference))
                                    (lookup-html5-entity
                                     (concatenate 'string reference ";"))))))
@@ -386,8 +356,7 @@
                   ((char= character #\<) (return-from %bp-parse-destination nil))
                   ((char= character #\>)
                    (return-from %bp-parse-destination
-                     (values (%bp-unescape-punctuation
-                              (subseq text start index))
+                     (values (%pc-unescape (subseq text start index))
                              (1+ index))))
                   ((find character '(#\Newline #\Return))
                    (return-from %bp-parse-destination nil)))
@@ -415,26 +384,7 @@
                 (incf index))
        (when (or escaped (plusp depth) (= start index))
          (return-from %bp-parse-destination nil))
-       (values (%bp-unescape-punctuation (subseq text start index)) index)))))
-
-(defun %bp-parse-title (text index)
-  (when (< index (length text))
-    (let* ((opening (char text index))
-           (closing (case opening (#\( #\)) (otherwise opening))))
-      (when (find opening '(#\" #\' #\())
-        (let ((start (1+ index))
-              (escaped nil))
-          (loop for cursor from (1+ index) below (length text)
-                for character = (char text cursor)
-                do (cond
-                     (escaped (setf escaped nil))
-                     ((char= character #\\) (setf escaped t))
-                     ((char= character closing)
-                      (return-from %bp-parse-title
-                        (values (%bp-unescape-punctuation
-                                 (subseq text start cursor))
-                                (1+ cursor))))))
-          nil)))))
+       (values (%pc-unescape (subseq text start index)) index)))))
 
 (defun %bp-link-definition (line)
   (let* ((text (%block-line-text line))
@@ -465,7 +415,7 @@
                  (normalized
                    (normalize-link-label
                     (%bp-decode-character-references
-                     (%bp-unescape-punctuation raw-label))))
+                     (%pc-unescape raw-label))))
                  (cursor (%bp-link-skip-whitespace text (+ index 2))))
             (when (zerop (length normalized))
               (return-from %bp-link-definition nil))
@@ -483,10 +433,10 @@
                              (= after-space destination-end))
                     (return-from %bp-link-definition nil))
                   (when (< after-space length)
-                    (if (find (char text after-space) '(#\" #\' #\())
+                    (if (find (char text after-space) +link-title-delimiters+)
                         (progn
                           (multiple-value-bind (parsed-title title-end)
-                              (%bp-parse-title text after-space)
+                              (%pc-parse-title text after-space (length text) :backslash-mode :any-character)
                             (unless parsed-title
                               (return-from %bp-link-definition
                                 (values nil nil nil nil nil
@@ -542,7 +492,7 @@
   (let* ((text (%block-line-text line))
          (index (%bp-skip-whitespace text 0)))
     (when (and (< index (length text))
-               (find (char text index) '(#\" #\' #\()))
+               (find (char text index) +link-title-delimiters+))
       (values (char text index) (1+ index)))))
 
 (defun %bp-link-title-close-line (lines start-line start-index closing)
@@ -656,7 +606,7 @@
                    (normalized
                      (normalize-link-label
                       (%bp-decode-character-references
-                       (%bp-unescape-punctuation raw-label))))
+                       (%pc-unescape raw-label))))
                    (cursor (%bp-skip-whitespace text (+ close 2))))
               (values raw-label normalized cursor
                       indent))))))))
@@ -674,12 +624,12 @@
           (let ((level (- marker-end indent)))
             (when (and (<= level 6)
                        (or (= marker-end length)
-                           (%bp-space-p (char text marker-end))))
+                           (%pc-space-p (char text marker-end))))
               (let* ((content-start (%bp-skip-whitespace text marker-end))
                      (content-end length)
                      (close-count 0))
                 (multiple-value-setq (content-start content-end)
-                  (%bp-trim-indices text content-start content-end))
+                  (%pc-trim-indices text content-start content-end))
                 (when (> content-end content-start)
                   (let ((cursor content-end))
                     (loop while (and (> cursor content-start)
@@ -687,11 +637,11 @@
                           do (decf cursor))
                     (when (and (< cursor content-end)
                                (plusp cursor)
-                               (%bp-space-p (char text (1- cursor))))
+                               (%pc-space-p (char text (1- cursor))))
                       (setf close-count (- content-end cursor)
                             content-end cursor)
                       (multiple-value-setq (content-start content-end)
-                        (%bp-trim-indices text content-start content-end)))))
+                        (%pc-trim-indices text content-start content-end)))))
                 (values level indent content-start content-end
                         (- marker-end indent) close-count)))))))))
 
@@ -703,7 +653,7 @@
       (when (<= columns 3)
         (let* ((start indent)
                (end length))
-        (multiple-value-setq (start end) (%bp-trim-indices text start end))
+        (multiple-value-setq (start end) (%pc-trim-indices text start end))
         (when (< start end)
           (let ((marker (char text start)))
             (when (find marker '(#\= #\-))
@@ -724,7 +674,7 @@
         (loop for index from indent below length
               for character = (char text index)
               do (cond
-                   ((%bp-space-p character))
+                   ((%pc-space-p character))
                    ((find character '(#\- #\_ #\*))
                     (if marker
                         (unless (char= marker character)
@@ -762,15 +712,7 @@
           (loop while (and (< end length) (char= (char text end) character))
                 do (incf end))
           (and (>= (- end indent) minimum-length)
-               (every #'%bp-space-p (subseq text end length))))))))
-
-(defun %bp-ascii-alpha-p (character)
-  (or (<= (char-code #\A) (char-code character) (char-code #\Z))
-      (<= (char-code #\a) (char-code character) (char-code #\z))))
-
-(defun %bp-ascii-alphanumeric-p (character)
-  (or (%bp-ascii-alpha-p character)
-      (<= (char-code #\0) (char-code character) (char-code #\9))))
+               (every #'%pc-space-p (subseq text end length))))))))
 
 (defun %bp-tag-name-at (text index)
   (let ((length (length text))
@@ -779,24 +721,24 @@
       (incf cursor)
       (when (and (< cursor length) (char= (char text cursor) #\/))
         (incf cursor))
-      (when (and (< cursor length) (%bp-ascii-alpha-p (char text cursor)))
+      (when (and (< cursor length) (%pc-ascii-alpha-p (char text cursor)))
         (let ((start cursor))
           (loop while (and (< cursor length)
-                           (or (%bp-ascii-alphanumeric-p (char text cursor))
+                           (or (%pc-ascii-alphanumeric-p (char text cursor))
                                (char= (char text cursor) #\-)))
                 do (incf cursor))
           (let ((name (string-downcase (subseq text start cursor))))
             (when (or (= cursor length)
-                      (%bp-space-p (char text cursor))
+                      (%pc-space-p (char text cursor))
                       (char= (char text cursor) #\>))
               (values name cursor))))))))
 
 (defun %bp-html-attribute-name-start-p (character)
-  (or (%bp-ascii-alpha-p character)
+  (or (%pc-ascii-alpha-p character)
       (find character '(#\_ #\:))))
 
 (defun %bp-html-attribute-name-character-p (character)
-  (or (%bp-ascii-alphanumeric-p character)
+  (or (%pc-ascii-alphanumeric-p character)
       (find character '(#\_ #\: #\. #\-))))
 
 (defun %bp-html-type-seven-tag-end (text index name-end)
@@ -841,14 +783,14 @@
                 (setf cursor (1+ end)))
               (let ((start cursor))
                 (loop while (and (< cursor length)
-                                 (not (%bp-space-p (char text cursor)))
+                                 (not (%pc-space-p (char text cursor)))
                                  (not (find (char text cursor)
                                             '(#\" #\' #\= #\< #\> #\`))))
                       do (incf cursor))
                 (when (= start cursor)
                   (return nil))))))
       (when (and (< cursor length)
-                 (not (%bp-space-p (char text cursor)))
+                 (not (%pc-space-p (char text cursor)))
                  (not (find (char text cursor) '(#\> #\/))))
         (return nil)))))
 
@@ -872,29 +814,17 @@
            (when name
              (cond
                ((and (not (char= (char text (1+ indent)) #\/))
-                     (member name '("script" "pre" "style" "textarea")
+                     (member name +html-block-type-1-tags+
                              :test #'string=))
                 (values 1 (concatenate 'string "</" name) name))
-               ((member name '("address" "article" "aside" "base" "basefont"
-                               "blockquote" "body" "caption" "center" "col"
-                               "colgroup" "dd" "details" "dialog" "dir" "div"
-                               "dl" "dt" "fieldset" "figcaption" "figure"
-                               "footer" "form" "frame" "frameset" "h1" "h2"
-                               "h3" "h4" "h5" "h6" "head" "header" "hr"
-                               "html" "iframe" "legend" "li" "link" "main"
-                               "menu" "menuitem" "nav" "noframes" "ol"
-                               "optgroup" "option" "p" "param" "search"
-                               "section" "summary" "table" "tbody" "td"
-                               "tfoot" "th" "thead" "title" "tr" "track" "ul")
+               ((member name +html-block-type-6-tags+
                           :test #'string=)
                 (values 6 nil name))
-               ((and (not (member name '("pre" "script" "style" "textarea")
-                                  :test #'string=))
+               ((and (not (member name +html-block-type-1-tags+ :test #'string=))
                      (let ((tag-end (%bp-html-type-seven-tag-end
                                      text indent name-end)))
                        (and tag-end
-                            (every #'%bp-space-p
-                                   (subseq text tag-end length)))))
+                            (every #'%pc-space-p (subseq text tag-end length)))))
                 (values 7 nil name))))))))))
 
 (defun %bp-list-marker (line)
@@ -918,7 +848,7 @@
                                     (char-code (char text cursor))
                                     (char-code #\9)))
                      do (incf cursor))
-               (when (and (<= (- cursor indent) 9)
+               (when (and (<= (- cursor indent) +max-ordered-list-marker-digits+)
                           (< cursor length)
                           (find (char text cursor) '(#\. #\))))
                  (setf kind :ordered
@@ -927,7 +857,7 @@
                        marker-end (1+ cursor))))))
           (when marker-end
             (when (or (= marker-end length)
-                      (%bp-space-p (char text marker-end)))
+                      (%pc-space-p (char text marker-end)))
                      (let* ((marker-column
                               (+ (%block-line-column-start line) columns
                                  (- marker-end indent)))
@@ -968,7 +898,7 @@
          (char= (char text indent) #\[)
          (not (%bp-prefix-p text "[^" indent)))))
 
-(defun %bp-interrupts-paragraph-p (line &optional (gfm t))
+(defun %bp-interrupts-paragraph-p (line gfm)
   (or (nth-value 0 (%bp-atx-heading line))
       (nth-value 0 (%bp-thematic-break line))
       (nth-value 0 (%bp-fence-start line))
@@ -1002,7 +932,7 @@
                do (let ((end (+ found (length terminator))))
                     (when (< end (length text))
                       (let ((closing-end
-                              (if (%bp-space-p (char text end))
+                              (if (%pc-space-p (char text end))
                                   (%bp-skip-whitespace text end)
                                   end)))
                         (when (and (< closing-end (length text))
@@ -1013,79 +943,6 @@
       ((= kind 5) (search "]]>" text))
       (terminator (search terminator text))
       (t nil))))
-
-(defun %bp-backtick-run-end (text index end)
-  (loop while (and (< index end) (char= (char text index) #\`))
-        do (incf index)
-        finally (return index)))
-
-(defun %bp-backtick-matching-run-ends (text start end)
-  (let ((unmatched (make-hash-table :test #'eql))
-        (matches (make-hash-table :test #'eql))
-        (index start)
-        (escaped nil))
-    (loop while (< index end)
-          for character = (char text index)
-          do (cond
-               ((char= character #\\)
-                (setf escaped (not escaped))
-                (incf index))
-               (escaped
-                (setf escaped nil)
-                (incf index))
-               ((char= character #\`)
-                (let* ((run-end (%bp-backtick-run-end text index end))
-                       (run-length (- run-end index)))
-                  (multiple-value-bind (opening present-p)
-                      (gethash run-length unmatched)
-                    (if present-p
-                        (progn
-                          (setf (gethash opening matches) run-end)
-                          (remhash run-length unmatched))
-                        (setf (gethash run-length unmatched) index)))
-                  (setf index run-end)))
-               (t
-                (setf escaped nil)
-                (incf index))))
-    matches))
-
-(defun %bp-table-cells (line)
-  (let* ((text (%block-line-text line))
-         (length (length text))
-         (start 0)
-         (end length)
-         (cells nil)
-         (index 0)
-         (backtick-matches (%bp-backtick-matching-run-ends text start end))
-         (escaped nil))
-    (multiple-value-setq (start end) (%bp-trim-indices text start end))
-    (when (and (< start end) (char= (char text start) #\|))
-      (incf start))
-    (setf index start)
-    (let ((cell-start start))
-      (loop while (< index end)
-            for character = (char text index)
-            do (cond
-                 (escaped (setf escaped nil))
-                 ((char= character #\\) (setf escaped t))
-                 ((char= character #\`)
-                  (let ((run-end index))
-                    (loop while (and (< run-end end)
-                                     (char= (char text run-end) #\`))
-                          do (incf run-end))
-                    (setf index
-                          (1- (or (gethash index backtick-matches)
-                                  run-end)))))
-                 ((char= character #\|)
-                  (push (cons cell-start index) cells)
-                  (setf cell-start (1+ index))))
-              (incf index))
-      (push (cons cell-start end) cells)
-      (when (and (> (length cells) 1)
-                 (= cell-start end)
-                 (char= (char text (1- end)) #\|))
-        (pop cells)))
-    (nreverse cells)))
 
 (defun %bp-unescape-table-pipes (line)
   (let* ((text (%block-line-text line))
@@ -1115,12 +972,11 @@
                       (%block-line-column-start line))))
 
 (defun %bp-table-alignments (line)
-  (let ((cells (%bp-table-cells line)))
+  (let ((cells (%pc-table-cells (%block-line-text line))))
     (when cells
       (let ((alignments nil))
         (dolist (cell cells)
-          (let* ((part (%bp-trimmed-string
-                        (subseq (%block-line-text line) (car cell) (cdr cell))))
+          (let* ((part (%pc-trimmed-string (subseq (%block-line-text line) (car cell) (cdr cell))))
                  (length (length part))
                  (start (if (and (plusp length) (char= (char part 0) #\:)) 1 0))
                  (end (if (and (> length start)
@@ -1140,7 +996,7 @@
 
 (defun %bp-table-cell-node (source-buffer line range alignment context)
   (multiple-value-bind (start end)
-      (%bp-trim-indices (%block-line-text line) (car range) (cdr range))
+      (%pc-trim-indices (%block-line-text line) (car range) (cdr range))
     (let* ((cell-line
              (%bp-unescape-table-pipes (%bp-line-slice line start end)))
            (cell (make-table-cell
@@ -1152,7 +1008,7 @@
       (values cell (%block-line-text cell-line)))))
 
 (defun %bp-table-row (source-buffer line alignments header-p context)
-  (let* ((ranges (coerce (%bp-table-cells line) 'vector))
+  (let* ((ranges (coerce (%pc-table-cells (%block-line-text line)) 'vector))
          (cells nil))
     (loop for alignment in alignments
           for index from 0
@@ -1197,7 +1053,7 @@
                (prefix-end marker-end)
                (content (%bp-line-slice line marker-end)))
           (when (and (< marker-end length)
-                     (%bp-space-p (char text marker-end)))
+                     (%pc-space-p (char text marker-end)))
             (setf prefix-end (1+ marker-end)
                   content (%bp-strip-columns
                            (%bp-line-slice line marker-end) 1)))
@@ -1303,21 +1159,12 @@
                (find (char text 1) '(#\Space #\x #\X))
                (char= (char text 2) #\])
                (or (= (length text) 3)
-                   (%bp-space-p (char text 3))))
+                   (%pc-space-p (char text 3))))
       (values t (not (char= (char text 1) #\Space))
               (if (and (> (length text) 3)
-                       (%bp-space-p (char text 3)))
+                       (%pc-space-p (char text 3)))
                   (%bp-line-slice line 4)
                   (%bp-line-slice line 3))))))
-
-(defun %bp-check-depth (depth limit)
-  (when (> depth limit)
-    (error 'markdown-nesting-depth-exceeded
-           :limit-name :nesting-depth
-           :limit limit
-           :actual depth
-           :context "block parsing"
-           :message "maximum block nesting depth exceeded")))
 
 (defun %bp-make-inline-node (source-buffer lines context start-position end-position)
   (let ((node (make-paragraph
@@ -1338,7 +1185,7 @@
 (defun %bp-trim-line-end (line)
   (let ((end (length (%block-line-text line))))
     (loop while (and (plusp end)
-                     (%bp-space-p (char (%block-line-text line) (1- end))))
+                     (%pc-space-p (char (%block-line-text line) (1- end))))
           do (decf end))
     (%bp-line-slice line 0 end)))
 
@@ -1488,15 +1335,14 @@
                    record
                  (declare (ignore start-number delimiter marker-end prefix
                                   marker-columns))
-                 (%bp-check-depth (+ depth
+                 (%pc-check-depth (+ depth
                                      (loop for frame in stack
                                            sum (case (%bp-open-frame-kind frame)
                                                  ((:quote :footnote) 1)
                                                  (:list 1)
                                                  (:item 1)
                                                  (otherwise 0)))
-                                     1)
-                                  limit)
+                                     1) limit :block)
                  (let* ((list-frame (current-frame))
                         (item-context (%bp-open-frame-context list-frame))
                         (first-content
@@ -1548,16 +1394,14 @@
                                     content-end content-indent prefix marker-columns)
                    record
                  (declare (ignore marker-end content-end content-indent prefix))
-                 (%bp-check-depth
-                  (+ depth
+                 (%pc-check-depth (+ depth
                      (loop for frame in stack
                            sum (case (%bp-open-frame-kind frame)
                                  ((:quote :footnote) 1)
                                  (:list 1)
                                  (:item 1)
                                  (otherwise 0)))
-                     1)
-                  limit)
+                     1) limit :block)
                  (let* ((list-context (current-context))
                         (list-node (make-list-node
                                     :span nil :continuation-prefix list-context
@@ -1619,16 +1463,14 @@
                      (values candidate (first result) (second result)
                              (third result))))))
              (open-quote (physical-line content marker-start quote-content prefix)
-               (%bp-check-depth
-                (+ depth
+               (%pc-check-depth (+ depth
                    (loop for frame in stack
                          sum (case (%bp-open-frame-kind frame)
                                ((:quote :footnote) 1)
                                (:list 1)
                                (:item 1)
                                (otherwise 0)))
-                   1)
-                limit)
+                   1) limit :block)
                (let* ((quote-context (current-context))
                       (node (make-block-quote
                              :span nil :continuation-prefix quote-context
@@ -1642,16 +1484,14 @@
                  quote-content))
              (open-footnote (physical-line content raw-label normalized
                                            content-start indent)
-               (%bp-check-depth
-                (+ depth
+               (%pc-check-depth (+ depth
                    (loop for frame in stack
                          sum (case (%bp-open-frame-kind frame)
                                ((:quote :footnote) 1)
                                (:list 1)
                                (:item 1)
                                (otherwise 0)))
-                   1)
-                limit)
+                   1) limit :block)
                (let* ((footnote-context (current-context))
                       (node (make-footnote-definition
                              :span nil :continuation-prefix footnote-context
@@ -1756,10 +1596,10 @@
                                       :fence-length fence-length
                                       :indentation indentation
                                       :info-string
-                                      (let ((trimmed (%bp-trimmed-string info-string)))
+                                      (let ((trimmed (%pc-trimmed-string info-string)))
                                         (unless (zerop (length trimmed))
                                           (%bp-decode-character-references
-                                           (%bp-unescape-punctuation trimmed))))))))
+                                           (%pc-unescape trimmed))))))))
                             ((nth-value 0 (%bp-html-block-type content))
                              (mark-container-content)
                              (multiple-value-bind (kind terminator name)
@@ -1814,8 +1654,7 @@
                     (when (and gfm only-paragraph-line
                                alignments
                                (= (length alignments)
-                                  (length (%bp-table-cells
-                                           only-paragraph-line)))
+                                  (length (%pc-table-cells (%block-line-text only-paragraph-line))))
                                (or (find #\| (%block-line-text
                                               only-paragraph-line))
                                    (find #\| (%block-line-text content))))
@@ -1970,7 +1809,7 @@
                           (and (not mismatch)
                                alignments
                                (= (length alignments)
-                                  (length (%bp-table-cells content)))
+                                  (length (%pc-table-cells (%block-line-text content))))
                                (find #\| (%block-line-text content))))))))
              (root-children ()
                (nreverse (%bp-open-frame-children root))))
@@ -2046,8 +1885,7 @@
                       :closing-delimiter "---")))
           (values node (1+ closing-index)))))))
 
-(defun %bp-default-nesting-depth ()
-  256)
+(defun %bp-default-nesting-depth () +default-max-nesting-depth+)
 
 (defun %bp-default-front-matter-p ()
   t)

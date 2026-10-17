@@ -333,14 +333,26 @@
               :to-equal '((0 18 1 1 1 19)))))
 
   (it "applies the HTML C1 numeric-reference replacements"
-    (let ((nodes (inline-parser-test-parse
-                  "&#128; &#x80; &#130; &#x9F; &#129;")))
+    (let* ((nodes (inline-parser-test-parse
+                   "&#128; &#x80; &#130; &#x9F; &#129;"))
+           (reference-source
+             (format nil "[reference]: /&#128;~%~%[reference] [inline](/&#128;)"))
+           (html (cl-markdown-kit:write-html
+                  (cl-markdown-kit:parse-string reference-source)))
+           (expected-href "href=\"/%E2%82%AC\"")
+           (count 0)
+           (start 0))
       (expect (mapcar #'cl-markdown-kit:text-value nodes)
               :to-equal
               (list (format nil "~C ~C ~C ~C ~C"
                             (code-char #x20AC) (code-char #x20AC)
                             (code-char #x201A) (code-char #x0178)
-                            (code-char #x81))))))
+                            (code-char #x81))))
+      (loop for position = (search expected-href html :start2 start)
+            while position
+            do (incf count)
+               (setf start (+ position (length expected-href))))
+      (expect count :to-equal 2)))
 
   (it "keeps code-span contents literal and normalizes line endings"
     (let* ((node (first (inline-parser-test-parse "`a &amp; *b*`")))
@@ -516,8 +528,7 @@
            (bare-destination
              (cl-markdown-kit::%ip-parse-link-destination "a\\" 0 2))
            (title-values (multiple-value-list
-                          (cl-markdown-kit::%ip-parse-title
-                           "\"title\\" 0 7)))
+                          (cl-markdown-kit::%pc-parse-title "\"title\\" 0 7 :reject-nested-parentheses-p t)))
            (buffer (cl-markdown-kit:make-source-buffer ""))
            (default-parse
              (cl-markdown-kit::parse-inline
@@ -607,23 +618,35 @@
                    (cl-markdown-kit:footnote-reference-p (second image-prefix)))
               :to-be-truthy)))
 
-  (it "uses Unicode punctuation categories and GFM email boundaries"
-    (let* ((currency (inline-parser-test-parse "*£*bravo."))
-           (email (inline-parser-test-parse "Email me at:scyther@pokemon.com"))
+  (cl-weave:it-each
+    ((#x203F nil)
+     (#x2014 nil)
+     (#x3008 nil)
+     (#x3009 nil)
+     (#x00AB nil)
+     (#x2019 nil)
+     (#x00A1 nil)
+     (#x00D7 nil)
+     (#x00A3 nil)
+     (#x02C2 nil)
+     (#x2603 nil)
+     (#x0041 t))
+    "classifies Unicode punctuation and symbols at U+~X with emphasis ~S"
+    (codepoint expected-emphasis)
+  (let* ((source (format nil "*~C*bravo." (code-char codepoint)))
+         (html (cl-markdown-kit:write-html
+                (cl-markdown-kit:parse-string source))))
+    (expect (not (null (search "<em>" html))) :to-equal expected-emphasis)))
+  (it "recognizes GFM email autolinks and rejects invalid boundaries"
+    (let* ((email (inline-parser-test-parse "Email me at:scyther@pokemon.com"))
            (invalid-email (inline-parser-test-parse "(_A_@_.A")))
-      (expect (and (notany #'cl-markdown-kit:emphasis-p currency)
-                   (cl-markdown-kit::%ip-commonmark-punctuation-p
-                    (code-char #x00A3))
-                   (cl-markdown-kit::%ip-commonmark-punctuation-p
-                    (code-char #x20AC))
-                   (cl-markdown-kit::%ip-commonmark-punctuation-p
-                    (code-char #x2014)))
-              :to-be-truthy)
       (expect (and (cl-markdown-kit:autolink-p (second email))
                    (string= (cl-markdown-kit:autolink-destination
                              (second email))
                             "mailto:scyther@pokemon.com")
-                   (notany #'cl-markdown-kit:autolink-p invalid-email))
+                   (not (some
+                         (lambda (node) (cl-markdown-kit:autolink-p node))
+                         invalid-email)))
               :to-be-truthy)))
 
   (it "classifies GFM domain characters and validates email schemes"
@@ -637,18 +660,17 @@
            (invalid-xmpp (inline-parser-test-parse "xmpp:chat"))
            (invalid-hyphens
              (inline-parser-test-parse "user@-bad.example user@bad-.example")))
-      (expect (list (not (null (cl-markdown-kit::%ip-gfm-domain-character-p #\A)))
-                    (not (null (cl-markdown-kit::%ip-gfm-domain-character-p #\-)))
+      (expect (list (not (null (cl-markdown-kit::%pc-gfm-domain-character-p #\A)))
+                    (not (null (cl-markdown-kit::%pc-gfm-domain-character-p #\-)))
                     (not (null
-                          (cl-markdown-kit::%ip-gfm-domain-character-p
-                           (code-char #x1F344))))
-                    (not (null (cl-markdown-kit::%ip-gfm-domain-character-p space)))
+                          (cl-markdown-kit::%pc-gfm-domain-character-p (code-char #x1F344))))
+                    (not (null (cl-markdown-kit::%pc-gfm-domain-character-p space)))
                     (not (null
-                          (cl-markdown-kit::%ip-gfm-domain-character-p punctuation)))
+                          (cl-markdown-kit::%pc-gfm-domain-character-p punctuation)))
                     (not (null
-                          (cl-markdown-kit::%ip-gfm-domain-character-p format-control)))
+                          (cl-markdown-kit::%pc-gfm-domain-character-p format-control)))
                     (not (null
-                          (cl-markdown-kit::%ip-gfm-domain-character-p private-use))))
+                          (cl-markdown-kit::%pc-gfm-domain-character-p private-use))))
               :to-equal '(t t t nil nil nil nil))
       (expect (list (cl-markdown-kit:autolink-p mailto)
                     (cl-markdown-kit:autolink-destination mailto)
@@ -1240,15 +1262,11 @@
                    (string= (cl-markdown-kit:text-value (car (last url-nodes)))
                             "<tail"))
               :to-be-truthy)
-      (expect (list (cl-markdown-kit::%ip-trim-url-end
-                     without-entity 0 (length without-entity))
-                    (cl-markdown-kit::%ip-trim-url-end
-                     empty-entity 0 (length empty-entity))
-                    (cl-markdown-kit::%ip-trim-url-end
-                     invalid-entity 0 (length invalid-entity))
-                    (cl-markdown-kit::%ip-trim-url-end punctuation 0 0)
-                    (cl-markdown-kit::%ip-trim-url-end
-                     punctuation 0 (length punctuation)))
+      (expect (list (cl-markdown-kit::%pc-trim-url-end without-entity 0 (length without-entity))
+                    (cl-markdown-kit::%pc-trim-url-end empty-entity 0 (length empty-entity))
+                    (cl-markdown-kit::%pc-trim-url-end invalid-entity 0 (length invalid-entity))
+                    (cl-markdown-kit::%pc-trim-url-end punctuation 0 0)
+                    (cl-markdown-kit::%pc-trim-url-end punctuation 0 (length punctuation)))
               :to-equal (list (length without-entity)
                               (length empty-entity)
                               (length invalid-entity) 0 0))))
@@ -1342,8 +1360,7 @@
                     :emphasis (code-char 42) 5 6 6 7)
                    (cl-markdown-kit::%ip-make-pair
                     :emphasis (code-char 42) 6 7 7 8)))
-           (nodes (cl-markdown-kit::%ip-build-range
-                   context 2 6 atoms pairs))
+           (nodes (cl-markdown-kit::%ip-build-range context 2 6 atoms pairs 0))
            (emphasis (first nodes)))
       (expect (and (= (length nodes) 1)
                    (cl-markdown-kit:emphasis-p emphasis)
