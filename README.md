@@ -149,9 +149,9 @@ curl --fail --location --output data/whatwg-entities.json \
   https://raw.githubusercontent.com/w3c/html/2ef7a579bcfd2693b98df35f20e51dff60e3fbef/entities.json
 ```
 
-The generator verifies the snapshot hash and needs no network access. Only
-names ending in a semicolon are stored, matching CommonMark's named-reference
-rule.
+The flake pins the snapshot hash, and the generator needs no network access.
+Only names ending in a semicolon are stored, matching CommonMark's
+named-reference rule.
 
 The entity data is attributed as Copyright © WHATWG.
 The HTML Standard is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
@@ -159,10 +159,10 @@ the license states that portions incorporated into source code are licensed
 under BSD 3-Clause. The generated table preserves all named values, including
 multi-codepoint sequences.
 
-Regenerate the Lisp table offline with
-`python3 scripts/generate-html5-entities.py`. Check that the committed output
-matches the pinned snapshot with
-`python3 scripts/generate-html5-entities.py --check`.
+On `x86_64-linux`, regenerate the Lisp table in the Nix development shell with
+`nix develop --command sbcl --script scripts/generate-html5-entities.lisp`.
+The flake check runs the generator in `--check` mode and compares its output
+with the committed table.
 
 The internal character-data functions provide exact-case named-reference
 lookup, numeric-reference decoding, CommonMark whitespace and punctuation
