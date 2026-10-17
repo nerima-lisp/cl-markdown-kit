@@ -536,7 +536,7 @@
       "has no slot")
      (:malformed-edit-attribute
       (cl-markdown-kit::define-node
-        (defstruct node-contract-malformed-edit-attribute value)
+        (defstruct node-contract-malformed-edit-attribute cl-markdown-kit::value)
         :kind :contract :family :inline :children nil :attributes (:value)
         :edit-text :empty :edit-attributes ((:value)))
       "edit attributes must map declared attribute slots")
@@ -548,14 +548,14 @@
       "edit attributes must map declared attribute slots")
      (:duplicate-edit-attribute-slot
       (cl-markdown-kit::define-node
-        (defstruct node-contract-duplicate-edit-slot value other)
+        (defstruct node-contract-duplicate-edit-slot cl-markdown-kit::value cl-markdown-kit::other)
         :kind :contract :family :inline :children nil
         :attributes (:value :other) :edit-text :empty
         :edit-attributes ((:value :before) (:value :after)))
       "edit attributes contain a duplicate slot")
      (:duplicate-edit-difference-key
       (cl-markdown-kit::define-node
-        (defstruct node-contract-duplicate-edit-key value other)
+        (defstruct node-contract-duplicate-edit-key cl-markdown-kit::value cl-markdown-kit::other)
         :kind :contract :family :inline :children nil
         :attributes (:value :other) :edit-text :empty
         :edit-attributes ((:value :same) (:other :same)))
@@ -563,7 +563,7 @@
      (:malformed-children
       (cl-markdown-kit::define-node
         (defstruct node-contract-malformed-children value)
-        :kind :contract :family :inline :children (:slot)
+        :kind :contract :family :inline :children (:unknown value)
         :attributes nil :edit-text :empty :edit-attributes ())
       "Invalid DEFINE-NODE :CHILDREN value")
      (:child-without-slot
