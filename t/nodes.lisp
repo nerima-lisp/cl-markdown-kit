@@ -368,14 +368,13 @@
            (root (cl-markdown-kit:make-document
                   :children (list paragraph code last-paragraph)))
            (visited nil)
-           (result (cl-markdown-kit:walk-node-tree-cps
-                    root
-                    (lambda (node phase parent grandparent previous-sibling
-                                  next-sibling child-index last-child-p)
-                      (declare (ignore parent grandparent previous-sibling
-                                       next-sibling child-index last-child-p))
-                      (when (eq phase :enter)
-                        (push node visited)))))
+           (result (cl-markdown-kit:walk-node-tree root
+            (lambda (frame)
+              (let ((node (cl-markdown-kit:node-tree-frame-node frame))
+                    (phase (cl-markdown-kit:node-tree-frame-phase frame)))
+                (when (eq phase :enter)
+                  (push node visited))
+                :descend))))
            (expected (list root paragraph first-leaf emphasis nested-leaf
                            code last-paragraph last-leaf)))
       (expect (eq result root) :to-be-truthy)
@@ -395,14 +394,20 @@
               :children (list paragraph sibling)))
            (events nil)
            (result
-             (cl-markdown-kit:walk-node-tree-cps
-              root
-              (lambda (node phase parent grandparent previous-sibling
-                            next-sibling child-index last-child-p)
-                (push (list node phase parent grandparent previous-sibling
-                            next-sibling child-index last-child-p)
+             (cl-markdown-kit:walk-node-tree root
+              (lambda (frame)
+                (push (list (cl-markdown-kit:node-tree-frame-node frame)
+                            (cl-markdown-kit:node-tree-frame-phase frame)
+                            (cl-markdown-kit:node-tree-frame-parent frame)
+                            (cl-markdown-kit:node-tree-frame-grandparent frame)
+                            (cl-markdown-kit:node-tree-frame-previous-sibling frame)
+                            (cl-markdown-kit:node-tree-frame-next-sibling frame)
+                            (cl-markdown-kit:node-tree-frame-child-index frame)
+                            (cl-markdown-kit:node-tree-frame-last-child-p frame))
                       events)
-                (if (eq phase :leave) :stop :descend)))))
+                (if (eq (cl-markdown-kit:node-tree-frame-phase frame) :leave)
+                    :stop
+                    :descend)))))
       (setf events (nreverse events))
       (expect (eq result root) :to-be-truthy)
       (expect (mapcar (lambda (event) (subseq event 0 2)) events)
@@ -444,16 +449,14 @@
               :children (list branch sibling)))
            (events nil)
            (result
-             (cl-markdown-kit:walk-node-tree-cps
-              root
-              (lambda (node phase parent grandparent previous-sibling
-                            next-sibling child-index last-child-p)
-                (declare (ignore parent grandparent previous-sibling
-                                 next-sibling child-index last-child-p))
-                (push (list node phase) events)
-                (if (and (eq node branch) (eq phase :enter))
-                    decision
-                    :descend)))))
+             (cl-markdown-kit:walk-node-tree root
+              (lambda (frame)
+                (let ((node (cl-markdown-kit:node-tree-frame-node frame))
+                      (phase (cl-markdown-kit:node-tree-frame-phase frame)))
+                  (push (list node phase) events)
+                  (if (and (eq node branch) (eq phase :enter))
+                      decision
+                      :descend))))))
       (setf events (nreverse events))
       (expect (eq result root) :to-be-truthy)
       (expect events
@@ -471,33 +474,96 @@
                        (list branch :enter)))))))
   (it-each
     ((:missing-edit-text
-      (cl-markdown-kit:define-node
+      (cl-markdown-kit::define-node
          (defstruct (node-contract-invalid-node
                      (:constructor make-node-contract-invalid-node ())))
          :kind :invalid :family :inline :children nil :attributes nil))
      (:invalid-family
-      (cl-markdown-kit:define-node
+      (cl-markdown-kit::define-node
          (defstruct (node-contract-invalid-family-node
                      (:constructor make-node-contract-invalid-family-node ())))
          :kind :invalid :family :unknown :children nil :attributes nil
          :edit-text :empty))
      (:missing-dispatch-type
-      (cl-markdown-kit:define-node-dispatch
+      (cl-markdown-kit::define-node-dispatch
          (node-contract-incomplete-dispatch (context node phase))
          :operation :html-renderer :family :inline
          (cl-markdown-kit:text nil)))
      (:duplicate-dispatch-type
-      (cl-markdown-kit:define-node-dispatch
+      (cl-markdown-kit::define-node-dispatch
          (node-contract-duplicate-dispatch (context node phase))
          :operation :html-renderer :family :inline
          (cl-markdown-kit:text nil)
          (cl-markdown-kit:text nil)))
      (:extra-dispatch-type
-      (cl-markdown-kit:define-node-dispatch
+      (cl-markdown-kit::define-node-dispatch
          (node-contract-extra-dispatch (context node phase))
          :operation :html-renderer :family :inline
          (cl-markdown-kit:paragraph nil))))
     "rejects ~A node and dispatch declarations during macro expansion"
     (failure form)
     (expect (lambda () (macroexpand-1 form))
-            :to-throw (quote simple-error))))
+            :to-throw (quote simple-error)))
+  (it "expands valid node declarations and registry projections"
+    (let* ((node-form
+             '(cl-markdown-kit::define-node
+                (defstruct (coverage-contract-node
+                            (:constructor make-coverage-contract-node ()))
+                  value)
+                :kind :coverage-contract
+                :family :inline
+                :children value
+                :attributes ()
+                :edit-text (:slot value)
+                :edit-attributes ()))
+           (node-expansion (macroexpand-1 node-form))
+           (registry-expansion
+             (macroexpand-1 '(cl-markdown-kit::define-node-registry))))
+      (expect (first node-expansion) :to-equal 'progn)
+      (expect (first (second node-expansion)) :to-equal 'defstruct)
+      (expect (first registry-expansion) :to-equal 'progn)))
+  (it "expands complete node dispatch declarations"
+    (let* ((types (cl-markdown-kit::%node-family-types :inline))
+           (form
+             `(cl-markdown-kit::define-node-dispatch
+                  (coverage-contract-dispatch (context cl-markdown-kit::node phase))
+                :operation :coverage-contract
+                :family :inline
+                ,@(mapcar (lambda (type) `(,type nil)) types)))
+           (expansion (macroexpand-1 form)))
+      (expect (first expansion) :to-equal 'progn)
+      (expect (first (second expansion)) :to-equal 'defun)))
+  (it "rejects invalid actions from enter and leave callbacks"
+    (let ((root (cl-markdown-kit:make-document)))
+      (dolist (invalid-phase '(:enter :leave))
+        (expect
+         (handler-case
+             (progn
+               (cl-markdown-kit:walk-node-tree
+                root
+                (lambda (frame)
+                  (if (eq (cl-markdown-kit:node-tree-frame-phase frame)
+                          invalid-phase)
+                      :invalid
+                      :descend)))
+               nil)
+           (simple-error () t))
+         :to-be-truthy))))
+  (it "returns child callback results in sibling order"
+    (let* ((first (cl-markdown-kit:make-paragraph))
+           (second (cl-markdown-kit:make-code-block :body "second"))
+           (root (cl-markdown-kit:make-document :children (list first second)))
+           (observed nil))
+      (cl-markdown-kit:walk-node-tree
+       root
+       (lambda (frame)
+         (if (eq (cl-markdown-kit:node-tree-frame-phase frame) :enter)
+             :descend
+             (progn
+               (if (eq (cl-markdown-kit:node-tree-frame-node frame) root)
+                   (setf observed
+                         (cl-markdown-kit:node-tree-frame-child-results frame))
+                   (setf (cl-markdown-kit:node-tree-frame-result frame)
+                         (cl-markdown-kit:node-tree-frame-node frame)))
+               nil))))
+      (expect observed :to-equal (list first second)))))

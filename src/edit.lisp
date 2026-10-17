@@ -179,17 +179,15 @@
 
 (defun %node-in-document-p (document target)
   (let ((found nil))
-    (walk-node-tree-cps
-     document
-     (lambda (node phase parent grandparent previous-sibling next-sibling
-                    child-index last-child-p)
-       (declare (ignore parent grandparent previous-sibling next-sibling
-                        child-index last-child-p))
-       (if (and (eq phase :enter) (eq node target))
-           (progn
-             (setf found t)
-             :stop)
-           :descend)))
+    (walk-node-tree document
+     (lambda (frame)
+       (let ((node (node-tree-frame-node frame))
+             (phase (node-tree-frame-phase frame)))
+         (if (and (eq phase :enter) (eq node target))
+             (progn
+               (setf found t)
+               :stop)
+             :descend))))
     found))
 
 (defun %range-contains-node-p (range node)
@@ -202,101 +200,54 @@
 
 (defun %semantic-text (node excluded-p)
   (with-output-to-string (output)
-    (walk-node-tree-cps
-     node
-     (lambda (current phase parent grandparent previous-sibling next-sibling
-                      child-index last-child-p)
-       (declare (ignore parent grandparent previous-sibling next-sibling
-                        child-index last-child-p))
-       (when (eq phase :enter)
-         (if (funcall excluded-p current)
-             :skip
-             (progn
-               (let ((projection (node-edit-text-projection current)))
-                 (when projection
-                   (write-string projection output)))
-               :descend)))))))
-
-(defun %node-semantic-attributes (node)
-  (let* ((metadata (node-semantic-attributes node))
-         (fields
-           (case (node-kind node)
-             (:heading (list (cons :level :level)))
-             (:code-block (list (cons :info-string :info-string)))
-             (:link (list (cons :destination :destination)
-                          (cons :title :title)
-                          (cons :reference-kind :reference-kind)
-                          (cons :reference-label :reference-label)))
-             (:image (list (cons :destination :destination)
-                           (cons :title :title)
-                           (cons :reference-kind :reference-kind)
-                           (cons :reference-label :reference-label)))
-             (:autolink (list (cons :destination :destination)))
-             (:list (list (cons :kind :kind)
-                          (cons :start-number :start-number)
-                          (cons :delimiter-character :delimiter)
-                          (cons :tight-p :tight-p)))
-             (:task-list-item (list (cons :checked-p :checked-p)))
-             (:table (list (cons :alignments :alignments)))
-             (:table-row (list (cons :header-row-p :header-row-p)))
-             (:table-cell (list (cons :alignment :alignment)))
-             (:html-block (list (cons :kind :kind)))
-             (:front-matter (list (cons :opening-delimiter :opening)
-                                  (cons :closing-delimiter :closing)))
-             (:footnote-definition (list (cons :raw-label :label)
-                                         (cons :normalized-label
-                                               :normalized-label)))
-             (:footnote-reference (list (cons :raw-label :label)
-                                        (cons :normalized-label
-                                              :normalized-label)))
-             (:link-reference-definition
-              (list (cons :raw-label :label)
-                    (cons :normalized-label :normalized-label)
-                    (cons :destination :destination)
-                    (cons :title :title)
-                    (cons :eligible-p :eligible-p))))))
-    (loop for (source-key . output-key) in fields
-          append (list output-key (getf metadata source-key)))))
+    (walk-node-tree node
+     (lambda (frame)
+       (let ((node (node-tree-frame-node frame))
+             (phase (node-tree-frame-phase frame)))
+         (when (eq phase :enter)
+           (if (funcall excluded-p node)
+               :skip
+               (progn
+                 (let ((projection (node-edit-text-projection node)))
+                   (when projection
+                     (write-string projection output)))
+                 :descend))))))))
 
 (defun %semantic-attributes (node excluded-p)
   (let ((entries nil))
-    (walk-node-tree-cps
-     node
-     (lambda (current phase parent grandparent previous-sibling next-sibling
-                      child-index last-child-p)
-       (declare (ignore parent grandparent previous-sibling next-sibling
-                        child-index last-child-p))
-       (when (eq phase :enter)
-         (if (funcall excluded-p current)
-             :skip
-             (progn
-               (push (list (type-of current)
-                           (%node-semantic-attributes current))
-                     entries)
-               :descend)))))
+    (walk-node-tree node
+     (lambda (frame)
+       (let ((node (node-tree-frame-node frame))
+             (phase (node-tree-frame-phase frame)))
+         (when (eq phase :enter)
+           (if (funcall excluded-p node)
+               :skip
+               (progn
+                 (push (list (type-of node)
+                             (node-edit-attributes node))
+                       entries)
+                 :descend))))))
     (nreverse entries)))
 
 (defun %block-projections (document excluded-p)
   (let ((entries nil))
-    (walk-node-tree-cps
-     document
-     (lambda (node phase parent grandparent previous-sibling next-sibling
-                    child-index last-child-p)
-       (declare (ignore parent grandparent previous-sibling next-sibling
-                        child-index last-child-p))
-       (when (and (eq phase :enter)
-                  (block-node-p node)
-                  (not (document-p node))
-                  (node-span node)
-                  (not (funcall excluded-p node)))
-         (let ((span (node-span node)))
-           (push (list (cl-parser-kit:span-start span)
-                       (cl-parser-kit:span-end span)
-                       (type-of node)
-                       (%semantic-text node excluded-p)
-                       (%semantic-attributes node excluded-p))
-                 entries)))
-       :descend))
+    (walk-node-tree document
+     (lambda (frame)
+       (let ((node (node-tree-frame-node frame))
+             (phase (node-tree-frame-phase frame)))
+         (when (and (eq phase :enter)
+                    (block-node-p node)
+                    (not (document-p node))
+                    (node-span node)
+                    (not (funcall excluded-p node)))
+           (let ((span (node-span node)))
+             (push (list (cl-parser-kit:span-start span)
+                         (cl-parser-kit:span-end span)
+                         (type-of node)
+                         (%semantic-text node excluded-p)
+                         (%semantic-attributes node excluded-p))
+                   entries)))
+         :descend)))
     (nreverse entries)))
 
 (defun %map-edit-range
