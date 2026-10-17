@@ -803,9 +803,7 @@
         (:leave
          (setf (gethash node (%mw-render-session-results context))
                (%mw-render-inline-result context node frame kind))
-         nil)
-        (otherwise
-         (error "Unsupported Markdown renderer phase ~S." phase))))) (define-node-dispatch (%mw-render-inline-event (context node phase))
+         nil)))) (define-node-dispatch (%mw-render-inline-event (context node phase))
       :operation :markdown-renderer
       :family :inline
     (text
