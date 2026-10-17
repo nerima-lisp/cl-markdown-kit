@@ -231,7 +231,7 @@
 
 (defun parse-branch-locations (path line-number value)
   (if (string= value "-")
-      nil
+      (values nil 0 0)
       (let ((seen (make-hash-table))
             (covered-total 0)
             (branch-total 0))
@@ -694,39 +694,39 @@
                                                                                                                      candidate))
                                                                                                    (return)))
                                    (when (and header-end (<= start header-end))
-                                     (push (list start header-end head) ranges))))
-                               (let ((balance 0)
-                                     (end (1- (length lines))))
-                                 (loop for candidate from index below (length
-                                                                       lines)
-                                       for part = (strip-lisp-strings-and-comments
-                                                   (nth candidate lines))
-                                       do (incf balance
-                                                (count-character part #\()) (decf
-                                                                             balance
-                                                                             (count-character
-                                                                              part
-                                                                              #\))) (when
-                                                                                        (<=
-                                                                                         balance
-                                                                                         0)
-                                                                                      (setf end candidate)
-                                                                                      (return)))
-                                 (let ((excluded-end (1+ end)))
-                                   (when
-                                       (string= (getf rule :kind)
-                                                "condition-declaration")
-                                     (loop for candidate from index to
-                                           end
-                                           for part = (strip-lisp-strings-and-comments
-                                                       (nth candidate lines))
-                                           when (condition-report-line-p part)
-                                             do (setf excluded-end candidate) (return)))
-                                   (when (<= start excluded-end)
-                                     (push (list start excluded-end head)
-                                           ranges)))))))))))
-               (incf depth
-                     (- (count-character clean #\)) (count-character clean #\()))))
+                                     (push (list start header-end head) ranges)))))
+                             (let ((balance 0)
+                                   (end (1- (length lines))))
+                               (loop for candidate from index below (length
+                                                                     lines)
+                                     for part = (strip-lisp-strings-and-comments
+                                                 (nth candidate lines))
+                                     do (incf balance
+                                              (count-character part #\()) (decf
+                                                                           balance
+                                                                           (count-character
+                                                                            part
+                                                                            #\))) (when
+                                                                                      (<=
+                                                                                       balance
+                                                                                       0)
+                                                                                    (setf end candidate)
+                                                                                    (return)))
+                               (let ((excluded-end (1+ end)))
+                                 (when
+                                     (string= (getf rule :kind)
+                                              "condition-declaration")
+                                   (loop for candidate from index to
+                                         end
+                                         for part = (strip-lisp-strings-and-comments
+                                                     (nth candidate lines))
+                                         when (condition-report-line-p part)
+                                           do (setf excluded-end candidate) (return)))
+                                 (when (<= start excluded-end)
+                                   (push (list start excluded-end head)
+                                         ranges)))))))))))
+             (incf depth
+                   (- (count-character clean #\() (count-character clean #\)))))
     (nreverse ranges)))
 
 (defun line-is-excluded-p (line ranges)

@@ -18,6 +18,7 @@
            (uiop:ensure-directory-pathname (uiop:temporary-directory))))
          (source-directory (merge-pathnames "source/" temporary-directory))
          (source-file (merge-pathnames "branch.lisp" source-directory))
+         (excluded-file (merge-pathnames "excluded.lisp" source-directory))
          (summary-file (merge-pathnames "per-file.tsv" temporary-directory))
          (exclusions-file
           (merge-pathnames "scripts/coverage-exclusions.sexp" root)))
@@ -36,6 +37,26 @@
       (write-line "  (if flag" stream)
       (write-line "      :covered" stream)
       (write-line "      :uncovered))" stream))
+    ;; The declaim follows a multi-line defstruct, so excluding it requires the
+    ;; scanner to track nesting depth across lines.
+    (with-open-file
+        (stream excluded-file
+                :direction
+                :output
+                :if-exists
+                :supersede
+                :if-does-not-exist
+                :create
+                :external-format
+                :utf-8)
+      (write-line "(in-package #:cl-user)" stream)
+      (write-line "" stream)
+      (write-line "(defstruct (point" stream)
+      (write-line "             (:constructor make-point (x y)))" stream)
+      (write-line "  x" stream)
+      (write-line "  y)" stream)
+      (write-line "" stream)
+      (write-line "(declaim (optimize speed))" stream))
     (with-open-file
         (stream summary-file
                 :direction
@@ -56,6 +77,14 @@
               #\Tab)
       (format stream
               "branch.lisp~C3~C3~C1~C2~C-~C2:1/2~%"
+              #\Tab
+              #\Tab
+              #\Tab
+              #\Tab
+              #\Tab
+              #\Tab)
+      (format stream
+              "excluded.lisp~C0~C6~C0~C0~C1,3-6,8~C-~%"
               #\Tab
               #\Tab
               #\Tab
@@ -83,6 +112,8 @@
       (unless (search "| branch.lisp | 100.0% | 50.0% |" report)
         (error "The report did not include the per-file coverage:~%~A" report))
       (unless
-          (search "coverage gate: FAIL (1 of 1 files below threshold)" report)
+          (search "coverage gate: FAIL (1 of 2 files below threshold)" report)
         (error "The report did not reject the uncovered branch:~%~A" report))
-      (format t "coverage gate regression passed: uncovered branch rejected.~%"))))
+      (when (search "  excluded.lisp:" report)
+        (error "The report rejected lines covered by exclusion rules:~%~A" report))
+      (format t "coverage gate regression passed: uncovered branch rejected, excluded lines accepted.~%"))))
