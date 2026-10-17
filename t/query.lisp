@@ -51,8 +51,8 @@
            (document (cl-markdown-kit:parse-string source))
            (heading (cl-markdown-kit:heading-record-node
                      (first (cl-markdown-kit:document-headings document))))
-           (record (cl-markdown-kit:make-heading-record :node heading))
-           (empty-section (cl-markdown-kit:make-section-record))
+           (record (cl-markdown-kit::make-heading-record :node heading))
+           (empty-section (cl-markdown-kit::make-section-record))
            (span-source-document
              (cl-markdown-kit:make-document
               :span (cl-markdown-kit:node-span document)
@@ -378,9 +378,9 @@
               :span (cl-markdown-kit:node-span document)
               :children (cl-markdown-kit:document-children other-document)))
            (foreign-section (cl-markdown-kit:find-section other-document "/Else"))
-           (missing-span (cl-markdown-kit:make-section-record))
+           (missing-span (cl-markdown-kit::make-section-record))
            (out-of-range-section
-             (cl-markdown-kit:make-section-record
+             (cl-markdown-kit::make-section-record
               :span (cl-parser-kit:make-span :source source :start -1 :end 0)))
            (foreign-error
              (query-condition (lambda ()

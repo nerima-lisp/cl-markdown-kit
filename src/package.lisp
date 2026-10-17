@@ -42,14 +42,196 @@
    #:source-buffer-document-span
    ;; AST metadata and traversal
    #:node-children
-   #:walk-node-tree-cps
+   #:walk-node-tree
+   #:node-tree-frame-node
+   #:node-tree-frame-phase
+   #:node-tree-frame-parent
+   #:node-tree-frame-grandparent
+   #:node-tree-frame-previous-sibling
+   #:node-tree-frame-next-sibling
+   #:node-tree-frame-child-index
+   #:node-tree-frame-last-child-p
+   #:node-tree-frame-remaining-siblings
+   #:node-tree-frame-result
+   #:node-tree-frame-child-results
    #:node-kind
    #:node-family
    #:node-semantic-attributes
    #:node-edit-text-projection
-   #:define-node
-   #:define-node-dispatch
-   #:verify-node-dispatches
+   ;; AST node types, constructors, predicates, and readers
+   #:node
+   #:node-p
+   #:make-node
+   #:node-span
+   #:block-node
+   #:block-node-p
+   #:make-block-node
+   #:block-node-continuation-prefix
+   #:inline-node
+   #:inline-node-p
+   #:make-inline-node
+   #:document
+   #:document-p
+   #:make-document
+   #:document-children
+   #:document-source
+   #:document-source-format
+   #:document-reference-index
+   #:document-front-matter-p
+   #:document-gfm-p
+   #:document-max-nesting-depth
+   #:document-max-inline-delimiter-depth
+   #:front-matter
+   #:front-matter-p
+   #:make-front-matter
+   #:front-matter-raw-text
+   #:front-matter-opening-delimiter
+   #:front-matter-closing-delimiter
+   #:block-quote
+   #:block-quote-p
+   #:make-block-quote
+   #:block-quote-children
+   #:list-node
+   #:list-node-p
+   #:make-list-node
+   #:list-node-kind
+   #:list-node-tight-p
+   #:list-node-start-number
+   #:list-node-marker-character
+   #:list-node-delimiter-character
+   #:list-node-items
+   #:list-item
+   #:list-item-p
+   #:make-list-item
+   #:list-item-children
+   #:task-list-item
+   #:task-list-item-p
+   #:make-task-list-item
+   #:task-list-item-checked-p
+   #:task-list-item-task-marker-span
+   #:task-list-item-original-marker-character
+   #:paragraph
+   #:paragraph-p
+   #:make-paragraph
+   #:paragraph-children
+   #:heading
+   #:heading-p
+   #:make-heading
+   #:heading-level
+   #:heading-style
+   #:heading-marker-character
+   #:heading-opening-marker-length
+   #:heading-closing-marker-length
+   #:heading-children
+   #:thematic-break
+   #:thematic-break-p
+   #:make-thematic-break
+   #:thematic-break-marker-character
+   #:thematic-break-marker-count
+   #:code-block
+   #:code-block-p
+   #:make-code-block
+   #:code-block-style
+   #:code-block-body
+   #:code-block-fence-character
+   #:code-block-fence-length
+   #:code-block-indentation
+   #:code-block-info-string
+   #:html-block
+   #:html-block-p
+   #:make-html-block
+   #:html-block-body
+   #:html-block-kind
+   #:link-reference-definition
+   #:link-reference-definition-p
+   #:make-link-reference-definition
+   #:link-reference-definition-raw-label
+   #:link-reference-definition-normalized-label
+   #:link-reference-definition-destination
+   #:link-reference-definition-title
+   #:link-reference-definition-eligible-p
+   #:table
+   #:table-p
+   #:make-table
+   #:table-alignments
+   #:table-rows
+   #:table-row
+   #:table-row-p
+   #:make-table-row
+   #:table-row-header-row-p
+   #:table-row-cells
+   #:table-cell
+   #:table-cell-p
+   #:make-table-cell
+   #:table-cell-alignment
+   #:table-cell-children
+   #:footnote-definition
+   #:footnote-definition-p
+   #:make-footnote-definition
+   #:footnote-definition-raw-label
+   #:footnote-definition-normalized-label
+   #:footnote-definition-children
+   #:text
+   #:text-p
+   #:make-text
+   #:text-value
+   #:code-span
+   #:code-span-p
+   #:make-code-span
+   #:code-span-literal-text
+   #:code-span-backtick-run-length
+   #:html-inline
+   #:html-inline-p
+   #:make-html-inline
+   #:html-inline-body
+   #:soft-break
+   #:soft-break-p
+   #:make-soft-break
+   #:hard-break
+   #:hard-break-p
+   #:make-hard-break
+   #:emphasis
+   #:emphasis-p
+   #:make-emphasis
+   #:emphasis-delimiter-character
+   #:emphasis-children
+   #:strong
+   #:strong-p
+   #:make-strong
+   #:strong-delimiter-character
+   #:strong-children
+   #:link
+   #:link-p
+   #:make-link
+   #:link-destination
+   #:link-title
+   #:link-reference-kind
+   #:link-reference-label
+   #:link-children
+   #:image
+   #:image-p
+   #:make-image
+   #:image-destination
+   #:image-title
+   #:image-reference-kind
+   #:image-reference-label
+   #:image-children
+   #:strikethrough
+   #:strikethrough-p
+   #:make-strikethrough
+   #:strikethrough-delimiter-character
+   #:strikethrough-children
+   #:autolink
+   #:autolink-p
+   #:make-autolink
+   #:autolink-destination
+   #:autolink-display-text
+   #:autolink-kind
+   #:footnote-reference
+   #:footnote-reference-p
+   #:make-footnote-reference
+   #:footnote-reference-raw-label
+   #:footnote-reference-normalized-label
    ;; Block parser results and deferred inline fragments
    #:inline-fragment
    #:inline-fragment-p
@@ -74,7 +256,6 @@
    ;; Query records and functions
    #:heading-record
    #:heading-record-p
-   #:make-heading-record
    #:heading-record-node
    #:heading-record-level
    #:heading-record-plain-text
@@ -82,7 +263,6 @@
    #:heading-record-section-span
    #:section-record
    #:section-record-p
-   #:make-section-record
    #:section-record-heading
    #:section-record-span
    #:section-record-address
