@@ -419,8 +419,7 @@
                 (incf index)))))
   text)
 
-(progn
-  (defstruct (%mw-render-frame
+(defstruct (%mw-render-frame
               (:constructor %mw-make-render-frame
                   (&key (line-start-p t) (line-indent 0)
                         table-cell-p escape-table-p heading-p autolink-label-p
@@ -562,13 +561,6 @@
       (dolist (child children)
         (write-string (or (gethash child results) "") stream))))
 
-  (defun %mw-render-inline-children
-      (children stream &optional minimize-escapes-p
-                           escape-terminal-backslash-p results)
-    (declare (ignore minimize-escapes-p escape-terminal-backslash-p))
-    (when results
-      (write-string (%mw-render-child-results children results) stream))))
-
 
 (defun %mw-escape-label (label)
   (with-output-to-string (stream)
@@ -618,8 +610,7 @@
     (%mw-write-link-string title stream :title-p t)
     (%mw-write-character #\" stream)))
 
-(progn
-  (defun %mw-render-inline-text-run (context node frame)
+(defun %mw-render-inline-text-run (context node frame)
   (if (%mw-inline-text-run-node-p
        (%mw-render-session-previous-sibling context))
       ""
@@ -840,19 +831,13 @@
     (autolink
      (%mw-render-inline-dispatch-event context node phase :autolink))
     (footnote-reference
-     (%mw-render-inline-dispatch-event context node phase :footnote-reference))))
+     (%mw-render-inline-dispatch-event context node phase :footnote-reference)))
 
 
-(defun %mw-render-inline-string (children results
-                                               &key table-cell-p
-                                                 escape-table-pipes-p
-                                                 minimize-escapes-p)
-  (declare (ignore table-cell-p escape-table-pipes-p minimize-escapes-p))
+(defun %mw-render-inline-string (children results)
   (%mw-render-child-results children results))
-(defun %mw-table-cell-ranges (line) (%pc-table-cells line))
-
 (defun %mw-table-alignment-line-p (line)
-  (let ((cells (%mw-table-cell-ranges line)))
+  (let ((cells (%pc-table-cells line)))
     (when (and cells
                (every (lambda (range)
                         (let* ((cell (%pc-trimmed-string (subseq line (car range) (cdr range))))
@@ -892,8 +877,7 @@
                     (header-has-pipe
                       (position #\| text :start (car line) :end (cdr line))))
                (when (and header-has-pipe
-                          (= (length (%mw-table-cell-ranges
-                                      (subseq text (car line) (cdr line))))
+                          (= (length (%pc-table-cells (subseq text (car line) (cdr line))))
                              (or (%mw-table-alignment-line-p
                                   (subseq text next-start next-end))
                                  0))
@@ -1055,9 +1039,7 @@
     (dolist (cell (table-row-cells row))
       (write-char #\Space stream)
       (write-string
-       (%mw-render-inline-string (table-cell-children cell) results
-                                 :table-cell-p t
-                                 :minimize-escapes-p t)
+       (%mw-render-inline-string (table-cell-children cell) results)
        stream)
       (write-string " |" stream))))
 
@@ -1098,8 +1080,7 @@
                (t
                 (write-char character stream))))))
 
-(progn
-  (defun %mw-render-block-result (context node frame kind)
+(defun %mw-render-block-result (context node frame kind)
     (let ((results (%mw-render-session-results context)))
       (ecase kind
         (:document
@@ -1235,7 +1216,7 @@
      (%mw-render-block-dispatch-event
       context node phase :footnote-definition))) (verify-node-dispatches
    :operation :markdown-renderer
-   :families '(:block :inline)))
+   :families '(:block :inline))
 
 (defun %mw-substring-count (string substring)
   (loop with start = 0
@@ -1261,43 +1242,49 @@
         unless (search label markdown :test #'char-equal)
           return (format nil "[~A]: <>" label)))
 
-(progn
-  (defun %mw-render-document-tree (document)
+(defun %mw-render-document-tree (document)
     (let ((context (%mw-make-render-session)))
-      (walk-node-tree-cps
-       document
-       (lambda (node phase parent grandparent previous-sibling next-sibling
-                     child-index last-child-p)
-         (setf (%mw-render-session-parent context) parent
-               (%mw-render-session-grandparent context) grandparent
-               (%mw-render-session-previous-sibling context) previous-sibling
-               (%mw-render-session-next-sibling context) next-sibling
-               (%mw-render-session-child-index context) child-index
-               (%mw-render-session-last-child-p context) last-child-p)
-         (when (eq phase :enter)
-           (setf (gethash node (%mw-render-session-frames context))
-                 (%mw-make-node-render-frame context node)))
-         (let ((event-result
-                 (cond
-                   ((inline-node-p node)
-                    (%mw-render-inline-event context node phase))
-                   ((block-node-p node)
-                    (%mw-render-block-event context node phase))
-                   (t
-                    (error "Unsupported Markdown node: ~S" node)))))
-           (when (and (eq phase :leave)
-                      parent
-                      (%mw-inline-children-parent-p parent))
-             (let ((parent-frame
-                     (gethash parent
-                              (%mw-render-session-frames context))))
-               (when parent-frame
-                 (%mw-advance-render-frame
-                  parent-frame
-                  (or (gethash node
-                               (%mw-render-session-results context))
-                      "")))))
-           event-result)))
+      (walk-node-tree document
+       (lambda (frame)
+         (let* ((node (node-tree-frame-node frame))
+                (phase (node-tree-frame-phase frame))
+                (parent (node-tree-frame-parent frame))
+                (grandparent (node-tree-frame-grandparent frame))
+                (previous-sibling
+                  (node-tree-frame-previous-sibling frame))
+                (next-sibling (node-tree-frame-next-sibling frame))
+                (child-index (node-tree-frame-child-index frame))
+                (last-child-p (node-tree-frame-last-child-p frame)))
+           (setf (%mw-render-session-parent context) parent
+                 (%mw-render-session-grandparent context) grandparent
+                 (%mw-render-session-previous-sibling context) previous-sibling
+                 (%mw-render-session-next-sibling context) next-sibling
+                 (%mw-render-session-child-index context) child-index
+                 (%mw-render-session-last-child-p context) last-child-p)
+           (when (eq phase :enter)
+             (setf (gethash node (%mw-render-session-frames context))
+                   (%mw-make-node-render-frame context node)))
+           (let ((event-result
+                   (cond
+                     ((inline-node-p node)
+                      (%mw-render-inline-event context node phase))
+                     ((block-node-p node)
+                      (%mw-render-block-event context node phase))
+                     (t
+                      (error "Unsupported Markdown node: ~S" node)))))
+             (when (and (eq phase :leave)
+                        parent
+                        (%mw-inline-children-parent-p parent))
+               (let ((parent-frame
+                       (gethash parent
+                                (%mw-render-session-frames context))))
+                 (when parent-frame
+                   (%mw-advance-render-frame
+                    parent-frame
+                    (or (gethash node
+                                 (%mw-render-session-results context))
+                        "")))))
+             (if (eq phase :enter) event-result nil)))))
       (gethash document (%mw-render-session-results context))))
 
   (defun %mw-render-document-markdown (document)
@@ -1332,7 +1319,7 @@
                      (%mw-replace-substring
                       markdown token
                       (%mw-list-boundary-definition markdown))))
-                 (incf token-length))))))
+                 (incf token-length)))))
 
 (defun write-markdown-to-stream (document stream)
   (check-type document document)

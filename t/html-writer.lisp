@@ -328,6 +328,16 @@
             (cl-markdown-kit:make-footnote-definition
              :raw-label "unused" :normalized-label "unused")))
      :to-equal ""))
+  (it "rejects unsupported node values in documents"
+    (expect
+     (handler-case
+         (progn
+           (cl-markdown-kit:write-html
+            (cl-markdown-kit:make-document
+             :children (list (cl-markdown-kit:make-node))))
+           nil)
+       (error () t))
+     :to-be-truthy))
 
   (it "renders raw block HTML in escape mode and filters every tagfilter boundary"
     (let ((escaped
@@ -510,11 +520,17 @@
                           (cl-markdown-kit:make-footnote-reference
                            :raw-label "note" :normalized-label "note")
                           (cl-markdown-kit:make-emphasis
-                           :children (list (cl-markdown-kit:make-text
-                                            :value " nested")))))))))
+                           :children
+                           (list (cl-markdown-kit:make-text :value " nested")))
+                          (cl-markdown-kit:make-strong
+                           :children
+                           (list (cl-markdown-kit:make-text :value " strong")))
+                          (cl-markdown-kit:make-strikethrough
+                           :children
+                           (list (cl-markdown-kit:make-text :value " struck")))))))))
      :to-equal
      (format nil
-             "<p><img src=\"/alt\" alt=\"text &lt;code&gt; &lt;raw&gt;  auto nested\" /></p>~%")))
+             "<p><img src=\"/alt\" alt=\"text &lt;code&gt; &lt;raw&gt;  auto nested strong struck\" /></p>~%")))
 
   (it "numbers repeated footnote references and handles definitions without paragraph endings"
     (let ((output
