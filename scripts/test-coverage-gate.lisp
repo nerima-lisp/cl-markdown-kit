@@ -116,4 +116,8 @@
         (error "The report did not reject the uncovered branch:~%~A" report))
       (when (search "  excluded.lisp:" report)
         (error "The report rejected lines covered by exclusion rules:~%~A" report))
-      (format t "coverage gate regression passed: uncovered branch rejected, excluded lines accepted.~%"))))
+      ;; These compile-time forms should remain excluded even when the file has no branch locations.
+      (unless
+          (search "| excluded.lisp | 0.0% | n/a | 1,3-6,8 |" report)
+        (error "The no-branch summary row was not reported:~%~A" report))
+      (format t "coverage gate regression passed: uncovered branch rejected, compile-time lines excluded, no-branch summary reported.~%"))))
