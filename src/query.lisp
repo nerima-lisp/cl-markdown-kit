@@ -16,23 +16,36 @@
   (span nil :type (or null cl-parser-kit:span))
   address)
 
-(defun %write-inline-plain-text (node stream)
-  (typecase node
-    (text (write-string (text-value node) stream))
-    (code-span (write-string (code-span-literal-text node) stream))
-    (link
-     (dolist (child (link-children node))
-       (%write-inline-plain-text child stream)))
-    (image
-     (dolist (child (image-children node))
-       (%write-inline-plain-text child stream)))
-    (autolink (write-string (autolink-display-text node) stream))
-    (footnote-reference (write-string (footnote-reference-raw-label node) stream))
-    ((or soft-break hard-break) (write-char #\Space stream))
+(define-node-dispatch (%write-inline-plain-text-node (node stream))
+      :operation :query
+      :family :inline
+    (text
+     (write-string (text-value node) stream))
+    (code-span
+     (write-string (code-span-literal-text node) stream))
     (html-inline nil)
-    (node
-     (dolist (child (node-children node))
-       (%write-inline-plain-text child stream)))))
+    (soft-break
+     (write-char #\Space stream))
+    (hard-break
+     (write-char #\Space stream))
+    (emphasis nil)
+    (strong nil)
+    (link nil)
+    (image nil)
+    (strikethrough nil)
+    (autolink
+     (write-string (autolink-display-text node) stream))
+    (footnote-reference
+     (write-string (footnote-reference-raw-label node) stream)))
+  (verify-node-dispatches :operation :query :families '(:inline))
+  (defun %write-inline-plain-text (node stream)
+    (walk-node-tree node
+     (lambda (frame)
+       (let ((node (node-tree-frame-node frame))
+             (phase (node-tree-frame-phase frame)))
+         (when (and (eq phase :enter) (inline-node-p node))
+           (%write-inline-plain-text-node node stream))
+         :descend))))
 
 (defun %collapse-heading-whitespace (string)
   (let ((pending-space nil)
@@ -124,16 +137,18 @@
     (dolist (child (document-children document))
       (when (heading-p child)
         (setf (gethash child direct-headings) t)))
-    (walk-nodes
-     (lambda (node)
-       (when (heading-p node)
-         (push (make-heading-record
-                :node node
-                :level (heading-level node)
-                :plain-text (%heading-plain-text node)
-                :source-form (heading-style node))
-               records)))
-     document)
+    (walk-node-tree document
+     (lambda (frame)
+       (let ((node (node-tree-frame-node frame))
+             (phase (node-tree-frame-phase frame)))
+         (when (and (eq phase :enter) (heading-p node))
+           (push (make-heading-record
+                  :node node
+                  :level (heading-level node)
+                  :plain-text (%heading-plain-text node)
+                  :source-form (heading-style node))
+                 records))
+         :descend)))
     (setf records (nreverse records))
     (let ((section-headings
             (remove-if-not (lambda (record)
@@ -269,37 +284,33 @@
 
 (defun find-section (document address)
   (check-type document document)
-  (multiple-value-bind (roots children parents)
-      (%section-heading-tree
-       (remove-if-not #'heading-record-section-span
-                      (document-headings document)))
-    (cond
-      ((stringp address)
-       (if (zerop (length address))
-           (%whole-document-section document address)
-           (%resolve-section-candidates
-            address
-            (%matching-path roots children (%pointer-components address))
-            parents)))
-      ((and (integerp address) (plusp address))
-       (%resolve-section-candidates
-        address
-        (remove-if-not (lambda (record)
-                         (eql (%heading-line record) address))
-                       (loop with all = nil
-                             for root in roots
-                             do (labels ((collect (record)
-                                           (push record all)
-                                           (dolist (child (gethash record children))
-                                             (collect child))))
-                                  (collect root))
-                             finally (return (nreverse all))))
-        parents))
-      ((integerp address)
-       (%invalid-section-address address "Heading line numbers must be positive."))
-      (t
-       (%invalid-section-address
-        address "A section address must be a JSON pointer or heading line number.")))))
+  (let ((section-records
+          (remove-if-not (function heading-record-section-span)
+                         (document-headings document))))
+    (multiple-value-bind (roots children parents)
+        (%section-heading-tree section-records)
+      (cond
+        ((stringp address)
+         (if (zerop (length address))
+             (%whole-document-section document address)
+             (%resolve-section-candidates
+              address
+              (%matching-path roots children (%pointer-components address))
+              parents)))
+        ((and (integerp address) (plusp address))
+         (%resolve-section-candidates
+          address
+          (remove-if-not (lambda (record)
+                           (eql (%heading-line record) address))
+                         section-records)
+          parents))
+        ((integerp address)
+         (%invalid-section-address address
+                                   "Heading line numbers must be positive."))
+        (t
+         (%invalid-section-address
+          address
+          "A section address must be a JSON pointer or heading line number."))))))
 
 (defun %document-source-string (document)
   (or (document-source document)
@@ -438,24 +449,27 @@
                                 (setf (gethash (heading-record-node record) table)
                                       record)))))
          (results nil))
-    (walk-nodes
-     (lambda (node)
-       (when (and (%extract-node-p kind node)
-                  (%span-in-scope-p (node-span node) scope)
-                  (or (not (eq kind :code-block))
-                      (and (or (null info-string)
-                               (equal info-string
-                                      (code-block-info-string node)))
-                           (or (null language)
-                               (equal language
-                                      (%first-info-token
-                                       (code-block-info-string node))))))
-                  (or (not (eq kind :heading))
-                      (gethash node records-by-node)))
-         (push (%extract-result kind node
-                                (and records-by-node
-                                     (gethash node records-by-node))
-                                include-source-slice)
-               results)))
-     document)
+    (walk-node-tree document
+     (lambda (frame)
+       (let ((node (node-tree-frame-node frame))
+             (phase (node-tree-frame-phase frame)))
+         (when (and (eq phase :enter)
+                    (%extract-node-p kind node)
+                    (%span-in-scope-p (node-span node) scope)
+                    (or (not (eq kind :code-block))
+                        (and (or (null info-string)
+                                 (equal info-string
+                                        (code-block-info-string node)))
+                             (or (null language)
+                                 (equal language
+                                        (%first-info-token
+                                         (code-block-info-string node))))))
+                    (or (not (eq kind :heading))
+                        (gethash node records-by-node)))
+           (push (%extract-result kind node
+                                  (and records-by-node
+                                       (gethash node records-by-node))
+                                  include-source-slice)
+                 results))
+         :descend)))
     (nreverse results)))

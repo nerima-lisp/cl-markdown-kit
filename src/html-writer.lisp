@@ -17,7 +17,13 @@
   footnote-reference-indices
   footnote-order
   footnote-ids
-  footnote-reference-ids)
+  footnote-reference-ids
+  tree-parent
+  tree-grandparent
+  tree-child-index
+  tree-last-child-p
+  table-body-open-p
+  plain-alt-root)
 
 (defun %hw-write (context string)
   (unless (zerop (length string))
@@ -59,13 +65,12 @@
                    (string-equal tag string :start2 index :end2 end)
                    (< end length)
                    (let ((next (char string end)))
-                     (or (find next '(#\Space #\Tab #\Newline #\Return #\Page))
+                     (or (%pc-html-space-p next)
                          (char= next #\>)
                          (and (char= next #\/)
                               (< (1+ end) length)
                               (char= (char string (1+ end)) #\>)))))))
-          '("title" "textarea" "style" "xmp" "iframe" "noembed"
-            "noframes" "script" "plaintext"))))
+          +gfm-tagfilter-tags+)))
 
 (defun %hw-filter-html (context string)
   (loop with start = 0
@@ -117,28 +122,33 @@
         (reference-identifiers nil)
         (order nil)
         (next-number 0))
-    (walk-nodes (lambda (node)
-                  (when (footnote-definition-p node)
-                    (setf (gethash (footnote-definition-normalized-label node)
-                                   definitions)
-                          node)))
-                document)
-    (walk-nodes
-     (lambda (node)
-       (when (footnote-reference-p node)
-         (let ((label (footnote-reference-normalized-label node)))
-           (when (gethash label definitions)
-             (unless (gethash label numbers)
-               (incf next-number)
-               (setf (gethash label numbers) next-number)
-               (push label order))
-             (let ((reference-index
-                     (incf (gethash label reference-counts 0))))
-               (push (list label reference-index
-                           (%hw-footnote-reference-id-candidate
-                            label reference-index))
-                     reference-identifiers))))))
-     document)
+    (walk-node-tree document
+     (lambda (frame)
+       (let ((node (node-tree-frame-node frame)))
+         (when (and (eq (node-tree-frame-phase frame) :enter)
+                    (footnote-definition-p node))
+           (setf (gethash (footnote-definition-normalized-label node)
+                          definitions)
+                 node)))
+       :descend))
+    (walk-node-tree document
+     (lambda (frame)
+       (let ((node (node-tree-frame-node frame)))
+         (when (eq (node-tree-frame-phase frame) :enter)
+           (when (footnote-reference-p node)
+             (let ((label (footnote-reference-normalized-label node)))
+               (when (gethash label definitions)
+                 (unless (gethash label numbers)
+                   (incf next-number)
+                   (setf (gethash label numbers) next-number)
+                   (push label order))
+                 (let ((reference-index
+                         (incf (gethash label reference-counts 0))))
+                   (push (list label reference-index
+                               (%hw-footnote-reference-id-candidate
+                                label reference-index))
+                         reference-identifiers)))))))
+       :descend))
     (let* ((order (nreverse order))
            (reference-identifiers (nreverse reference-identifiers))
            (footnote-ids (make-hash-table :test #'equal))
@@ -215,79 +225,124 @@
                                             reference-index)))
                (%hw-write context "</a>")))))
 
-(defun %hw-write-inline-children (context children)
-  (dolist (child children)
-    (%hw-write-inline context child)))
+(defun %hw-inline-plain-alt-p (context) (%html-writer-context-plain-alt-root context))
 
-(defun %hw-write-inline (context node)
-  (typecase node
-    (text
-     (%hw-escaped-text context (text-value node)))
-    (code-span
-     (%hw-write context "<code>")
-     (%hw-escaped-text context (code-span-literal-text node))
-     (%hw-write context "</code>"))
-    (html-inline
-     (case (%html-writer-context-raw-html context)
-       (:omit (%hw-write context "<!-- raw HTML omitted -->"))
-       (:escape (%hw-escaped-text context (html-inline-body node)))
-       (:pass-through (%hw-write-raw-html context (html-inline-body node)))))
-    (soft-break
-     (%hw-write-char context #\Newline))
-    (hard-break
-     (%hw-write context "<br />")
-     (%hw-write-char context #\Newline))
-    (emphasis
-     (%hw-write context "<em>")
-     (%hw-write-inline-children context (emphasis-children node))
-     (%hw-write context "</em>"))
-    (strong
-     (%hw-write context "<strong>")
-     (%hw-write-inline-children context (strong-children node))
-     (%hw-write context "</strong>"))
-    (strikethrough
-     (%hw-write context "<del>")
-     (%hw-write-inline-children context (strikethrough-children node))
-     (%hw-write context "</del>"))
-    (link
-     (%hw-write context "<a href=\"")
-     (%hw-href context (link-destination node))
-     (when (link-title node)
-       (%hw-write context "\" title=\"")
-       (%hw-escaped-attribute context (link-title node)))
-     (%hw-write context "\">")
-     (%hw-write-inline-children context (link-children node))
-     (%hw-write context "</a>"))
-    (image
-     (%hw-write context "<img src=\"")
-     (%hw-href context (image-destination node))
-     (%hw-write context "\" alt=\"")
-     (%hw-write-plain-inline context (image-children node))
-     (when (image-title node)
-       (%hw-write context "\" title=\"")
-       (%hw-escaped-attribute context (image-title node)))
-     (%hw-write context "\" />"))
-    (autolink
-     (%hw-write context "<a href=\"")
-     (%hw-href context (autolink-destination node))
-     (%hw-write context "\">")
-     (%hw-escaped-text context (autolink-display-text node))
-     (%hw-write context "</a>"))
-    (footnote-reference
+(define-node-dispatch (%hw-render-inline-event (context node phase))
+    :operation :html-renderer
+    :family :inline
+  (text
+   (when (eq phase :enter)
+     (if (%hw-inline-plain-alt-p context)
+         (%hw-escaped-attribute context (text-value node))
+         (%hw-escaped-text context (text-value node))))
+   (when (eq phase :enter) :descend))
+  (code-span
+   (when (eq phase :enter)
+     (if (%hw-inline-plain-alt-p context)
+         (%hw-escaped-attribute context (code-span-literal-text node))
+         (progn
+           (%hw-write context "<code>")
+           (%hw-escaped-text context (code-span-literal-text node))
+           (%hw-write context "</code>"))))
+   (when (eq phase :enter) :descend))
+  (html-inline
+   (when (eq phase :enter)
+     (if (%hw-inline-plain-alt-p context)
+         (%hw-escaped-attribute context (html-inline-body node))
+         (case (%html-writer-context-raw-html context)
+           (:omit (%hw-write context "<!-- raw HTML omitted -->"))
+           (:escape (%hw-escaped-text context (html-inline-body node)))
+           (:pass-through (%hw-write-raw-html context (html-inline-body node))))))
+   (when (eq phase :enter) :descend))
+  (soft-break
+   (when (eq phase :enter)
+     (%hw-write-char context
+                     (if (%hw-inline-plain-alt-p context)
+                         #\Space
+                         #\Newline)))
+   (when (eq phase :enter) :descend))
+  (hard-break
+   (when (eq phase :enter)
+     (if (%hw-inline-plain-alt-p context)
+         (%hw-write-char context #\Space)
+         (progn
+           (%hw-write context "<br />")
+           (%hw-write-char context #\Newline))))
+   (when (eq phase :enter) :descend))
+  (emphasis
+   (case phase
+     (:enter
+      (unless (%hw-inline-plain-alt-p context)
+        (%hw-write context "<em>"))
+      :descend)
+     (:leave
+      (unless (%hw-inline-plain-alt-p context)
+        (%hw-write context "</em>")))))
+  (strong
+   (case phase
+     (:enter
+      (unless (%hw-inline-plain-alt-p context)
+        (%hw-write context "<strong>"))
+      :descend)
+     (:leave
+      (unless (%hw-inline-plain-alt-p context)
+        (%hw-write context "</strong>")))))
+  (strikethrough
+   (case phase
+     (:enter
+      (unless (%hw-inline-plain-alt-p context)
+        (%hw-write context "<del>"))
+      :descend)
+     (:leave
+      (unless (%hw-inline-plain-alt-p context)
+        (%hw-write context "</del>")))))
+  (link
+   (case phase
+     (:enter
+      (unless (%hw-inline-plain-alt-p context)
+        (%hw-write context "<a href=\"")
+        (%hw-href context (link-destination node))
+        (when (link-title node)
+          (%hw-write context "\" title=\"")
+          (%hw-escaped-attribute context (link-title node)))
+        (%hw-write context "\">"))
+      :descend)
+     (:leave
+      (unless (%hw-inline-plain-alt-p context)
+        (%hw-write context "</a>")))))
+  (image
+   (cond
+     ((and (eq phase :leave)
+           (eq node (%html-writer-context-plain-alt-root context)))
+      (setf (%html-writer-context-plain-alt-root context) nil)
+      (when (image-title node)
+        (%hw-write context "\" title=\"")
+        (%hw-escaped-attribute context (image-title node)))
+      (%hw-write context "\" />"))
+     ((%hw-inline-plain-alt-p context)
+      (when (eq phase :enter) :descend))
+     (t
+      (%hw-write context "<img src=\"")
+      (%hw-href context (image-destination node))
+      (%hw-write context "\" alt=\"")
+      (setf (%html-writer-context-plain-alt-root context) node)
+      :descend)))
+  (autolink
+   (when (eq phase :enter)
+     (if (%hw-inline-plain-alt-p context)
+         (%hw-escaped-attribute context (autolink-display-text node))
+         (progn
+           (%hw-write context "<a href=\"")
+           (%hw-href context (autolink-destination node))
+           (%hw-write context "\">")
+           (%hw-escaped-text context (autolink-display-text node))
+           (%hw-write context "</a>"))))
+   (when (eq phase :enter) :descend))
+  (footnote-reference
+   (when (and (eq phase :enter)
+              (not (%hw-inline-plain-alt-p context)))
      (%hw-write-footnote-reference context node))
-    (t
-     (error "Unsupported inline node: ~S" node))))
-
-(defun %hw-write-plain-inline (context nodes)
-  (dolist (node nodes)
-    (typecase node
-      (text (%hw-escaped-attribute context (text-value node)))
-      (code-span (%hw-escaped-attribute context (code-span-literal-text node)))
-      (html-inline (%hw-escaped-attribute context (html-inline-body node)))
-      ((or soft-break hard-break) (%hw-write-char context #\Space))
-      (autolink (%hw-escaped-attribute context (autolink-display-text node)))
-      (footnote-reference nil)
-      (t (%hw-write-plain-inline context (node-children node))))))
+   (when (eq phase :enter) :descend)))
 
 (defun %hw-code-info-token (info)
   (when (and info (plusp (length info)))
@@ -319,40 +374,27 @@
           (%hw-write context "</code></pre>")))
     (%hw-write-char context #\Newline)))
 
-(defun %hw-write-paragraph (context node parent grandparent last-child-p)
-  (let ((tight-list-p (and (list-item-p parent)
-                           (list-node-p grandparent)
-                           (list-node-tight-p grandparent)))
-        (backref-p (and (footnote-definition-p parent) last-child-p)))
-    (unless tight-list-p
-      (%hw-newline context)
-      (%hw-write context "<p>"))
-    (%hw-write-inline-children context (paragraph-children node))
-    (when backref-p
-      (%hw-write-char context #\Space)
-      (%hw-write-footnote-backrefs
-       context (footnote-definition-normalized-label parent)))
-    (unless tight-list-p
-      (%hw-write context "</p>")
-      (%hw-write-char context #\Newline))))
+(defun %hw-tight-list-paragraph-p (context)
+  (let ((parent (%html-writer-context-tree-parent context))
+        (grandparent (%html-writer-context-tree-grandparent context)))
+    (and (list-item-p parent)
+         (list-node-p grandparent)
+         (list-node-tight-p grandparent))))
 
-(defun %hw-write-list-item (context node parent)
+(defun %hw-write-list-item-open (context node)
   (%hw-newline context)
   (%hw-write context "<li>")
   (when (task-list-item-p node)
     (%hw-write context
                (if (task-list-item-checked-p node)
                    "<input type=\"checkbox\" checked=\"\" disabled=\"\" /> "
-                   "<input type=\"checkbox\" disabled=\"\" /> ")))
-  (loop with children = (list-item-children node)
-        for child in children
-        for index from 0
-        do (%hw-write-block context child node parent
-                            (= index (1- (length children)))))
+                   "<input type=\"checkbox\" disabled=\"\" /> "))))
+
+(defun %hw-write-list-item-close (context)
   (%hw-write context "</li>")
   (%hw-write-char context #\Newline))
 
-(defun %hw-write-list (context node)
+(defun %hw-write-list-open (context node)
   (%hw-newline context)
   (if (eq (list-node-kind node) :ordered)
       (if (= (list-node-start-number node) 1)
@@ -364,53 +406,67 @@
                              (list-node-start-number node))))
       (progn
         (%hw-write context "<ul>")
-        (%hw-write-char context #\Newline)))
-  (dolist (item (list-node-items node))
-    (%hw-write-block context item node nil t))
+        (%hw-write-char context #\Newline))))
+
+(defun %hw-write-list-close (context node)
   (%hw-write context (if (eq (list-node-kind node) :ordered) "</ol>" "</ul>"))
   (%hw-write-char context #\Newline))
 
-(defun %hw-write-table (context node)
+(defun %hw-write-table-open (context)
   (%hw-newline context)
   (%hw-write context "<table>")
-  (let ((body-open-p nil))
-    (dolist (row (table-rows node))
-      (if (table-row-header-row-p row)
-          (progn
-            (%hw-newline context)
-            (%hw-write context "<thead>")
-            (%hw-newline context))
-          (unless body-open-p
-            (%hw-newline context)
-            (%hw-write context "<tbody>")
-            (%hw-newline context)
-            (setf body-open-p t)))
-      (%hw-newline context)
-      (%hw-write context "<tr>")
-      (loop for cell in (table-row-cells row)
-            for index from 0
-            for alignment = (or (table-cell-alignment cell)
-                                (nth index (table-alignments node)))
-            do (%hw-newline context)
-               (%hw-write context (if (table-row-header-row-p row) "<th" "<td"))
-               (when alignment
-                 (%hw-write context " align=\"")
-                 (%hw-escaped-attribute context (string-downcase (string alignment)))
-                 (%hw-write-char context #\"))
-               (%hw-write-char context #\>)
-               (%hw-write-inline-children context (table-cell-children cell))
-               (%hw-write context (if (table-row-header-row-p row) "</th>" "</td>")))
-      (%hw-newline context)
-      (%hw-write context "</tr>")
-      (when (table-row-header-row-p row)
-        (%hw-newline context)
-        (%hw-write context "</thead>")))
-    (when body-open-p
-      (%hw-newline context)
-      (%hw-write context "</tbody>")))
+  (setf (%html-writer-context-table-body-open-p context) nil))
+
+(defun %hw-write-table-close (context)
+  (when (%html-writer-context-table-body-open-p context)
+    (%hw-newline context)
+    (%hw-write context "</tbody>")
+    (setf (%html-writer-context-table-body-open-p context) nil))
   (%hw-newline context)
   (%hw-write context "</table>")
   (%hw-write-char context #\Newline))
+
+(defun %hw-write-table-row-open (context node)
+  (if (table-row-header-row-p node)
+      (progn
+        (%hw-newline context)
+        (%hw-write context "<thead>")
+        (%hw-newline context))
+      (unless (%html-writer-context-table-body-open-p context)
+        (%hw-newline context)
+        (%hw-write context "<tbody>")
+        (%hw-write-char context #\Newline)
+        (setf (%html-writer-context-table-body-open-p context) t)))
+  (%hw-newline context)
+  (%hw-write context "<tr>"))
+
+(defun %hw-write-table-row-close (context node)
+  (%hw-newline context)
+  (%hw-write context "</tr>")
+  (when (table-row-header-row-p node)
+    (%hw-newline context)
+    (%hw-write context "</thead>")))
+
+(defun %hw-write-table-cell-open (context node)
+  (let* ((row (%html-writer-context-tree-parent context))
+         (table (%html-writer-context-tree-grandparent context))
+         (alignment (or (table-cell-alignment node)
+                        (nth (%html-writer-context-tree-child-index context)
+                             (table-alignments table)))))
+    (%hw-newline context)
+    (%hw-write context (if (table-row-header-row-p row) "<th" "<td"))
+    (when alignment
+      (%hw-write context " align=\"")
+      (%hw-escaped-attribute context (string-downcase (string alignment)))
+      (%hw-write-char context #\"))
+    (%hw-write-char context #\>)))
+
+(defun %hw-write-table-cell-close (context)
+  (%hw-write context
+             (if (table-row-header-row-p
+                  (%html-writer-context-tree-parent context))
+                 "</th>"
+                 "</td>")))
 
 (defun %hw-write-footnote-definition (context node)
   (let ((label (footnote-definition-normalized-label node))
@@ -422,10 +478,7 @@
      (gethash label (%html-writer-context-footnote-ids context)))
     (%hw-write context "\">")
     (%hw-write-char context #\Newline)
-    (loop for child in children
-          for index from 0
-          do (%hw-write-block context child node nil
-                              (= index (1- (length children)))))
+    (%hw-render-node-tree context node)
     (unless (and children (paragraph-p (car (last children))))
       (%hw-newline context)
       (%hw-write-footnote-backrefs context label)
@@ -450,54 +503,138 @@
       (%hw-write context "</section>")
       (%hw-write-char context #\Newline))))
 
-(defun %hw-write-block (context node parent grandparent last-child-p)
-  (typecase node
+(define-node-dispatch (%hw-render-block-event (context node phase))
+      :operation :html-renderer
+      :family :block
     (document
-     (dolist (child (document-children node))
-       (%hw-write-block context child node nil nil)))
-    (front-matter nil)
-    (link-reference-definition nil)
-    (footnote-definition nil)
+     (when (eq phase :enter) :descend))
+    (front-matter :skip)
+    (link-reference-definition :skip)
+    (footnote-definition
+     (if (null (%html-writer-context-tree-parent context))
+         :descend
+         :skip))
     (block-quote
-     (%hw-newline context)
-     (%hw-write context "<blockquote>")
-     (%hw-write-char context #\Newline)
-     (dolist (child (block-quote-children node))
-       (%hw-write-block context child node nil nil))
-     (%hw-newline context)
-     (%hw-write context "</blockquote>")
-     (%hw-write-char context #\Newline))
+     (case phase
+       (:enter
+        (%hw-newline context)
+        (%hw-write context "<blockquote>")
+        (%hw-write-char context #\Newline)
+        :descend)
+       (:leave
+        (%hw-newline context)
+        (%hw-write context "</blockquote>")
+        (%hw-write-char context #\Newline))))
     (list-node
-     (%hw-write-list context node))
+     (case phase
+       (:enter
+        (%hw-write-list-open context node)
+        :descend)
+       (:leave
+        (%hw-write-list-close context node))))
     (task-list-item
-     (%hw-write-list-item context node parent))
+     (case phase
+       (:enter
+        (%hw-write-list-item-open context node)
+        :descend)
+       (:leave
+        (%hw-write-list-item-close context))))
     (list-item
-     (%hw-write-list-item context node parent))
+     (case phase
+       (:enter
+        (%hw-write-list-item-open context node)
+        :descend)
+       (:leave
+        (%hw-write-list-item-close context))))
     (paragraph
-     (%hw-write-paragraph context node parent grandparent last-child-p))
+     (let ((parent (%html-writer-context-tree-parent context)))
+       (case phase
+         (:enter
+          (unless (%hw-tight-list-paragraph-p context)
+            (%hw-newline context)
+            (%hw-write context "<p>"))
+          :descend)
+         (:leave
+          (when (and (footnote-definition-p parent)
+                     (%html-writer-context-tree-last-child-p context))
+            (%hw-write-char context #\Space)
+            (%hw-write-footnote-backrefs
+             context (footnote-definition-normalized-label parent)))
+          (unless (%hw-tight-list-paragraph-p context)
+            (%hw-write context "</p>")
+            (%hw-write-char context #\Newline))))))
     (heading
-     (%hw-newline context)
-     (%hw-write context (format nil "<h~D>" (heading-level node)))
-     (%hw-write-inline-children context (heading-children node))
-     (%hw-write context (format nil "</h~D>" (heading-level node)))
-     (%hw-write-char context #\Newline))
+     (case phase
+       (:enter
+        (%hw-newline context)
+        (%hw-write context (format nil "<h~D>" (heading-level node)))
+        :descend)
+       (:leave
+        (%hw-write context (format nil "</h~D>" (heading-level node)))
+        (%hw-write-char context #\Newline))))
     (thematic-break
-     (%hw-newline context)
-     (%hw-write context "<hr />")
-     (%hw-write-char context #\Newline))
+     (when (eq phase :enter)
+       (%hw-newline context)
+       (%hw-write context "<hr />")
+       (%hw-write-char context #\Newline))
+     (when (eq phase :enter) :descend))
     (code-block
-     (%hw-write-code-block context node))
+     (when (eq phase :enter)
+       (%hw-write-code-block context node)
+       :descend))
     (html-block
-     (%hw-newline context)
-     (case (%html-writer-context-raw-html context)
-       (:omit (%hw-write context "<!-- raw HTML omitted -->"))
-       (:escape (%hw-escaped-text context (html-block-body node)))
-       (:pass-through (%hw-write-raw-html context (html-block-body node))))
-     (%hw-newline context))
+     (when (eq phase :enter)
+       (%hw-newline context)
+       (case (%html-writer-context-raw-html context)
+         (:omit (%hw-write context "<!-- raw HTML omitted -->"))
+         (:escape (%hw-escaped-text context (html-block-body node)))
+         (:pass-through (%hw-write-raw-html context (html-block-body node))))
+       (%hw-newline context)
+       :descend))
     (table
-     (%hw-write-table context node))
-    (t
-     (error "Unsupported block node: ~S" node))))
+     (case phase
+       (:enter
+        (%hw-write-table-open context)
+        :descend)
+       (:leave
+        (%hw-write-table-close context))))
+    (table-row
+     (case phase
+       (:enter
+        (%hw-write-table-row-open context node)
+        :descend)
+       (:leave
+        (%hw-write-table-row-close context node))))
+    (table-cell
+     (case phase
+       (:enter
+        (%hw-write-table-cell-open context node)
+        :descend)
+       (:leave
+        (%hw-write-table-cell-close context)))))
+  (verify-node-dispatches :operation :html-renderer :families '(:block :inline))
+  (defun %hw-render-node-tree (context root)
+    (walk-node-tree root
+     (lambda (frame)
+       (let ((node (node-tree-frame-node frame))
+             (phase (node-tree-frame-phase frame))
+             (parent (node-tree-frame-parent frame))
+             (grandparent (node-tree-frame-grandparent frame))
+             (child-index (node-tree-frame-child-index frame))
+             (last-child-p (node-tree-frame-last-child-p frame)))
+         (setf (%html-writer-context-tree-parent context) parent
+               (%html-writer-context-tree-grandparent context) grandparent
+               (%html-writer-context-tree-child-index context) child-index
+               (%html-writer-context-tree-last-child-p context) last-child-p)
+         (let ((action
+                 (cond
+                   ((inline-node-p node)
+                    (%hw-render-inline-event context node phase))
+                   ((block-node-p node)
+                    (%hw-render-block-event context node phase))
+                   (t
+                    (error "Unsupported HTML node: ~S" node)))))
+           (if (eq phase :enter) action nil))))))
 
 (defun write-html-to-stream (document stream &key (raw-html :omit) unsafe-urls
                                                   (gfm t))
@@ -527,7 +664,7 @@
                     :footnote-order order
                     :footnote-ids footnote-ids
                     :footnote-reference-ids footnote-reference-ids)))
-      (%hw-write-block context document nil nil nil)
+      (%hw-render-node-tree context document)
       (%hw-write-footnotes context)))
   stream)
 

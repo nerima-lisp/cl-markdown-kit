@@ -28,17 +28,10 @@
       (setf codepoint #xFFFD))
     (string (code-char codepoint))))
 
-(defun unicode-whitespace-p (char)
-  (or (not (null (member (char-code char)
-                         '(#x09 #x0A #x0C #x0D)
-                         :test #'=)))
-      (eq (sb-unicode:general-category char) :zs)))
-
-(defun unicode-punctuation-p (char)
-  (not (null
-        (member (sb-unicode:general-category char)
-                '(:pc :pd :ps :pe :pi :pf :po :sm :sc :sk :so)
-                :test #'eq))))
+(defun unicode-whitespace-p (character)
+  (or (case (char-code character)
+        ((#x09 #x0A #x0C #x0D) t))
+      (eq (sb-unicode:general-category character) :zs)))
 
 (defun ascii-punctuation-p (char)
   (let ((code (char-code char)))
@@ -52,9 +45,11 @@
     (or (<= #x00 code #x1F)
         (= code #x7F))))
 
-(defun %link-label-space-p (char)
-  (not (null
-        (member (char-code char) '(#x20 #x09 #x0A #x0D) :test #'=))))
+(defun %pc-link-label-space-p (character)
+  (or (char= character #\Space)
+      (char= character #\Tab)
+      (char= character #\Newline)
+      (char= character #\Return)))
 
 (defun normalize-link-label (string)
   (let ((casefolded (sb-unicode:casefold string))
@@ -62,7 +57,7 @@
         (wrote-character nil))
     (with-output-to-string (output)
       (loop for char across casefolded
-            do (if (%link-label-space-p char)
+            do (if (%pc-link-label-space-p char)
                    (when wrote-character
                      (setf pending-space t))
                    (progn
@@ -71,3 +66,79 @@
                      (write-char char output)
                      (setf pending-space nil
                            wrote-character t)))))))
+
+(sb-ext:defglobal +html-c1-replacements+ '((#x80 . #x20AC) (#x82 . #x201A)
+    (#x83 . #x0192)
+    (#x84 . #x201E)
+    (#x85 . #x2026)
+    (#x86 . #x2020)
+    (#x87 . #x2021)
+    (#x88 . #x02C6)
+    (#x89 . #x2030)
+    (#x8A . #x0160)
+    (#x8B . #x2039)
+    (#x8C . #x0152)
+    (#x8E . #x017D)
+    (#x91 . #x2018)
+    (#x92 . #x2019)
+    (#x93 . #x201C)
+    (#x94 . #x201D)
+    (#x95 . #x2022)
+    (#x96 . #x2013)
+    (#x97 . #x2014)
+    (#x98 . #x02DC)
+    (#x99 . #x2122)
+    (#x9A . #x0161)
+    (#x9B . #x203A)
+    (#x9C . #x0153)
+    (#x9E . #x017E)
+    (#x9F . #x0178)))
+
+(defun %pc-space-p (character)
+  (or (char= character #\Space)
+      (char= character #\Tab)))
+
+(defun %pc-html-space-p (character)
+  (or (char= character #\Space)
+      (char= character #\Tab)
+      (char= character #\Newline)
+      (char= character #\Return)
+      (char= character #\Page)))
+
+(defun %pc-ascii-alpha-p (character)
+  (let ((code (char-code character)))
+    (or (<= #x41 code #x5A) (<= #x61 code #x7A))))
+
+(defun %pc-ascii-digit-p (character)
+  (let ((code (char-code character)))
+    (<= #x30 code #x39)))
+
+(defun %pc-ascii-alphanumeric-p (character)
+  (or (%pc-ascii-alpha-p character) (%pc-ascii-digit-p character)))
+
+(defun %pc-c1-replacement (codepoint)
+  (cdr (assoc codepoint +html-c1-replacements+ :test #'=)))
+
+(defun %pc-decode-numeric-reference (digits radix)
+  (let* ((decoded (decode-numeric-character-reference digits radix))
+         (replacement
+          (and decoded (%pc-c1-replacement (parse-integer digits :radix radix)))))
+    (if replacement
+        (string (code-char replacement))
+        decoded)))
+
+(defun %pc-commonmark-punctuation-p (character)
+  (or (ascii-punctuation-p character)
+      (case (sb-unicode:general-category character)
+        ((:pc :pd :ps :pe :pi :pf :po :sm :sc :sk :so) t)
+        (otherwise nil))))
+
+(defun %pc-unicode-domain-character-p (character)
+  (let ((codepoint (char-code character))
+        (category (sb-unicode:general-category character)))
+    (and (> codepoint #x7F)
+         (not (eq category :zs))
+         (not (case category
+                ((:pc :pd :ps :pe :pi :pf :po) t)))
+         (not (case category
+                ((:cc :cf :cs :co :cn) t))))))

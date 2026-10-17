@@ -40,7 +40,25 @@
    #:source-buffer-format
    #:source-buffer-span
    #:source-buffer-document-span
-   ;; AST base and traversal
+   ;; AST metadata and traversal
+   #:node-children
+   #:walk-node-tree
+   #:node-tree-frame-node
+   #:node-tree-frame-phase
+   #:node-tree-frame-parent
+   #:node-tree-frame-grandparent
+   #:node-tree-frame-previous-sibling
+   #:node-tree-frame-next-sibling
+   #:node-tree-frame-child-index
+   #:node-tree-frame-last-child-p
+   #:node-tree-frame-remaining-siblings
+   #:node-tree-frame-result
+   #:node-tree-frame-child-results
+   #:node-kind
+   #:node-family
+   #:node-semantic-attributes
+   #:node-edit-text-projection
+   ;; AST node types, constructors, predicates, and readers
    #:node
    #:node-p
    #:make-node
@@ -52,9 +70,6 @@
    #:inline-node
    #:inline-node-p
    #:make-inline-node
-   #:node-children
-   #:walk-nodes
-   ;; Block nodes
    #:document
    #:document-p
    #:make-document
@@ -62,10 +77,10 @@
    #:document-source
    #:document-source-format
    #:document-reference-index
-   #:document-max-nesting-depth
-   #:document-max-inline-delimiter-depth
    #:document-front-matter-p
    #:document-gfm-p
+   #:document-max-nesting-depth
+   #:document-max-inline-delimiter-depth
    #:front-matter
    #:front-matter-p
    #:make-front-matter
@@ -156,7 +171,6 @@
    #:footnote-definition-raw-label
    #:footnote-definition-normalized-label
    #:footnote-definition-children
-   ;; Inline nodes
    #:text
    #:text-p
    #:make-text
@@ -242,7 +256,6 @@
    ;; Query records and functions
    #:heading-record
    #:heading-record-p
-   #:make-heading-record
    #:heading-record-node
    #:heading-record-level
    #:heading-record-plain-text
@@ -250,7 +263,6 @@
    #:heading-record-section-span
    #:section-record
    #:section-record-p
-   #:make-section-record
    #:section-record-heading
    #:section-record-span
    #:section-record-address

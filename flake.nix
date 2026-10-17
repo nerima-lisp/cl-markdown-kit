@@ -1,5 +1,5 @@
 {
-  description = "Common Lisp CommonMark and GFM parser scaffold";
+  description = "CommonMark and GitHub Flavored Markdown parser for Common Lisp";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -42,6 +42,19 @@
       inputs.paredit-cli.inputs.treefmt-nix.follows = "treefmt-nix";
       inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
       inputs.cl-weave.inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
+      inputs.treefmt-nix.follows = "treefmt-nix";
+    };
+    cl-json-kit = {
+      url = "github:nerima-lisp/cl-json-kit/v1.2.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
+      inputs.cl-weave.follows = "cl-codec-kit/cl-weave";
+      inputs.treefmt-nix.follows = "treefmt-nix";
+    };
+    cl-process-kit = {
+      url = "github:nerima-lisp/cl-process-kit/v3.4.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
       inputs.treefmt-nix.follows = "treefmt-nix";
     };
     cl-yaml-kit = {
@@ -276,11 +289,16 @@
       cl-weave,
       cl-parser-kit,
       cl-codec-kit,
+      cl-json-kit,
+      cl-process-kit,
       cl-yaml-kit,
       commonmark-spec,
       cmark-gfm,
       treefmt-nix,
     }:
+    assert
+      builtins.hashFile "sha256" ./data/whatwg-entities.json
+      == "3d029331b82668ac319bc81802de45b24396df76816d9ba6cf8807c0a1e59a29";
     cl-nix-forge.lib.x86_64-linux.mkPackageFlake {
       inherit self nixpkgs;
       pname = "cl-markdown-kit";
@@ -293,32 +311,103 @@
       ];
       lispCheckDependencies = ctx: [
         cl-weave.packages.${ctx.system}.cl-weave
+        cl-json-kit.packages.${ctx.system}.cl-json-kit
+        cl-process-kit.packages.${ctx.system}.cl-process-kit
         cl-yaml-kit.packages.${ctx.system}.cl-yaml-kit
       ];
       packageArgs = ctx: {
         COMMONMARK_TEST_SUITE = "${commonmark-spec}/spec.txt";
         GFM_TEST_SUITE = "${cmark-gfm}/test/extensions.txt";
-        nativeBuildInputs = [ ctx.pkgs.perl ];
-        preCheck = ''
-          export PATH="${ctx.pkgs.perl}/bin:$PATH"
-        '';
       };
       sourceInclude = [
+        ./data
         ./docs
         ./scripts
       ];
-      timeoutSeconds = 1200;
+      timeoutSeconds = 300;
+      killAfterSeconds = 30;
+      meta = {
+        description = "CommonMark and GitHub Flavored Markdown parser for Common Lisp";
+        homepage = "https://github.com/nerima-lisp/cl-markdown-kit";
+        license = nixpkgs.lib.licenses.mit;
+        platforms = [ "x86_64-linux" ];
+      };
       docs.root = ./docs;
       treefmt.evalModule = treefmt-nix.lib.evalModule;
       extraOutputs = ctx: {
         checks.coverage = ctx.cl.mkCoverageReport {
           drv = ctx.package;
           entryPoint = "scripts/run-coverage.lisp";
-          timeoutSeconds = 1200;
+          timeoutSeconds = 300;
+          killAfterSeconds = 30;
+        };
+        checks.entity-data = ctx.cl.mkCommandCheck {
+          drv = ctx.package;
+          name = "entity-data-generator";
+          command = [
+            "${ctx.pkgs.sbcl}/bin/sbcl"
+            "--script"
+            "scripts/generate-html5-entities.lisp"
+            "--check"
+          ];
+          timeoutSeconds = 45;
+          killAfterSeconds = 30;
+        };
+        checks.fixture-generators = ctx.cl.mkCommandCheck {
+          drv = ctx.package;
+          name = "fixture-generators";
+          command = [
+            "${ctx.pkgs.bash}/bin/bash"
+            "-e"
+            "-c"
+            ''
+              "${ctx.pkgs.sbcl}/bin/sbcl" --script scripts/generate-block-structure-fixtures.lisp --check \
+                --commonmark-spec "${commonmark-spec}/spec.txt" \
+                --gfm-spec "${cmark-gfm}/test/extensions.txt" \
+                --cmark "${ctx.pkgs.cmark-gfm}/bin/cmark-gfm" \
+                --output t/data/block-structure-fixtures.lisp
+              "${ctx.pkgs.sbcl}/bin/sbcl" --script scripts/generate-inline-structure-fixtures.lisp --check \
+                --commonmark-spec "${commonmark-spec}/spec.txt" \
+                --gfm-spec "${cmark-gfm}/test/extensions.txt" \
+                --cmark "${ctx.pkgs.cmark-gfm}/bin/cmark-gfm" \
+                --output t/data/inline-structure-fixtures.lisp
+            ''
+          ];
+          nativeBuildInputs = [ ctx.pkgs.cmark-gfm ];
+          timeoutSeconds = 180;
+          killAfterSeconds = 30;
+        };
+        checks.coverage-gate = ctx.cl.mkCommandCheck {
+          drv = ctx.package;
+          name = "coverage-gate-regression";
+          command = [
+            "${ctx.pkgs.sbcl}/bin/sbcl"
+            "--script"
+            "scripts/test-coverage-gate.lisp"
+          ];
+          timeoutSeconds = 30;
           killAfterSeconds = 30;
         };
       };
       overrideOutputs = ctx: {
+        packages.docs = ctx.generated.packages.docs.overrideAttrs (old: {
+          buildPhase = ''
+            ${ctx.pkgs.coreutils}/bin/timeout --kill-after=30s 90s \
+              ${ctx.pkgs.bash}/bin/bash -e -c ${ctx.pkgs.lib.escapeShellArg old.buildPhase}
+          '';
+        });
+        checks.docs = ctx.generated.checks.docs.overrideAttrs (old: {
+          buildCommand = ''
+            ${ctx.pkgs.coreutils}/bin/timeout --kill-after=30s 15s \
+              ${ctx.pkgs.bash}/bin/bash -e -c ${ctx.pkgs.lib.escapeShellArg old.buildCommand}
+          '';
+        });
+        checks.formatting = ctx.generated.checks.formatting.overrideAttrs (old: {
+          buildCommand = ''
+            ${ctx.pkgs.coreutils}/bin/timeout --kill-after=30s 60s \
+              ${ctx.pkgs.bash}/bin/bash -e -c ${ctx.pkgs.lib.escapeShellArg old.buildCommand}
+          '';
+        });
         apps.test = {
           type = "app";
           program = "${

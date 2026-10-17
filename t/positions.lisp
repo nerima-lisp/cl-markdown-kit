@@ -118,7 +118,7 @@
        :reference-definition-markers))
     (cl-markdown-kit:text
      (unless (string= (cl-markdown-kit:text-value node)
-                      (cl-markdown-kit::%ip-unescape slice 0 (length slice)))
+                      (cl-markdown-kit::%pc-unescape slice 0 (length slice)))
        :text-source-spelling))
     (cl-markdown-kit:code-span
      (let ((run (cl-markdown-kit:code-span-backtick-run-length node)))
@@ -136,7 +136,7 @@
                        (cl-markdown-kit:emphasis-delimiter-character node))
                       (cl-markdown-kit:strong
                        (cl-markdown-kit:strong-delimiter-character node))))
-            (run (if (cl-markdown-kit:strong-p node) 2 1)))
+            (run (if (typep node 'cl-markdown-kit:strong) 2 1)))
        (unless (and (>= (length slice) (* 2 run))
                     (>= (positions-test-leading-run slice marker) run)
                     (>= (positions-test-trailing-run slice marker) run))
@@ -149,7 +149,7 @@
                     (> (length slice) (* 2 opening)))
          :strikethrough-delimiters)))
     ((or cl-markdown-kit:link cl-markdown-kit:image)
-     (let* ((image-p (cl-markdown-kit:image-p node))
+     (let* ((image-p (typep node 'cl-markdown-kit:image))
             (prefix (if image-p "![" "["))
             (kind (if image-p
                       (cl-markdown-kit:image-reference-kind node)

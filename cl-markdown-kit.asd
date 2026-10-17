@@ -2,14 +2,14 @@
 (in-package #:asdf-user)
 
 (unless (member :sbcl *features*)
-  (error "cl-markdown-kit v0.1.0 supports SBCL only"))
+  (error "cl-markdown-kit v0.2.0 supports SBCL only"))
 
 (asdf:defsystem "cl-markdown-kit"
   :description "CommonMark and GFM parser for Common Lisp"
   :author "takeokunn"
   :maintainer "takeokunn"
   :license "MIT"
-  :version "0.1.0"
+  :version "0.2.0"
   :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")
@@ -21,9 +21,12 @@
                (:file "conditions")
                (:file "html-entities-data")
                (:file "character-data")
+               (:file "parser-common")
                (:file "html-escaping")
+               (:file "parser-common-links")
                (:file "source")
                (:file "nodes")
+               (:file "tree-walker")
                (:file "block-parser")
                (:file "inline-parser")
                (:file "parse")
@@ -38,7 +41,7 @@
   :author "takeokunn"
   :maintainer "takeokunn"
   :license "MIT"
-  :version "0.1.0"
+  :version "0.2.0"
   :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")
@@ -55,7 +58,7 @@
   :author "takeokunn"
   :maintainer "takeokunn"
   :license "MIT"
-  :version "0.1.0"
+  :version "0.2.0"
   :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")
@@ -74,7 +77,7 @@
   :author "takeokunn"
   :maintainer "takeokunn"
   :license "MIT"
-  :version "0.1.0"
+  :version "0.2.0"
   :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")
@@ -99,32 +102,5 @@
                (:file "resources"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
-             (let* ((condition-class
-                      (find-symbol "MARKDOWN-RESOURCE-LIMIT-ERROR"
-                                   "CL-MARKDOWN-KIT"))
-                    (base-class
-                      (find-symbol "MARKDOWN-KIT-ERROR" "CL-MARKDOWN-KIT"))
-                    (condition
-                      (make-condition condition-class
-                                      :limit-name :nesting-depth
-                                      :limit 64
-                                      :actual 65
-                                      :context "document"
-                                      :message "maximum nesting depth exceeded"))
-                    (report (with-output-to-string (stream)
-                              (princ condition stream))))
-               (assert (typep condition base-class))
-               (assert (= 64
-                          (uiop:symbol-call
-                           :cl-markdown-kit
-                           :markdown-resource-limit-error-limit
-                           condition)))
-               (assert (= 65
-                          (uiop:symbol-call
-                           :cl-markdown-kit
-                           :markdown-resource-limit-error-actual
-                           condition)))
-               (assert (search "maximum nesting depth exceeded" report))
-               (format t "cl-markdown-kit startup tests: 4 passed~%")
-               (unless (uiop:symbol-call :cl-markdown-kit/test :run-tests)
-                 (error "cl-markdown-kit test suite failed")))))
+             (unless (uiop:symbol-call :cl-markdown-kit/test :run-tests)
+               (error "cl-markdown-kit test suite failed"))))

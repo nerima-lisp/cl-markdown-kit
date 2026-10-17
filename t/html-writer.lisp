@@ -328,6 +328,16 @@
             (cl-markdown-kit:make-footnote-definition
              :raw-label "unused" :normalized-label "unused")))
      :to-equal ""))
+  (it "rejects unsupported node values in documents"
+    (expect
+     (handler-case
+         (progn
+           (cl-markdown-kit:write-html
+            (cl-markdown-kit:make-document
+             :children (list (cl-markdown-kit:make-node))))
+           nil)
+       (error () t))
+     :to-be-truthy))
 
   (it "renders raw block HTML in escape mode and filters every tagfilter boundary"
     (let ((escaped
@@ -510,11 +520,22 @@
                           (cl-markdown-kit:make-footnote-reference
                            :raw-label "note" :normalized-label "note")
                           (cl-markdown-kit:make-emphasis
-                           :children (list (cl-markdown-kit:make-text
-                                            :value " nested")))))))))
+                           :children
+                           (list (cl-markdown-kit:make-text :value " nested")))
+                          (cl-markdown-kit:make-strong
+                           :children
+                           (list (cl-markdown-kit:make-text :value " strong")))
+                          (cl-markdown-kit:make-strikethrough
+                           :children
+                           (list (cl-markdown-kit:make-text :value " struck")))
+                          (cl-markdown-kit:make-image
+                           :destination "/nested"
+                           :children
+                           (list (cl-markdown-kit:make-text
+                                  :value " nested & image")))))))))
      :to-equal
      (format nil
-             "<p><img src=\"/alt\" alt=\"text &lt;code&gt; &lt;raw&gt;  auto nested\" /></p>~%")))
+             "<p><img src=\"/alt\" alt=\"text &lt;code&gt; &lt;raw&gt;  auto nested strong struck nested &amp; image\" /></p>~%")))
 
   (it "numbers repeated footnote references and handles definitions without paragraph endings"
     (let ((output
@@ -613,4 +634,30 @@
                  (html-writer-test-document) "not-a-stream")
                 nil)
        (type-error () t))
-     :to-be-truthy)))
+     :to-be-truthy))
+  (it "writes deeply nested block and inline trees"
+    (let ((inline (cl-markdown-kit:make-text :value "deep")))
+      (dotimes (depth 4096)
+        (setf inline
+              (cl-markdown-kit:make-emphasis
+               :children (list inline))))
+      (let ((node (cl-markdown-kit:make-paragraph
+                   :children (list inline))))
+        (dotimes (depth 256)
+          (setf node
+                (cl-markdown-kit:make-block-quote
+                 :children (list node))))
+        (let ((html (cl-markdown-kit:write-html
+                     (cl-markdown-kit:make-document
+                      :children (list node)))))
+          (labels ((count-occurrences (needle)
+                     (loop with start = 0
+                           for position = (search needle html :start2 start)
+                           while position
+                           count t
+                           do (setf start (+ position (length needle))))))
+            (expect (count-occurrences "<blockquote>") :to-equal 256)
+            (expect (count-occurrences "</blockquote>") :to-equal 256)
+            (expect (count-occurrences "<em>") :to-equal 4096)
+            (expect (count-occurrences "</em>") :to-equal 4096)
+            (expect (search "deep" html) :to-be-truthy)))))))

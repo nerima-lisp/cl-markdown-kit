@@ -64,11 +64,13 @@
 
 (defun block-parser-test-nodes-of-type (root predicate)
   (let ((nodes nil))
-    (cl-markdown-kit:walk-nodes
-     (lambda (node)
-       (when (funcall predicate node)
-         (push node nodes)))
-     root)
+    (cl-markdown-kit:walk-node-tree root
+     (lambda (frame)
+       (let ((node (cl-markdown-kit:node-tree-frame-node frame))
+             (phase (cl-markdown-kit:node-tree-frame-phase frame)))
+         (when (and (eq phase :enter) (funcall predicate node))
+           (push node nodes))
+         :descend)))
     (nreverse nodes)))
 
 (defun block-parser-test-fragments-for (result node)
@@ -354,7 +356,7 @@
               (block-parser-test-result source)))
            (children (cl-markdown-kit:document-children document)))
       (expect (length children) :to-equal 2)
-      (expect (every #'cl-markdown-kit:thematic-break-p children)
+      (expect (every #'(lambda (node) (typep node 'cl-markdown-kit:thematic-break)) children)
               :to-be-truthy)
       (expect (mapcar #'cl-markdown-kit:thematic-break-marker-character children)
               :to-equal (list #\* #\-))
@@ -373,7 +375,7 @@
            (setext (block-parser-test-only-child
                     (block-parser-test-document
                      (block-parser-test-result setext-source)))))
-      (expect (and (cl-markdown-kit:heading-p atx)
+      (expect (and (typep atx 'cl-markdown-kit:heading)
                    (= (cl-markdown-kit:heading-level atx) 2)
                    (eq (cl-markdown-kit:heading-style atx) :atx)
                    (char= (cl-markdown-kit:heading-marker-character atx) #\#)
@@ -381,7 +383,7 @@
                    (= (cl-markdown-kit:heading-closing-marker-length atx) 3)
                    (block-parser-test-span-is atx 0 12))
               :to-be-truthy)
-      (expect (and (cl-markdown-kit:heading-p setext)
+      (expect (and (typep setext 'cl-markdown-kit:heading)
                    (= (cl-markdown-kit:heading-level setext) 1)
                    (eq (cl-markdown-kit:heading-style setext) :setext)
                    (char= (cl-markdown-kit:heading-marker-character setext) #\=)
@@ -415,8 +417,8 @@
                        (block-parser-test-nodes-of-type
                         document
                         (lambda (node)
-                          (or (cl-markdown-kit:paragraph-p node)
-                              (cl-markdown-kit:heading-p node))))
+                          (or (typep node 'cl-markdown-kit:paragraph)
+                              (typep node 'cl-markdown-kit:heading))))
                        append
                        (mapcar
                         #'cl-markdown-kit::inline-fragment-text
@@ -434,7 +436,7 @@
            (heading-document (block-parser-test-document heading-result))
            (headings
              (block-parser-test-nodes-of-type
-              heading-document #'cl-markdown-kit:heading-p))
+              heading-document #'(lambda (node) (typep node 'cl-markdown-kit:heading))))
            (reference-example
              (block-parser-test-commonmark-example "commonmark-0210"))
            (reference-source
@@ -456,9 +458,8 @@
                     heading-document heading-source))
               :to-be-truthy)
       (expect (and (= (length reference-children) 2)
-                   (cl-markdown-kit:link-reference-definition-p
-                    (first reference-children))
-                   (cl-markdown-kit:paragraph-p paragraph)
+                   (typep (first reference-children) 'cl-markdown-kit:link-reference-definition)
+                   (typep paragraph 'cl-markdown-kit:paragraph)
                    (string= (cl-markdown-kit::inline-fragment-text
                              (first (block-parser-test-fragments-for
                                      reference-result paragraph)))
@@ -473,8 +474,8 @@
            (document (block-parser-test-document
                       (block-parser-test-result source :front-matter nil)))
            (code (first (block-parser-test-nodes-of-type
-                         document #'cl-markdown-kit:code-block-p))))
-      (expect (and (cl-markdown-kit:code-block-p code)
+                         document #'(lambda (node) (typep node 'cl-markdown-kit:code-block))))))
+      (expect (and (typep code 'cl-markdown-kit:code-block)
                    (string= (cl-markdown-kit:code-block-body code)
                             (format nil "  foo~%"))
                    (block-parser-test-ranges-valid-p document source))
@@ -504,12 +505,11 @@
                    (= (cl-parser-kit:span-end
                        (cl-markdown-kit:node-span front-matter))
                       16)
-                   (cl-markdown-kit:heading-p (second children))
+                   (typep (second children) 'cl-markdown-kit:heading)
                    (= (length unclosed-children) 3)
-                   (cl-markdown-kit:thematic-break-p
-                    (first unclosed-children))
-                   (cl-markdown-kit:paragraph-p (second unclosed-children))
-                   (cl-markdown-kit:heading-p (third unclosed-children)))
+                   (typep (first unclosed-children) 'cl-markdown-kit:thematic-break)
+                   (typep (second unclosed-children) 'cl-markdown-kit:paragraph)
+                   (typep (third unclosed-children) 'cl-markdown-kit:heading))
               :to-be-truthy)))
 
   (it "defers paragraph text as a source-mapped inline fragment"
@@ -521,7 +521,7 @@
              (cl-markdown-kit::block-parse-result-inline-fragments result))
            (fragment (first fragments)))
       (expect (and (= (length fragments) 1)
-                   (cl-markdown-kit:paragraph-p paragraph)
+                   (typep paragraph 'cl-markdown-kit:paragraph)
                    (eq (cl-markdown-kit::inline-fragment-node fragment)
                        paragraph)
                    (string= (cl-markdown-kit::inline-fragment-text fragment)
@@ -541,7 +541,7 @@
            (indented (block-parser-test-only-child
                       (block-parser-test-document
                        (block-parser-test-result indented-source)))))
-      (expect (and (cl-markdown-kit:code-block-p fenced)
+      (expect (and (typep fenced 'cl-markdown-kit:code-block)
                    (eq (cl-markdown-kit:code-block-style fenced) :fenced)
                    (char= (cl-markdown-kit:code-block-fence-character fenced)
                           #\`)
@@ -552,7 +552,7 @@
                             (format nil "(print 1)~%"))
                    (block-parser-test-span-is fenced 0 (length fenced-source)))
               :to-be-truthy)
-      (expect (and (cl-markdown-kit:code-block-p indented)
+      (expect (and (typep indented 'cl-markdown-kit:code-block)
                    (eq (cl-markdown-kit:code-block-style indented) :indented)
                    (null (cl-markdown-kit:code-block-info-string indented))
                    (search "one" (cl-markdown-kit:code-block-body indented))
@@ -567,7 +567,7 @@
                        (block-parser-test-result source))))
            (code (first children)))
       (expect (and (= (length children) 1)
-                   (cl-markdown-kit:code-block-p code)
+                   (typep code 'cl-markdown-kit:code-block)
                    (string= (cl-markdown-kit:code-block-body code)
                             (format nil "code~%"))
                    (block-parser-test-span-is code 0 8))
@@ -588,7 +588,7 @@
                       (block-parser-test-document
                        (block-parser-test-result source)))))
           (push (cl-markdown-kit:html-block-kind html) kinds)
-          (expect (and (cl-markdown-kit:html-block-p html)
+          (expect (and (typep html 'cl-markdown-kit:html-block)
                        (cl-markdown-kit:html-block-kind html)
                        (string= (cl-markdown-kit:html-block-body html) source)
                        (block-parser-test-span-is html 0 (length source)))
@@ -620,17 +620,17 @@
              (cl-markdown-kit:document-children
               (block-parser-test-document
                (block-parser-test-result valid-end-source)))))
-      (expect (and (cl-markdown-kit:html-block-p self-closing)
+      (expect (and (typep self-closing 'cl-markdown-kit:html-block)
                    (= (cl-markdown-kit:html-block-kind self-closing) 7)
-                   (cl-markdown-kit:paragraph-p inline-tag)
-                   (cl-markdown-kit:paragraph-p bare-declaration)
-                   (cl-markdown-kit:html-block-p invalid-end)
+                   (typep inline-tag 'cl-markdown-kit:paragraph)
+                   (typep bare-declaration 'cl-markdown-kit:paragraph)
+                   (typep invalid-end 'cl-markdown-kit:html-block)
                    (= (cl-markdown-kit:html-block-kind invalid-end) 1)
                    (string= (cl-markdown-kit:html-block-body invalid-end)
                             invalid-end-source)
                    (= (length valid-end-children) 2)
-                   (cl-markdown-kit:html-block-p (first valid-end-children))
-                   (cl-markdown-kit:paragraph-p (second valid-end-children)))
+                   (typep (first valid-end-children) 'cl-markdown-kit:html-block)
+                   (typep (second valid-end-children) 'cl-markdown-kit:paragraph))
               :to-be-truthy)))
 
   (it "indexes source-ordered link reference definitions"
@@ -641,8 +641,8 @@
            (duplicate (second (cl-markdown-kit:document-children document)))
            (reference-index
              (cl-markdown-kit::block-parse-result-reference-index result)))
-      (expect (and (cl-markdown-kit:link-reference-definition-p definition)
-                   (cl-markdown-kit:link-reference-definition-p duplicate)
+      (expect (and (typep definition 'cl-markdown-kit:link-reference-definition)
+                   (typep duplicate 'cl-markdown-kit:link-reference-definition)
                    (string= (cl-markdown-kit:link-reference-definition-raw-label
                              definition)
                             "Ref")
@@ -673,7 +673,7 @@
                 "[ref]: /a\\+&amp;&#66; \"t\\+&quot;\""))))
            (definition (first children)))
       (expect (and (= (length children) 1)
-                   (cl-markdown-kit:link-reference-definition-p definition)
+                   (typep definition 'cl-markdown-kit:link-reference-definition)
                    (string= (cl-markdown-kit:link-reference-definition-destination
                              definition)
                             "/a+&B")
@@ -695,7 +695,7 @@
              (cl-markdown-kit:document-children
               (block-parser-test-document destination-result))))
       (expect (and (= (length children) 3)
-                   (every #'cl-markdown-kit:link-reference-definition-p
+                   (every #'(lambda (node) (typep node 'cl-markdown-kit:link-reference-definition))
                           (subseq children 0 2))
                    (string= (cl-markdown-kit:link-reference-definition-title
                              (first children))
@@ -703,17 +703,16 @@
                    (string= (cl-markdown-kit:link-reference-definition-destination
                              (second children))
                             "/next")
-                   (cl-markdown-kit:paragraph-p (third children))
+                   (typep (third children) 'cl-markdown-kit:paragraph)
                    (eq (gethash "multi" index) (first children))
                    (eq (gethash "next" index) (second children)))
               :to-be-truthy)
       (expect (and (= (length destination-children) 2)
-                   (cl-markdown-kit:link-reference-definition-p
-                    (first destination-children))
+                   (typep (first destination-children) 'cl-markdown-kit:link-reference-definition)
                    (string= (cl-markdown-kit:link-reference-definition-destination
                              (first destination-children))
                             "/destination")
-                   (cl-markdown-kit:paragraph-p (second destination-children)))
+                   (typep (second destination-children) 'cl-markdown-kit:paragraph))
               :to-be-truthy)))
 
   (it "accepts the block nesting limit and signals one level beyond it"
@@ -734,7 +733,7 @@
                    condition)))
              (quote-depth (node)
                (loop with depth = 0
-                     while (cl-markdown-kit:block-quote-p node)
+                     while (typep node 'cl-markdown-kit:block-quote)
                      do (incf depth)
                         (setf node
                               (first
@@ -794,43 +793,40 @@
                (block-parser-test-commonmark-example "commonmark-0250"))))
            (nested (block-parser-test-document nested-result))
            (outer-quote (block-parser-test-only-child nested)))
-      (expect (and (cl-markdown-kit:block-quote-p quoted-block)
+      (expect (and (typep quoted-block 'cl-markdown-kit:block-quote)
                    (= (length quoted-children) 2)
-                   (cl-markdown-kit:heading-p (first quoted-children))
-                   (cl-markdown-kit:paragraph-p (second quoted-children)))
+                   (typep (first quoted-children) 'cl-markdown-kit:heading)
+                   (typep (second quoted-children) 'cl-markdown-kit:paragraph))
               :to-be-truthy)
       (expect (and (= (length lazy-children) 2)
-                   (cl-markdown-kit:heading-p (first lazy-children))
-                   (cl-markdown-kit:paragraph-p (second lazy-children))
+                   (typep (first lazy-children) 'cl-markdown-kit:heading)
+                   (typep (second lazy-children) 'cl-markdown-kit:paragraph)
                    (string= (cl-markdown-kit::inline-fragment-text
                              (first (block-parser-test-fragments-for
                                      lazy-result (second lazy-children))))
                             (format nil "bar~%baz")))
               :to-be-truthy)
       (expect (and (= (length separate-quotes) 2)
-                   (every #'cl-markdown-kit:block-quote-p separate-quotes)
+                   (every #'(lambda (node) (typep node 'cl-markdown-kit:block-quote)) separate-quotes)
                    (every (lambda (quote)
                             (and (= (length (cl-markdown-kit:block-quote-children
                                             quote))
                                     1)
-                                 (cl-markdown-kit:paragraph-p
-                                  (first (cl-markdown-kit:block-quote-children
-                                          quote)))))
+                                 (typep (first (cl-markdown-kit:block-quote-children
+                                          quote)) 'cl-markdown-kit:paragraph)))
                           separate-quotes))
               :to-be-truthy)
-      (expect (and (cl-markdown-kit:block-quote-p outer-quote)
-                   (cl-markdown-kit:block-quote-p
-                    (block-parser-test-only-child outer-quote))
-                   (cl-markdown-kit:block-quote-p
-                    (block-parser-test-only-child
-                     (block-parser-test-only-child outer-quote)))
+      (expect (and (typep outer-quote 'cl-markdown-kit:block-quote)
+                   (typep (block-parser-test-only-child outer-quote) 'cl-markdown-kit:block-quote)
+                   (typep (block-parser-test-only-child
+                     (block-parser-test-only-child outer-quote)) 'cl-markdown-kit:block-quote)
                    (let* ((inner-quote
                             (block-parser-test-only-child
                              (block-parser-test-only-child outer-quote)))
                           (paragraph
                             (block-parser-test-only-child inner-quote))
                           (result nested-result))
-                     (and (cl-markdown-kit:paragraph-p paragraph)
+                     (and (typep paragraph 'cl-markdown-kit:paragraph)
                           (string= (cl-markdown-kit::inline-fragment-text
                                     (first (block-parser-test-fragments-for
                                             result paragraph)))
@@ -846,7 +842,7 @@
              (block-parser-test-document nested-loose-result))
            (nested-loose-lists
              (block-parser-test-nodes-of-type
-              nested-loose-document #'cl-markdown-kit:list-node-p))
+              nested-loose-document #'(lambda (node) (typep node 'cl-markdown-kit:list-node))))
            (loose-result
              (block-parser-test-result
               (spec-example-markdown
@@ -854,7 +850,7 @@
            (loose-document (block-parser-test-document loose-result))
            (loose-lists
              (block-parser-test-nodes-of-type
-              loose-document #'cl-markdown-kit:list-node-p))
+              loose-document #'(lambda (node) (typep node 'cl-markdown-kit:list-node))))
            (separate-items-result
              (block-parser-test-result
               (spec-example-markdown
@@ -863,7 +859,7 @@
              (block-parser-test-document separate-items-result))
            (separate-items-lists
              (block-parser-test-nodes-of-type
-              separate-items-document #'cl-markdown-kit:list-node-p)))
+              separate-items-document #'(lambda (node) (typep node 'cl-markdown-kit:list-node)))))
       (expect (and (= (length nested-loose-lists) 2)
                    (equal (mapcar #'cl-markdown-kit:list-node-tight-p
                                   nested-loose-lists)
@@ -923,11 +919,11 @@
               (block-parser-test-only-child
                (block-parser-test-document
                 (block-parser-test-result unmatched-source))))))
-      (expect (and (cl-markdown-kit:table-p alignment-table)
+      (expect (and (typep alignment-table 'cl-markdown-kit:table)
                    (equal (cl-markdown-kit:table-alignments alignment-table)
                           '(:left nil :center nil :right)))
               :to-be-truthy)
-      (expect (and (cl-markdown-kit:table-p pipe-table)
+      (expect (and (typep pipe-table 'cl-markdown-kit:table)
                    (= (length rows) 5)
                    (every (lambda (row)
                             (= (length (cl-markdown-kit:table-row-cells row)) 2))
@@ -979,18 +975,12 @@
               (block-parser-test-result table-source))))
       (expect (and (= (length (cl-markdown-kit:document-children table-document))
                       1)
-                   (cl-markdown-kit:paragraph-p
-                    (first (cl-markdown-kit:document-children table-document)))
-                   (cl-markdown-kit:list-item-p
-                    (first (cl-markdown-kit:list-node-items task-list)))
-                   (not (cl-markdown-kit:task-list-item-p
-                         (first (cl-markdown-kit:list-node-items task-list))))
-                   (cl-markdown-kit:paragraph-p
-                    (block-parser-test-only-child footnote-document))
-                   (cl-markdown-kit:footnote-definition-p
-                    (block-parser-test-only-child gfm-footnote-document))
-                   (cl-markdown-kit:table-p
-                    (block-parser-test-only-child table-default-document)))
+                   (typep (first (cl-markdown-kit:document-children table-document)) 'cl-markdown-kit:paragraph)
+                   (typep (first (cl-markdown-kit:list-node-items task-list)) 'cl-markdown-kit:list-item)
+                   (not (typep (first (cl-markdown-kit:list-node-items task-list)) 'cl-markdown-kit:task-list-item))
+                   (typep (block-parser-test-only-child footnote-document) 'cl-markdown-kit:paragraph)
+                   (typep (block-parser-test-only-child gfm-footnote-document) 'cl-markdown-kit:footnote-definition)
+                   (typep (block-parser-test-only-child table-default-document) 'cl-markdown-kit:table))
               :to-be-truthy)))
 
   (it "recognizes a table immediately after a paragraph and preserves table-cell fragments"
@@ -1002,8 +992,8 @@
            (table-rows (cl-markdown-kit:table-rows table))
            (body-cells (cl-markdown-kit:table-row-cells (second table-rows))))
       (expect (and (= (length children) 2)
-                   (cl-markdown-kit:paragraph-p paragraph)
-                   (cl-markdown-kit:table-p table)
+                   (typep paragraph 'cl-markdown-kit:paragraph)
+                   (typep table 'cl-markdown-kit:table)
                    (string= (cl-markdown-kit::inline-fragment-text
                              (first (block-parser-test-fragments-for
                                      result paragraph)))
@@ -1024,7 +1014,7 @@
                    (block-parser-test-document result)))
            (rows (cl-markdown-kit:table-rows table))
            (cells (cl-markdown-kit:table-row-cells (second rows))))
-      (expect (and (cl-markdown-kit:table-p table)
+      (expect (and (typep table 'cl-markdown-kit:table)
                    (= (length rows) 2)
                    (= (length cells) 1)
                    (string= (cl-markdown-kit::inline-fragment-text
@@ -1039,7 +1029,7 @@
                    (block-parser-test-document result)))
            (rows (cl-markdown-kit:table-rows table))
            (body-cells (cl-markdown-kit:table-row-cells (second rows))))
-      (expect (and (cl-markdown-kit:table-p table)
+      (expect (and (typep table 'cl-markdown-kit:table)
                    (= (length rows) 2)
                    (= (length body-cells) 2)
                    (equal (mapcar
@@ -1056,7 +1046,7 @@
            (document (block-parser-test-document result))
            (definitions
              (block-parser-test-nodes-of-type
-              document #'cl-markdown-kit:footnote-definition-p))
+              document #'(lambda (node) (typep node 'cl-markdown-kit:footnote-definition))))
            (labels (mapcar #'cl-markdown-kit:footnote-definition-raw-label
                            definitions))
            (unused (find "unused" definitions
@@ -1074,8 +1064,8 @@
                    (some (lambda (text) (search "[^footnote]" text))
                          fragment-texts)
                    (some (lambda (node)
-                           (and (cl-markdown-kit:footnote-definition-p node)
-                                (some #'cl-markdown-kit:block-quote-p
+                           (and (typep node 'cl-markdown-kit:footnote-definition)
+                                (some #'(lambda (node) (typep node 'cl-markdown-kit:block-quote))
                                       (cl-markdown-kit:footnote-definition-children
                                        node))))
                          definitions))
@@ -1101,7 +1091,7 @@
              (block-parser-test-document repeated-result))
            (repeated-definitions
              (block-parser-test-nodes-of-type
-              repeated-document #'cl-markdown-kit:footnote-definition-p))
+              repeated-document #'(lambda (node) (typep node 'cl-markdown-kit:footnote-definition))))
            (repeated-text (format nil "~{~A~^ ~}"
                                   (block-parser-test-fragment-texts
                                    repeated-result)))
@@ -1109,7 +1099,7 @@
            (escaped-definitions
              (block-parser-test-nodes-of-type
               (block-parser-test-document escaped-result)
-              #'cl-markdown-kit:footnote-definition-p)))
+              #'(lambda (node) (typep node 'cl-markdown-kit:footnote-definition)))))
       (expect (and (equal (mapcar
                            #'cl-markdown-kit:footnote-definition-raw-label
                            repeated-definitions)
@@ -1134,7 +1124,7 @@
              (result (block-parser-test-result source))
              (document (block-parser-test-document result))
              (tasks (block-parser-test-nodes-of-type
-                     document #'cl-markdown-kit:task-list-item-p)))
+                     document #'(lambda (node) (typep node 'cl-markdown-kit:task-list-item)))))
         (let ((expected-states
                 (if (string= id "gfm-0028")
                     '(nil t)
@@ -1165,16 +1155,16 @@
         (when (member id '("gfm-0029" "gfm-0030") :test #'string=)
           (expect (and (= (length tasks) 4)
                        (= (length (remove-if
-                                   #'cl-markdown-kit:task-list-item-p
+                                   #'(lambda (node) (typep node 'cl-markdown-kit:task-list-item))
                                    (block-parser-test-nodes-of-type
-                                    document #'cl-markdown-kit:list-item-p)))
+                                    document #'(lambda (node) (typep node 'cl-markdown-kit:list-item)))))
                           4))
                   :to-be-truthy))))
     (let* ((source "- [X] uppercase")
            (document (block-parser-test-document
                       (block-parser-test-result source)))
            (task (first (block-parser-test-nodes-of-type
-                         document #'cl-markdown-kit:task-list-item-p)))
+                         document #'(lambda (node) (typep node 'cl-markdown-kit:task-list-item)))))
            (marker (cl-markdown-kit:task-list-item-task-marker-span task)))
       (expect (and (cl-markdown-kit:task-list-item-checked-p task)
                    (char= (cl-markdown-kit:task-list-item-original-marker-character
@@ -1209,7 +1199,7 @@
                        (format nil "~C " #\Tab) 0 2 2)
                       3)
                    (equal quote-indent '(1 4))
-                   (cl-markdown-kit::%bp-prefix-p "Ab" "ab" 0 t)
+                   (cl-markdown-kit::%bp-prefix-p "Ab" "Ab" 0)
                    (string= (cl-markdown-kit::normalize-link-label "ASCII")
                             "ascii")
                    (string= (cl-markdown-kit::normalize-link-label "Ä")
@@ -1244,12 +1234,11 @@
              (cl-markdown-kit::%bp-parse-destination "" 0))
            (escaped-title
              (multiple-value-list
-              (cl-markdown-kit::%bp-parse-title
-               "\"escaped \\\" title\"" 0)))
+              (cl-markdown-kit::%pc-parse-title "\"escaped \\\" title\"" 0 (length "\"escaped \\\" title\"") :backslash-mode :any-character)))
            (unfinished-title
-             (cl-markdown-kit::%bp-parse-title "\"unfinished" 0))
-           (empty-title (cl-markdown-kit::%bp-parse-title "" 0))
-           (ordinary-title (cl-markdown-kit::%bp-parse-title "plain" 0))
+             (cl-markdown-kit::%pc-parse-title "\"unfinished" 0 (length "\"unfinished") :backslash-mode :any-character))
+           (empty-title (cl-markdown-kit::%pc-parse-title "" 0 (length "") :backslash-mode :any-character))
+           (ordinary-title (cl-markdown-kit::%pc-parse-title "plain" 0 (length "plain") :backslash-mode :any-character))
            (valid-definition
              (multiple-value-list
               (cl-markdown-kit::%bp-link-definition
@@ -1542,12 +1531,12 @@
              (block-parser-test-nodes-of-type
               (block-parser-test-document
                (block-parser-test-result "> [^quote]: body"))
-              #'cl-markdown-kit:footnote-definition-p))
+              #'(lambda (node) (typep node 'cl-markdown-kit:footnote-definition))))
            (listed-footnote
              (block-parser-test-nodes-of-type
               (block-parser-test-document
                (block-parser-test-result "- [^list]: body"))
-              #'cl-markdown-kit:footnote-definition-p)))
+              #'(lambda (node) (typep node 'cl-markdown-kit:footnote-definition)))))
       (expect (and (string= decoded-references
                             "&BBB&#xZZ;&#x;&#;&; &amp")
                    (string= vector-body "body")
@@ -1567,9 +1556,8 @@
                    (null blank-title)
                    (first definition-before-blank)
                    (= (length direct-lines) 1)
-                   (cl-markdown-kit:paragraph-p (first direct-lines))
-                   (cl-markdown-kit:paragraph-p
-                    (block-parser-test-only-child default-parse))
+                   (typep (first direct-lines) 'cl-markdown-kit:paragraph)
+                   (typep (block-parser-test-only-child default-parse) 'cl-markdown-kit:paragraph)
                    (= (length quoted-footnote) 1)
                    (= (length listed-footnote) 1))
               :to-be-truthy)
@@ -1707,11 +1695,11 @@
                    (null empty-title-opener))
               :to-be-truthy)
       (expect (and (= (length (block-parser-test-nodes-of-type
-                               list-document #'cl-markdown-kit:list-node-p))
+                               list-document #'(lambda (node) (typep node 'cl-markdown-kit:list-node))))
                       1)
                    (= (length (block-parser-test-nodes-of-type
                                footnote-document
-                               #'cl-markdown-kit:footnote-definition-p))
+                               #'(lambda (node) (typep node 'cl-markdown-kit:footnote-definition))))
                       1))
               :to-be-truthy)
       (expect (and (null (first empty-tag-name))
@@ -1729,9 +1717,9 @@
            (list-result (block-parser-test-result list-source))
            (list-document (block-parser-test-document list-result))
            (lists (block-parser-test-nodes-of-type
-                   list-document #'cl-markdown-kit:list-node-p))
+                   list-document #'(lambda (node) (typep node 'cl-markdown-kit:list-node))))
            (tasks (block-parser-test-nodes-of-type
-                   list-document #'cl-markdown-kit:task-list-item-p))
+                   list-document #'(lambda (node) (typep node 'cl-markdown-kit:task-list-item))))
            (first-item (first (cl-markdown-kit:list-node-items (first lists))))
            (first-paragraph (block-parser-test-only-child first-item))
            (footnote-source
@@ -1739,7 +1727,7 @@
            (footnote-result (block-parser-test-result footnote-source))
            (footnotes (block-parser-test-nodes-of-type
                        (block-parser-test-document footnote-result)
-                       #'cl-markdown-kit:footnote-definition-p))
+                       #'(lambda (node) (typep node 'cl-markdown-kit:footnote-definition))))
            (index (cl-markdown-kit::block-parse-result-reference-index
                    footnote-result)))
       (expect (and (= (length lists) 2)
