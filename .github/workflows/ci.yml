@@ -40,7 +40,7 @@ jobs:
       # Runs the SBCL test suite (checks.default), the treefmt formatting gate
       # (checks.formatting), the coverage gate (checks.coverage), and the
       # mkdocs --strict build (checks.docs). The coverage check has its own
-      # 1200-second timeout in flake.nix and the job has a 25-minute ceiling.
+      # 300-second timeout in flake.nix and the job has a 25-minute ceiling.
       #
       # CI intentionally verifies the single supported system: x86_64-linux.
       - name: Check flake
