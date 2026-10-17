@@ -527,10 +527,15 @@
                            (list (cl-markdown-kit:make-text :value " strong")))
                           (cl-markdown-kit:make-strikethrough
                            :children
-                           (list (cl-markdown-kit:make-text :value " struck")))))))))
+                           (list (cl-markdown-kit:make-text :value " struck")))
+                          (cl-markdown-kit:make-image
+                           :destination "/nested"
+                           :children
+                           (list (cl-markdown-kit:make-text
+                                  :value " nested & image")))))))))
      :to-equal
      (format nil
-             "<p><img src=\"/alt\" alt=\"text &lt;code&gt; &lt;raw&gt;  auto nested strong struck\" /></p>~%")))
+             "<p><img src=\"/alt\" alt=\"text &lt;code&gt; &lt;raw&gt;  auto nested strong struck nested &amp; image\" /></p>~%")))
 
   (it "numbers repeated footnote references and handles definitions without paragraph endings"
     (let ((output
