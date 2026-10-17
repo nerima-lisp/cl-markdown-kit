@@ -212,7 +212,7 @@
   (let* ((line (nth (1- line-number) lines))
          (search-from 0)
          (length (length line)))
-    (loop for opener = (search "^[" line :start2 search-from)
+    (loop for opener = (search "[^" line :start2 search-from)
           while opener
           do (let* ((label-start (+ opener 2))
                     (cursor label-start))
@@ -721,7 +721,7 @@
                   "")))
         (unless
             (and (>= (length source) 4)
-                 (starts-with-at-p source "^[" 0)
+                 (starts-with-at-p source "[^" 0)
                  (char= (char source (1- (length source))) #\]))
           (fail "~A: footnote sourcepos ~S does not select [^label]"
                 (example-identifier example)
