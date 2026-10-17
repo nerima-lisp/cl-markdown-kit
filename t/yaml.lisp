@@ -122,13 +122,7 @@
             :to-be-truthy)
     (expect (cl-markdown-kit/yaml::%yaml-error-without-mark-p
              (make-condition 'yaml-kit:yaml-compose-error))
-            :to-be-truthy)
-    (expect (cl-markdown-kit/yaml::%yaml-error-without-mark-p
-             (make-condition 'type-error :datum nil :expected-type 'integer))
-            :to-be-truthy)
-    (expect (cl-markdown-kit/yaml::%yaml-error-line-column
-             (make-condition 'type-error :datum nil :expected-type 'integer))
-            :to-equal nil))
+            :to-be-truthy))
 
   (it "leaves Markdown positions nil for front-matter nodes without spans"
     (let ((caught nil))

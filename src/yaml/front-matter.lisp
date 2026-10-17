@@ -50,28 +50,23 @@
         finally (return t)))
 
 (defun %yaml-error-without-mark-p (condition)
-  (typecase condition
-    (yaml-kit:yaml-parse-error
-     (let ((line (yaml-kit:yaml-parse-error-line condition))
-           (column (yaml-kit:yaml-parse-error-column condition)))
-       (or (not (and (integerp line) (integerp column)))
-           (and (= line 1) (= column 1)
-                (zerop (yaml-kit:yaml-parse-error-offset condition))))))
-    (yaml-kit:yaml-compose-error
-     (null (yaml-kit:yaml-compose-error-mark condition)))
-    (t t)))
+  (if (typep condition 'yaml-kit:yaml-parse-error)
+      (let ((line (yaml-kit:yaml-parse-error-line condition))
+            (column (yaml-kit:yaml-parse-error-column condition)))
+        (or (not (and (integerp line) (integerp column)))
+            (and (= line 1) (= column 1)
+                 (zerop (yaml-kit:yaml-parse-error-offset condition)))))
+      (null (yaml-kit:yaml-compose-error-mark condition))))
 
 (defun %yaml-error-line-column (condition)
-  (typecase condition
-    (yaml-kit:yaml-parse-error
-     (unless (%yaml-error-without-mark-p condition)
-       (values (yaml-kit:yaml-parse-error-line condition)
-               (yaml-kit:yaml-parse-error-column condition))))
-    (yaml-kit:yaml-compose-error
-     (unless (%yaml-error-without-mark-p condition)
-       (let ((mark (yaml-kit:yaml-compose-error-mark condition)))
-         (values (yaml-kit:mark-line mark)
-                 (yaml-kit:mark-column mark)))))))
+  (if (typep condition 'yaml-kit:yaml-parse-error)
+      (unless (%yaml-error-without-mark-p condition)
+        (values (yaml-kit:yaml-parse-error-line condition)
+                (yaml-kit:yaml-parse-error-column condition)))
+      (unless (%yaml-error-without-mark-p condition)
+        (let ((mark (yaml-kit:yaml-compose-error-mark condition)))
+          (values (yaml-kit:mark-line mark)
+                  (yaml-kit:mark-column mark))))))
 
 (defun %markdown-yaml-error-location (front-matter condition)
   (let ((span (cl-markdown-kit:node-span front-matter)))
