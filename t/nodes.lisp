@@ -89,38 +89,99 @@
                         table-row table-cell footnote-definition text code-span
                         html-inline soft-break hard-break emphasis strong link
                         image strikethrough autolink footnote-reference))
-           (predicates (list #'cl-markdown-kit:node-p
-                             #'cl-markdown-kit:block-node-p
-                             #'cl-markdown-kit:inline-node-p
-                             #'cl-markdown-kit:document-p
+           (predicates (list #'(lambda (node) (typep node 'cl-markdown-kit:node))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:block-node))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:inline-node))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:document))
                              #'cl-markdown-kit:front-matter-p
-                             #'cl-markdown-kit:block-quote-p
-                             #'cl-markdown-kit:list-node-p
-                             #'cl-markdown-kit:list-item-p
-                             #'cl-markdown-kit:task-list-item-p
-                             #'cl-markdown-kit:paragraph-p
-                             #'cl-markdown-kit:heading-p
-                             #'cl-markdown-kit:thematic-break-p
-                             #'cl-markdown-kit:code-block-p
-                             #'cl-markdown-kit:html-block-p
-                             #'cl-markdown-kit:link-reference-definition-p
-                             #'cl-markdown-kit:table-p
-                             #'cl-markdown-kit:table-row-p
-                             #'cl-markdown-kit:table-cell-p
-                             #'cl-markdown-kit:footnote-definition-p
-                             #'cl-markdown-kit:text-p
-                             #'cl-markdown-kit:code-span-p
-                             #'cl-markdown-kit:html-inline-p
-                             #'cl-markdown-kit:soft-break-p
-                             #'cl-markdown-kit:hard-break-p
-                             #'cl-markdown-kit:emphasis-p
-                             #'cl-markdown-kit:strong-p
-                             #'cl-markdown-kit:link-p
-                             #'cl-markdown-kit:image-p
-                             #'cl-markdown-kit:strikethrough-p
-                             #'cl-markdown-kit:autolink-p
-                             #'cl-markdown-kit:footnote-reference-p)))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:block-quote))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:list-node))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:list-item))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:task-list-item))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:paragraph))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:heading))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:thematic-break))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:code-block))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:html-block))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:link-reference-definition))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:table))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:table-row))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:table-cell))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:footnote-definition))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:text))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:code-span))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:html-inline))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:soft-break))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:hard-break))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:emphasis))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:strong))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:link))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:image))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:strikethrough))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:autolink))
+                             #'(lambda (node) (typep node 'cl-markdown-kit:footnote-reference)))))
       (expect (length nodes) :to-equal 31)
+      (let ((concrete-nodes (nthcdr 3 nodes)))
+        (expect (mapcar (function cl-markdown-kit:node-kind) concrete-nodes)
+                :to-equal
+                (quote
+                 (:document :front-matter :block-quote :list :list-item
+                  :task-list-item :paragraph :heading :thematic-break
+                  :code-block :html-block :link-reference-definition :table
+                  :table-row :table-cell :footnote-definition :text :code-span
+                  :html-inline :soft-break :hard-break :emphasis :strong :link
+                  :image :strikethrough :autolink :footnote-reference)))
+        (expect (mapcar (function cl-markdown-kit:node-family) concrete-nodes)
+                :to-equal
+                (quote
+                 (:block :block :block :block :block :block :block :block
+                  :block :block :block :block :block :block :block :block
+                  :inline :inline :inline :inline :inline :inline :inline :inline
+                  :inline :inline :inline :inline)))
+        (expect (mapcar (function cl-markdown-kit:node-semantic-attributes)
+                        concrete-nodes)
+                :to-equal
+                (list
+                 (quote (:front-matter-p t :gfm-p t))
+                 (quote (:opening-delimiter "---" :closing-delimiter "---"))
+                 nil
+                 (list :kind :ordered :tight-p t :start-number 4
+                       :marker-character #\4 :delimiter-character (code-char 41))
+                 nil
+                 (list :checked-p t :task-marker-span span
+                       :original-marker-character #\X)
+                 nil
+                 (list :level 2 :style :setext :marker-character #\=
+                       :opening-marker-length 0 :closing-marker-length 3)
+                 (list :marker-character #\* :marker-count 5)
+                 (list :style :fenced :fence-character #\~
+                       :fence-length 4 :indentation 2 :info-string "lisp")
+                 (quote (:kind 7))
+                 (quote (:raw-label "A" :normalized-label "a"
+                         :destination "/a" :title "title" :eligible-p t))
+                 (list :alignments (quote (:left :right)))
+                 (list :header-row-p t)
+                 (list :alignment :center)
+                 (quote (:raw-label "N" :normalized-label "n"))
+                 (quote (:value "x"))
+                 (list :backtick-run-length 2)
+                 nil nil nil
+                 (list :delimiter-character #\_)
+                 (list :delimiter-character #\*)
+                 (quote (:destination "/link" :title "L"
+                         :reference-kind :full :reference-label "ref"))
+                 (quote (:destination "/image" :title "I"
+                         :reference-kind :shortcut :reference-label "img"))
+                 (list :delimiter-character #\~)
+                 (quote (:destination "https://example.test" :kind :bare-url))
+                 (quote (:raw-label "N" :normalized-label "n"))))
+        (expect (mapcar (function cl-markdown-kit:node-edit-text-projection)
+                        concrete-nodes)
+                :to-equal
+                (list nil "title: x" nil nil nil nil nil nil "" "x" "<p>x</p>" "" nil nil nil nil "x" "x" "<i>x</i>" "" "" nil nil nil nil nil "example" "")))
+      (expect (cl-markdown-kit:node-family block) :to-equal :abstract)
+      (expect (lambda () (cl-markdown-kit:node-kind block))
+              :to-throw (quote simple-error))
       (expect (every (lambda (predicate object)
                        (funcall predicate object))
                      predicates nodes)
@@ -215,8 +276,8 @@
                     (cl-markdown-kit:footnote-reference-normalized-label
                      footnote-reference))
               :to-equal '("https://example.test" "example" :bare-url "N" "n"))
-      (expect (cl-markdown-kit:list-item-p task-list-item) :to-be-truthy)
-      (expect (cl-markdown-kit:block-node-p task-list-item) :to-be-truthy)))
+      (expect (typep task-list-item 'cl-markdown-kit:list-item) :to-be-truthy)
+      (expect (typep task-list-item 'cl-markdown-kit:block-node) :to-be-truthy)))
 
   (it "returns ordered children for every container and NIL for leaves"
     (let* ((child-a (cl-markdown-kit:make-text :value "a"))
@@ -307,10 +368,136 @@
            (root (cl-markdown-kit:make-document
                   :children (list paragraph code last-paragraph)))
            (visited nil)
-           (result (cl-markdown-kit:walk-nodes
-                    (lambda (node) (push node visited)) root))
+           (result (cl-markdown-kit:walk-node-tree-cps
+                    root
+                    (lambda (node phase parent grandparent previous-sibling
+                                  next-sibling child-index last-child-p)
+                      (declare (ignore parent grandparent previous-sibling
+                                       next-sibling child-index last-child-p))
+                      (when (eq phase :enter)
+                        (push node visited)))))
            (expected (list root paragraph first-leaf emphasis nested-leaf
                            code last-paragraph last-leaf)))
       (expect (eq result root) :to-be-truthy)
       (expect (node-contract-same-order-p (nreverse visited) expected)
-              :to-be-truthy))))
+              :to-be-truthy)))
+  (it "walks node trees with enter and leave context"
+    (let* ((first-leaf (cl-markdown-kit:make-text :value "first"))
+           (nested-inline
+             (cl-markdown-kit:make-emphasis :children (list first-leaf)))
+           (last-leaf (cl-markdown-kit:make-text :value "last"))
+           (paragraph
+             (cl-markdown-kit:make-paragraph
+              :children (list nested-inline last-leaf)))
+           (sibling (cl-markdown-kit:make-code-block :body "code"))
+           (root
+             (cl-markdown-kit:make-document
+              :children (list paragraph sibling)))
+           (events nil)
+           (result
+             (cl-markdown-kit:walk-node-tree-cps
+              root
+              (lambda (node phase parent grandparent previous-sibling
+                            next-sibling child-index last-child-p)
+                (push (list node phase parent grandparent previous-sibling
+                            next-sibling child-index last-child-p)
+                      events)
+                (if (eq phase :leave) :stop :descend)))))
+      (setf events (nreverse events))
+      (expect (eq result root) :to-be-truthy)
+      (expect (mapcar (lambda (event) (subseq event 0 2)) events)
+              :to-equal
+              (list (list root :enter)
+                    (list paragraph :enter)
+                    (list nested-inline :enter)
+                    (list first-leaf :enter)
+                    (list first-leaf :leave)
+                    (list nested-inline :leave)
+                    (list last-leaf :enter)
+                    (list last-leaf :leave)
+                    (list paragraph :leave)
+                    (list sibling :enter)
+                    (list sibling :leave)
+                    (list root :leave)))
+      (expect (subseq (find root events :key (function first)) 2)
+              :to-equal (list nil nil nil nil 0 t))
+      (expect (subseq (find paragraph events :key (function first)) 2)
+              :to-equal (list root nil nil sibling 0 nil))
+      (expect (subseq (find sibling events :key (function first)) 2)
+              :to-equal (list root nil paragraph nil 1 t))
+      (expect (subseq (find last-leaf events :key (function first)) 2)
+              :to-equal (list paragraph root nested-inline nil 1 t))
+      (expect (subseq (find first-leaf events :key (function first)) 2)
+              :to-equal (list nested-inline paragraph nil nil 0 t))))
+  (it-each
+    ((:skip) (:stop))
+    "honors the ~A walker continuation"
+    (decision)
+    (let* ((leaf (cl-markdown-kit:make-text :value "hidden"))
+           (inner
+             (cl-markdown-kit:make-paragraph :children (list leaf)))
+           (branch
+             (cl-markdown-kit:make-block-quote :children (list inner)))
+           (sibling (cl-markdown-kit:make-paragraph))
+           (root
+             (cl-markdown-kit:make-document
+              :children (list branch sibling)))
+           (events nil)
+           (result
+             (cl-markdown-kit:walk-node-tree-cps
+              root
+              (lambda (node phase parent grandparent previous-sibling
+                            next-sibling child-index last-child-p)
+                (declare (ignore parent grandparent previous-sibling
+                                 next-sibling child-index last-child-p))
+                (push (list node phase) events)
+                (if (and (eq node branch) (eq phase :enter))
+                    decision
+                    :descend)))))
+      (setf events (nreverse events))
+      (expect (eq result root) :to-be-truthy)
+      (expect events
+              :to-equal
+              (case decision
+                (:skip
+                 (list (list root :enter)
+                       (list branch :enter)
+                       (list branch :leave)
+                       (list sibling :enter)
+                       (list sibling :leave)
+                       (list root :leave)))
+                (:stop
+                 (list (list root :enter)
+                       (list branch :enter)))))))
+  (it-each
+    ((:missing-edit-text
+      (cl-markdown-kit:define-node
+         (defstruct (node-contract-invalid-node
+                     (:constructor make-node-contract-invalid-node ())))
+         :kind :invalid :family :inline :children nil :attributes nil))
+     (:invalid-family
+      (cl-markdown-kit:define-node
+         (defstruct (node-contract-invalid-family-node
+                     (:constructor make-node-contract-invalid-family-node ())))
+         :kind :invalid :family :unknown :children nil :attributes nil
+         :edit-text :empty))
+     (:missing-dispatch-type
+      (cl-markdown-kit:define-node-dispatch
+         (node-contract-incomplete-dispatch (context node phase))
+         :operation :html-renderer :family :inline
+         (cl-markdown-kit:text nil)))
+     (:duplicate-dispatch-type
+      (cl-markdown-kit:define-node-dispatch
+         (node-contract-duplicate-dispatch (context node phase))
+         :operation :html-renderer :family :inline
+         (cl-markdown-kit:text nil)
+         (cl-markdown-kit:text nil)))
+     (:extra-dispatch-type
+      (cl-markdown-kit:define-node-dispatch
+         (node-contract-extra-dispatch (context node phase))
+         :operation :html-renderer :family :inline
+         (cl-markdown-kit:paragraph nil))))
+    "rejects ~A node and dispatch declarations during macro expansion"
+    (failure form)
+    (expect (lambda () (macroexpand-1 form))
+            :to-throw (quote simple-error))))
