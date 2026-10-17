@@ -175,10 +175,12 @@
         next-indexes))))
 
 (defun %ip-build-html-closes (text)
-  (vector (%ip-build-pattern-next-indexes text ">")
-          (%ip-build-pattern-next-indexes text "-->" )
-          (%ip-build-pattern-next-indexes text "?>")
-          (%ip-build-pattern-next-indexes text "]]>")))
+  (if (find #\< text)
+      (vector (%ip-build-pattern-next-indexes text ">")
+              (%ip-build-pattern-next-indexes text "-->")
+              (%ip-build-pattern-next-indexes text "?>")
+              (%ip-build-pattern-next-indexes text "]]>"))
+      (vector nil nil nil nil)))
 
 (defun %ip-html-close-at (html-closes pattern-index start end)
   (let* ((indexes (aref html-closes pattern-index))
@@ -390,19 +392,20 @@
         (index 0)
         (end (length text)))
     (loop while (< index end)
-          do (let ((candidate (%pc-bare-candidate-at text index end)))
-               (if candidate
-                   (progn
-                     (setf (gethash index links) candidate
-                           index (%pc-candidate-end candidate)))
-                   (if (%pc-email-local-character-p (char text index))
-                       (setf index
-                             (loop with cursor = index
-                                   while (and (< cursor end)
-                                              (%pc-email-local-character-p (char text cursor)))
-                                   do (incf cursor)
-                                   finally (return cursor)))
-                       (incf index)))))
+          do (let ((character (char text index)))
+               (if (%pc-email-local-character-p character)
+                   (let ((candidate (%pc-bare-candidate-at text index end)))
+                     (if candidate
+                         (progn
+                           (setf (gethash index links) candidate
+                                 index (%pc-candidate-end candidate)))
+                         (setf index
+                               (loop with cursor = index
+                                     while (and (< cursor end)
+                                                (%pc-email-local-character-p (char text cursor)))
+                                     do (incf cursor)
+                                     finally (return cursor)))))
+                   (incf index))))
     links))
 
 (defun %ip-make-autolink (context destination display-text kind start end)
@@ -1010,12 +1013,35 @@
          (bracket-stack nil)
          (bracket-count 0)
          (link-opener-barrier -1)
+         (pending-text nil)
+         (pending-text-start nil)
+         (pending-text-end nil)
          (index start))
-    (labels ((add-node (node node-start node-end)
+    (labels ((flush-text ()
+               (when pending-text
+                 (let ((value (get-output-stream-string pending-text)))
+                   (setf atoms
+                         (%ip-register-atom
+                          atoms
+                          (%ip-text-node
+                           context value pending-text-start pending-text-end)
+                          pending-text-start
+                          pending-text-end)
+                         pending-text nil
+                         pending-text-start nil
+                         pending-text-end nil))))
+             (add-node (node node-start node-end)
+               (flush-text)
                (setf atoms (%ip-register-atom atoms node node-start node-end)))
              (add-text (value node-start node-end)
-               (add-node (%ip-text-node context value node-start node-end)
-                         node-start node-end))
+               (when (and pending-text
+                          (/= pending-text-end node-start))
+                 (flush-text))
+               (unless pending-text
+                 (setf pending-text (make-string-output-stream)
+                       pending-text-start node-start))
+               (write-string value pending-text)
+               (setf pending-text-end node-end))
              (current-range-end ()
                (let ((bracket (first bracket-stack)))
                  (if (and bracket (< index (%ip-bracket-close bracket)))
@@ -1094,9 +1120,11 @@
                            (and (char= character #\~) (> run-length 2)))
                        (add-text (subseq text index run-end) index run-end)
                        (if (or can-open can-close)
-                           (push (%ip-make-delimiter
-                                  character index run-length can-open can-close)
-                                 delimiter-runs)
+                           (progn
+                             (flush-text)
+                             (push (%ip-make-delimiter
+                                    character index run-length can-open can-close)
+                                   delimiter-runs))
                            (add-text (subseq text index run-end) index run-end))))
                  (setf index run-end))))
       (loop while (< index end)
@@ -1286,6 +1314,7 @@
                     (when (= run-end index) (incf run-end))
                     (add-text (subseq text index run-end) index run-end)
                     (setf index run-end)))))
+      (flush-text)
       (if (and (null delimiter-runs) (null pairs))
           (%ip-build-range context start end (nreverse atoms) nil base-depth)
           (multiple-value-bind (delimiters resolved-pairs)
