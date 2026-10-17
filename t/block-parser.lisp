@@ -64,14 +64,13 @@
 
 (defun block-parser-test-nodes-of-type (root predicate)
   (let ((nodes nil))
-    (cl-markdown-kit:walk-node-tree-cps
-     root
-     (lambda (node phase parent grandparent previous-sibling next-sibling
-                   child-index last-child-p)
-       (declare (ignore parent grandparent previous-sibling next-sibling
-                        child-index last-child-p))
-       (when (and (eq phase :enter) (funcall predicate node))
-         (push node nodes))))
+    (cl-markdown-kit:walk-node-tree root
+     (lambda (frame)
+       (let ((node (cl-markdown-kit:node-tree-frame-node frame))
+             (phase (cl-markdown-kit:node-tree-frame-phase frame)))
+         (when (and (eq phase :enter) (funcall predicate node))
+           (push node nodes))
+         :descend)))
     (nreverse nodes)))
 
 (defun block-parser-test-fragments-for (result node)
