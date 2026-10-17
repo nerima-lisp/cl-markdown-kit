@@ -867,6 +867,17 @@
       (expect
        (markdown-writer-render-node (cl-markdown-kit:make-table :rows nil))
        :to-equal "")))
+  (it "escapes a dash-only alignment marker in a one-cell paragraph"
+    (expect
+     (cl-markdown-kit:write-markdown
+      (cl-markdown-kit:make-document
+       :children
+       (list
+        (cl-markdown-kit:make-paragraph
+         :children
+         (list (cl-markdown-kit:make-text
+                :value (format nil "|a|~%---")))))))
+     :to-equal (format nil "|a|~%\\---")))
 
   (it "renders remaining block variants and rejects invalid writer inputs"
     (expect
