@@ -118,7 +118,7 @@
        :reference-definition-markers))
     (cl-markdown-kit:text
      (unless (string= (cl-markdown-kit:text-value node)
-                      (cl-markdown-kit::%ip-unescape slice 0 (length slice)))
+                      (cl-markdown-kit::%pc-unescape slice 0 (length slice)))
        :text-source-spelling))
     (cl-markdown-kit:code-span
      (let ((run (cl-markdown-kit:code-span-backtick-run-length node)))

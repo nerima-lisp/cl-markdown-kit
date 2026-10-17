@@ -37,9 +37,6 @@
 (defun %mw-write-character (character stream)
   (%mw-write-string (string character) stream))
 
-(defun %mw-horizontal-space-p (character)
-  (find character '(#\Space #\Tab)))
-
 (defun %mw-line-end (text start)
   (or (position #\Newline text :start start)
       (length text)))
@@ -65,14 +62,14 @@
     (and (> cursor start)
          (<= (- cursor start) 6)
          (or (= cursor end)
-             (%mw-horizontal-space-p (char text cursor))))))
+             (%pc-space-p (char text cursor))))))
 
 (defun %mw-list-marker-p (text start end)
   (when (< start end)
     (let ((character (char text start)))
       (or (and (find character '(#\- #\+ #\*))
                (or (= (1+ start) end)
-                   (%mw-horizontal-space-p (char text (1+ start)))))
+                   (%pc-space-p (char text (1+ start)))))
           (and (<= (char-code #\0) (char-code character)
                    (char-code #\9))
                (let ((cursor start))
@@ -81,11 +78,11 @@
                                       (char-code (char text cursor))
                                       (char-code #\9)))
                        do (incf cursor))
-                 (and (<= (- cursor start) 9)
+                 (and (<= (- cursor start) +max-ordered-list-marker-digits+)
                       (< cursor end)
                       (find (char text cursor) '(#\. #\)))
                       (or (= (1+ cursor) end)
-                          (%mw-horizontal-space-p (char text (1+ cursor)))))))))))
+                          (%pc-space-p (char text (1+ cursor)))))))))))
 
 (defun %mw-marker-line-p (text start end markers minimum)
   (let ((marker (and (< start end) (char text start)))
@@ -97,27 +94,27 @@
                  ((char= (char text cursor) marker)
                   (incf count)
                   (incf cursor))
-                 ((%mw-horizontal-space-p (char text cursor))
+                 ((%pc-space-p (char text cursor))
                   (incf cursor))
                  (t (return))))
       (and (>= count minimum) (= cursor end)))))
 
 (defun %mw-unparsed-autolink-prefix-length (text index)
   (cond
-    ((and (%ip-bare-url-start-p text index)
-          (%ip-ascii-prefix-p text index "https://"))
+    ((and (%pc-bare-url-start-p text index)
+          (%pc-ascii-prefix-p text index "https://"))
      (length "https://"))
-    ((and (%ip-bare-url-start-p text index)
-          (%ip-ascii-prefix-p text index "http://"))
+    ((and (%pc-bare-url-start-p text index)
+          (%pc-ascii-prefix-p text index "http://"))
      (length "http://"))
-    ((and (%ip-bare-url-start-p text index)
-          (%ip-ascii-prefix-p text index "www."))
+    ((and (%pc-bare-url-start-p text index)
+          (%pc-ascii-prefix-p text index "www."))
      (length "www."))
-    ((and (%ip-bare-email-start-p text index)
-          (%ip-ascii-prefix-p text index "mailto:"))
+    ((and (%pc-bare-email-start-p text index)
+          (%pc-ascii-prefix-p text index "mailto:"))
      (length "mailto:"))
-    ((and (%ip-bare-url-start-p text index)
-          (%ip-ascii-prefix-p text index "xmpp:"))
+    ((and (%pc-bare-url-start-p text index)
+          (%pc-ascii-prefix-p text index "xmpp:"))
      (length "xmpp:"))))
 
 (defun %mw-setext-marker-line-p (text start end)
@@ -128,7 +125,7 @@
             do (cond
                  ((char= (char text cursor) marker)
                   (incf cursor))
-                 ((%mw-horizontal-space-p (char text cursor))
+                 ((%pc-space-p (char text cursor))
                   (incf cursor))
                  (t (return))))
       (= cursor end))))
@@ -142,7 +139,7 @@
       (%mw-setext-marker-line-p text start end)))
 
 (defun %mw-entity-at-p (text index)
-  (nth-value 0 (%ip-entity-at text index (length text))))
+  (nth-value 0 (%pc-entity-at text index (length text))))
 
 (defun %mw-fence-marker-line-p (text)
   (let ((marker (and (plusp (length text)) (char text 0))))
@@ -154,8 +151,7 @@
         (>= end 3)))))
 
 (defun %mw-inline-markup-free-p (text)
-  (let* ((content-end (position-if-not #'%mw-horizontal-space-p
-                                       text :from-end t))
+  (let* ((content-end (position-if-not #'%pc-space-p text :from-end t))
          ;; Trailing spaces are emitted as character references below, so they
          ;; should not disable minimal escaping for the preceding text.
          (content (subseq text 0 (if content-end (1+ content-end) 0)))
@@ -179,19 +175,18 @@
 
 (defun %mw-heading-closing-marker-p (text index)
   (and (or (zerop index)
-           (%mw-horizontal-space-p (char text (1- index))))
+           (%pc-space-p (char text (1- index))))
        (loop for cursor from index below (length text)
              always (or (char= (char text cursor) #\#)
-                        (%mw-horizontal-space-p (char text cursor))))))
+                        (%pc-space-p (char text cursor))))))
 
 (defun %mw-inline-tail-has-nonspace-p (nodes)
   (some (lambda (node)
           (typecase node
             (text
-             (position-if-not #'%mw-horizontal-space-p (text-value node)))
+             (position-if-not #'%pc-space-p (text-value node)))
             (html-inline
-             (position-if-not #'%mw-horizontal-space-p
-                              (html-inline-body node)))
+             (position-if-not #'%pc-space-p (html-inline-body node)))
             (otherwise t)))
         nodes))
 
@@ -266,22 +261,22 @@
         (index 0)
         (end (length text)))
     (loop while (< index end)
-          do (let ((candidate (%ip-bare-candidate-at text index end)))
+          do (let ((candidate (%pc-bare-candidate-at text index end)))
                (if candidate
-                   (let* ((candidate-end (%ip-candidate-end candidate))
+                   (let* ((candidate-end (%pc-candidate-end candidate))
                           (email-scheme-p
-                            (and (or (%ip-ascii-prefix-p text index "mailto:")
-                                     (%ip-ascii-prefix-p text index "xmpp:"))
+                            (and (or (%pc-ascii-prefix-p text index "mailto:")
+                                     (%pc-ascii-prefix-p text index "xmpp:"))
                                  (position #\@ text :start index :end candidate-end)))
                           (breakpoint
                             (cond
                               (email-scheme-p email-scheme-p)
-                              ((%ip-ascii-prefix-p text index "www.")
+                              ((%pc-ascii-prefix-p text index "www.")
                                (+ index 3))
-                              ((or (%ip-ascii-prefix-p text index "http://")
-                                   (%ip-ascii-prefix-p text index "https://")
-                                   (%ip-ascii-prefix-p text index "mailto:")
-                                   (%ip-ascii-prefix-p text index "xmpp:"))
+                              ((or (%pc-ascii-prefix-p text index "http://")
+                                   (%pc-ascii-prefix-p text index "https://")
+                                   (%pc-ascii-prefix-p text index "mailto:")
+                                   (%pc-ascii-prefix-p text index "xmpp:"))
                                (position #\: text :start index :end candidate-end))
                               (t
                                (position #\@ text :start index
@@ -299,10 +294,10 @@
                           (scheme-colon-index
                             (cond
                               ((and prefix-length
-                                    (%ip-ascii-prefix-p text index "mailto:"))
+                                    (%pc-ascii-prefix-p text index "mailto:"))
                                (+ index (1- (length "mailto:"))))
                               ((and prefix-length
-                                    (%ip-ascii-prefix-p text index "xmpp:"))
+                                    (%pc-ascii-prefix-p text index "xmpp:"))
                                (+ index (1- (length "xmpp:")))))))
                      (cond
                        (scheme-colon-index
@@ -373,9 +368,9 @@
                     (%mw-write-character character stream))
                 (incf index))
                ((and encode-terminal-whitespace-p
-                     (%mw-horizontal-space-p character)
+                     (%pc-space-p character)
                      (let ((line-end (%mw-line-end text index)))
-                       (null (position-if-not #'%mw-horizontal-space-p text
+                       (null (position-if-not #'%pc-space-p text
                                               :start index :end line-end))))
                 (let ((line-end (%mw-line-end text index)))
                   (loop while (< index line-end)
@@ -385,11 +380,11 @@
                             stream)
                            (incf index))))
                ((and *mw-line-start-p*
-                     (%mw-horizontal-space-p character))
+                     (%pc-space-p character))
                 (%mw-write-character-reference character stream)
                 (incf index)
                 (loop while (and (< index end)
-                                 (%mw-horizontal-space-p (char text index)))
+                                 (%pc-space-p (char text index)))
                       for current = (char text index)
                       do (if (char= current #\Tab)
                              (%mw-write-character-reference current stream)
@@ -622,15 +617,13 @@
     (with-output-to-string (stream)
       (%mw-render-inline-children children stream minimize-escapes-p))))
 
-(defun %mw-table-cell-ranges (line)
-  (%bp-table-cells (%make-block-line line #() 0 0 0 0)))
+(defun %mw-table-cell-ranges (line) (%pc-table-cells line))
 
 (defun %mw-table-alignment-line-p (line)
   (let ((cells (%mw-table-cell-ranges line)))
     (when (and cells
                (every (lambda (range)
-                        (let* ((cell (%bp-trimmed-string
-                                      (subseq line (car range) (cdr range))))
+                        (let* ((cell (%pc-trimmed-string (subseq line (car range) (cdr range))))
                                (length (length cell))
                                (start (if (and (plusp length)
                                                (char= (char cell 0) #\:))
@@ -661,8 +654,7 @@
           do (let* ((next-start (car next))
                     (next-end (cdr next))
                     (first-non-space
-                      (or (position-if-not #'%mw-horizontal-space-p
-                                           text :start next-start
+                      (or (position-if-not #'%pc-space-p text :start next-start
                                            :end next-end)
                           next-end))
                     (header-has-pipe
@@ -680,9 +672,6 @@
                            (position #\- text :start next-start :end next-end)))
                  (return))))
     alignment-breaker-position))
-
-(defun %mw-table-start-follows-p (text)
-  (not (null (%mw-table-alignment-breaker-position text))))
 
 (defun %mw-render-paragraph (node)
   (let* ((children (paragraph-children node))

@@ -63,8 +63,8 @@
     document))
 
 (defun parse-string (string &key (front-matter t) (gfm t)
-                               (max-nesting-depth 256)
-                               (max-inline-delimiter-depth 4096))
+                               (max-nesting-depth +default-max-nesting-depth+)
+                               (max-inline-delimiter-depth +default-max-inline-delimiter-depth+))
   "Parse STRING; GFM controls extension parsing and FRONT-MATTER controls leading front matter."
   (check-type string string)
   (%parse-source-buffer (make-source-buffer string)
@@ -73,8 +73,8 @@
                         max-nesting-depth max-inline-delimiter-depth))
 
 (defun parse-stream (character-stream &key (front-matter t) (gfm t)
-                                       (max-nesting-depth 256)
-                                       (max-inline-delimiter-depth 4096))
+                                       (max-nesting-depth +default-max-nesting-depth+)
+                                       (max-inline-delimiter-depth +default-max-inline-delimiter-depth+))
   "Parse a character stream; GFM controls extension parsing."
   (check-type character-stream stream)
   (%parse-source-buffer (make-source-buffer character-stream)
@@ -83,8 +83,8 @@
                         max-nesting-depth max-inline-delimiter-depth))
 
 (defun parse-octets (octet-vector &key (front-matter t) (gfm t)
-                                    (max-nesting-depth 256)
-                                    (max-inline-delimiter-depth 4096))
+                                    (max-nesting-depth +default-max-nesting-depth+)
+                                    (max-inline-delimiter-depth +default-max-inline-delimiter-depth+))
   "Decode and parse OCTET-VECTOR; GFM controls extension parsing."
   (unless (typep octet-vector '(vector (unsigned-byte 8)))
     (error 'type-error :datum octet-vector
@@ -95,8 +95,8 @@
                         max-nesting-depth max-inline-delimiter-depth))
 
 (defun parse (source &key (front-matter t) (gfm t)
-                        (max-nesting-depth 256)
-                        (max-inline-delimiter-depth 4096))
+                        (max-nesting-depth +default-max-nesting-depth+)
+                        (max-inline-delimiter-depth +default-max-inline-delimiter-depth+))
   "Parse SOURCE; GFM controls extension parsing and FRONT-MATTER controls leading front matter."
   (cond
     ((stringp source)
