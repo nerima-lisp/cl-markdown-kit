@@ -1,7 +1,7 @@
 # Architecture and Public Contract
 
 This document fixes the AST, source-span, parser-boundary, and public API
-contracts for `cl-markdown-kit` v0.1.0. The parser and writer implementations
+contracts for `cl-markdown-kit` v0.2.0. The parser and writer implementations
 are owned by their respective streams. The versioned functional requirements
 and acceptance tests are in the run specification; decisions D-1 through D-6
 and its package Addendum are authoritative.
@@ -45,8 +45,7 @@ convention and let parsers build children incrementally without exposing a
 mutable vector. Leaf nodes own semantic values and any syntax attributes needed
 by the normalized Markdown writer. Nodes are mutable during construction, then
 treated as immutable after `parse` returns. Public constructors accept keyword
-arguments; `node-children` returns the ordered child list, and `walk-nodes`
-visits pre-order, depth-first, including the root.
+arguments, and `node-children` returns the ordered child list.
 
 Every parsed node has a source span, including inline nodes beyond the subset
 required by FR-004. A node made directly with a public constructor may have a
@@ -102,6 +101,88 @@ from semantic text alone: heading form, code fence form, list marker and
 delimiter, link reference form/label, table alignment, and raw HTML/code text.
 Source-preserving edits use the original source snapshot and spans outside the
 target; they do not attempt to reconstruct that text from nodes.
+
+### Node metadata, dispatch, and traversal
+
+Concrete node declarations use `define-node` so their structure and public
+metadata stay together. The macro takes a `defstruct` form followed by
+`:kind`, `:family`, `:children`, `:attributes`, and `:edit-text` metadata. For
+example:
+
+```lisp
+(in-package #:cl-markdown-kit)
+
+(define-node (defstruct (text
+                         (:include inline-node)
+                         (:constructor make-text (&key span value)))
+              (value "" :type string))
+  :kind :text
+  :family :inline
+  :children nil
+  :attributes (:value)
+  :edit-text (:slot value))
+```
+
+Concrete `:family` values are `:block` or `:inline`; abstract base node
+declarations use `:abstract t`, `:kind nil`, and `:family :abstract`.
+`:children` is `nil`, a child slot name, or `(:slot slot-name :accessor
+accessor-name)` when the child list uses a different accessor. `:attributes`
+lists distinct keyword names for declared semantic slots.
+
+The declaration expands the supplied `defstruct`, registers its metadata, and
+exports the node type symbol, constructor, and declared slot accessors. The
+generated structure predicate stays internal; `front-matter-p` remains public
+for the front-matter prepass contract. After all declarations,
+`(define-node-registry)` generates the public metadata readers and
+`node-children` from the declarations.
+`node-kind` returns the declared keyword kind and signals on abstract base
+nodes. `node-family` returns `:block` or `:inline` for a concrete node and
+`:abstract` for a base node. `node-semantic-attributes` returns a plist of
+declared keyword names and their current slot values. The `:edit-text`
+declaration is one of `:empty`, `:container`, `(:slot slot-name)`, or
+`(:literal value)`. `node-edit-text-projection` returns the current slot value
+or literal, converting a character literal to a one-character string. It
+returns the empty string for `:empty` and `nil` for `:container`; container
+text is projected from its children. `node-children` reads the child slots
+declared by the node. Missing or invalid required metadata fails when the
+declaration macro expands. Consumers can test a public node type with `typep`.
+
+Writer operations use `define-node-dispatch` with one static clause for every
+concrete node in a family. The exact form is:
+
+```lisp
+(in-package #:cl-markdown-kit)
+
+(define-node-dispatch (%hw-render-inline-event (context node phase))
+  :operation :html-renderer :family :inline
+  (text body-form...)
+  (code-span body-form...)
+  more-clauses...)
+```
+
+The `:operation` and `:family` values select the declared dispatch set. The
+macro dispatches on the lambda-list argument named `node`, and every declared
+argument is in scope in each clause body. Each clause body supplies the
+operation for that node type. The macro expands to a static type dispatch and
+rejects missing, duplicate, or extra concrete node clauses during macro
+expansion. `verify-node-dispatches` checks that the operation has registered
+coverage for each required family. The HTML renderer checks both `:block` and
+`:inline` at load time with
+`(verify-node-dispatches :operation :html-renderer :families '(:block :inline))`.
+
+`walk-node-tree-cps` keeps continuation state in an explicit frame stack, so
+Lisp call depth does not grow with tree depth. Its callback receives
+`(node phase parent grandparent previous-sibling next-sibling child-index
+last-child-p)` in that order. Parent and grandparent are node objects;
+previous and next sibling are relative to the parent's ordered children.
+`child-index` is zero-based, and `last-child-p` marks the final sibling. The
+root has no parent, grandparent, or siblings, index zero, and `last-child-p`
+true. Each node receives `:enter` before its children and `:leave` afterward;
+children and siblings follow source order. Return `:descend` (the default),
+`:skip`, or `:stop` from `:enter`: `:skip` omits descendants but still sends
+`:leave` for that node, while `:stop` returns immediately without leave
+callbacks for the active path. Leave results are ignored. The function returns
+the root.
 
 ## Source spans and input
 
@@ -314,8 +395,12 @@ fence character in the code body.
 ## Public query and edit API
 
 The package is `cl-markdown-kit`; exported names use the sibling kit's
-hyphenated `parse`-family naming. Public structures export their type name,
-constructor, predicate, and documented readers. The contract is:
+hyphenated `parse`-family naming. Node structures generated by `define-node`
+export their type name, constructor, and declared readers. Their generated
+predicates remain internal, except `front-matter-p`; use `typep` with an
+exported node type to test a node. The non-node public records retain the
+predicates, constructors, and readers listed in this document. The contract
+is:
 
 | Function | Signature and result |
 |---|---|
@@ -486,7 +571,7 @@ reference page. This architecture decision is documented at
 
 | Alternative | Reason rejected |
 |---|---|
-| CLOS instances and generic-function dispatch for all node operations | The node set is closed for this release. `defstruct` gives direct readers and low-overhead traversal while still supporting included common slots; writer dispatch can use node predicates/type cases. |
+| CLOS instances and generic-function dispatch for all node operations | The node set is closed for this release. `defstruct` gives direct readers and low-overhead traversal while `define-node-dispatch` supplies static per-family clauses whose coverage is checked at macro expansion and load time. |
 | One generic node with a kind keyword and untyped property plist | This makes invalid slot combinations easy, weakens public accessors, and hides which syntax details each node must retain. |
 | One raw-source string per node instead of a document snapshot plus spans | It duplicates source memory across nested nodes and makes edits harder to reason about. One snapshot and half-open spans preserve untouched text without copying it into every node. |
 | Local position and range types | `cl-parser-kit:span` already supplies the public half-open source location contract with 1-based line and column values; defining parallel local types would duplicate it. |

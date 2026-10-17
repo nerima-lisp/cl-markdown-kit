@@ -2,14 +2,14 @@
 (in-package #:asdf-user)
 
 (unless (member :sbcl *features*)
-  (error "cl-markdown-kit v0.1.0 supports SBCL only"))
+  (error "cl-markdown-kit v0.2.0 supports SBCL only"))
 
 (asdf:defsystem "cl-markdown-kit"
   :description "CommonMark and GFM parser for Common Lisp"
   :author "takeokunn"
   :maintainer "takeokunn"
   :license "MIT"
-  :version "0.1.0"
+  :version "0.2.0"
   :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")
@@ -24,6 +24,7 @@
                (:file "html-escaping")
                (:file "source")
                (:file "nodes")
+               (:file "tree-walker")
                (:file "block-parser")
                (:file "inline-parser")
                (:file "parse")
@@ -38,7 +39,7 @@
   :author "takeokunn"
   :maintainer "takeokunn"
   :license "MIT"
-  :version "0.1.0"
+  :version "0.2.0"
   :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")
@@ -55,7 +56,7 @@
   :author "takeokunn"
   :maintainer "takeokunn"
   :license "MIT"
-  :version "0.1.0"
+  :version "0.2.0"
   :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")
@@ -74,7 +75,7 @@
   :author "takeokunn"
   :maintainer "takeokunn"
   :license "MIT"
-  :version "0.1.0"
+  :version "0.2.0"
   :homepage "https://github.com/nerima-lisp/cl-markdown-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-markdown-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-markdown-kit.git")

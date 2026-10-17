@@ -424,56 +424,156 @@
                 (incf index)))))
   text)
 
-(defun %mw-render-inline-children
-    (children stream &optional minimize-escapes-p escape-terminal-backslash-p)
-  (let ((remaining children)
-        (previous nil)
-        (*mw-minimize-inline-escapes-p* minimize-escapes-p))
-    (loop while remaining
-          do (if (%mw-inline-text-run-node-p (first remaining))
-                 (let ((text-nodes nil))
-                   (loop while (and remaining
-                                    (%mw-inline-text-run-node-p
-                                     (first remaining)))
-                         do (push (pop remaining) text-nodes))
-                   (setf text-nodes (nreverse text-nodes))
-                   (let* ((text
-                            (with-output-to-string (output)
-                              (dolist (node text-nodes)
-                                (when (text-p node)
-                                  (write-string (text-value node) output)))))
-                          (*mw-minimize-inline-escapes-p*
-                            (and *mw-minimize-inline-escapes-p*
-                                 (not (%mw-fence-marker-line-p text))
-                                 (%mw-inline-markup-free-p text)))
-                          (boundary-escapes
-                            (and *mw-minimize-inline-escapes-p*
-                                 (%mw-inline-boundary-escape-indices
-                                  text previous (first remaining))))
-                          (*mw-escape-trailing-bang-p*
-                            (and (%mw-inline-node-starts-link-label-p
-                                  (first remaining))
-                                 (plusp (length text))
-                                 (char= (char text (1- (length text))) #\!)))
-                          (*mw-heading-closing-hash-allowed-p*
-                            (%mw-heading-closing-hash-allowed-after-p
-                             remaining))
-                          (encode-terminal-whitespace-p
-                            (or (null remaining)
-                                (soft-break-p (first remaining))
-                                (hard-break-p (first remaining)))))
-                     (%mw-write-text
-                      text stream boundary-escapes
-                      (or remaining *mw-following-block-p*
-                          escape-terminal-backslash-p)
-                      encode-terminal-whitespace-p))
-                   (let ((last-text (find-if #'text-p text-nodes :from-end t)))
-                     (when last-text
-                       (setf previous last-text))))
-                 (let ((node (pop remaining)))
-                   (let ((*mw-heading-closing-hash-allowed-p* nil))
-                     (%mw-render-inline-node node stream))
-                   (setf previous node))))))
+(progn
+  (defstruct (%mw-render-frame
+              (:constructor %mw-make-render-frame
+                  (&key (line-start-p t) (line-indent 0)
+                        table-cell-p escape-table-p heading-p autolink-label-p
+                        escape-trailing-bang-p following-block-p
+                        minimize-inline-escapes-p
+                        heading-closing-hash-allowed-p
+                        escape-terminal-backslash-p prefix)))
+    (line-start-p t)
+    (line-indent 0)
+    table-cell-p
+    escape-table-p
+    heading-p
+    autolink-label-p
+    escape-trailing-bang-p
+    following-block-p
+    minimize-inline-escapes-p
+    heading-closing-hash-allowed-p
+    escape-terminal-backslash-p
+    (prefix "" :type string))
+
+  (defstruct (%mw-render-session
+              (:constructor %mw-make-render-session
+                  (&key (frames (make-hash-table :test #'eq))
+                        (results (make-hash-table :test #'eq)))))
+    frames
+    results
+    parent
+    grandparent
+    previous-sibling
+    next-sibling
+    child-index
+    last-child-p)
+
+  (defun %mw-inline-children-parent-p (node)
+    (or (paragraph-p node)
+        (heading-p node)
+        (table-cell-p node)
+        (emphasis-p node)
+        (strong-p node)
+        (link-p node)
+        (image-p node)
+        (strikethrough-p node)))
+
+  (defun %mw-inline-wrapper-p (node)
+    (or (emphasis-p node)
+        (strong-p node)
+        (link-p node)
+        (image-p node)
+        (strikethrough-p node)))
+
+  (defun %mw-copy-render-frame (frame)
+    (%mw-make-render-frame
+     :line-start-p (%mw-render-frame-line-start-p frame)
+     :line-indent (%mw-render-frame-line-indent frame)
+     :table-cell-p (%mw-render-frame-table-cell-p frame)
+     :escape-table-p (%mw-render-frame-escape-table-p frame)
+     :heading-p (%mw-render-frame-heading-p frame)
+     :autolink-label-p (%mw-render-frame-autolink-label-p frame)
+     :escape-trailing-bang-p
+     (%mw-render-frame-escape-trailing-bang-p frame)
+     :following-block-p (%mw-render-frame-following-block-p frame)
+     :minimize-inline-escapes-p
+     (%mw-render-frame-minimize-inline-escapes-p frame)
+     :heading-closing-hash-allowed-p
+     (%mw-render-frame-heading-closing-hash-allowed-p frame)
+     :escape-terminal-backslash-p
+     (%mw-render-frame-escape-terminal-backslash-p frame)))
+
+  (defun %mw-make-node-render-frame (session node)
+  (let* ((parent (%mw-render-session-parent session))
+         (parent-frame
+           (and parent
+                (gethash parent (%mw-render-session-frames session))))
+         (next (%mw-render-session-next-sibling session))
+         (following
+           (or (and parent-frame
+                    (%mw-render-frame-following-block-p parent-frame))
+               next)))
+    (cond
+      ((and parent-frame (%mw-inline-children-parent-p parent))
+       (let ((frame (%mw-copy-render-frame parent-frame)))
+         (when (or (%mw-inline-wrapper-p parent)
+                   (not (%mw-inline-text-run-node-p node)))
+           (setf (%mw-render-frame-heading-closing-hash-allowed-p frame)
+                 nil))
+         (when (%mw-inline-wrapper-p parent)
+           (setf (%mw-render-frame-minimize-inline-escapes-p frame) nil
+                 (%mw-render-frame-escape-terminal-backslash-p frame) t))
+         frame))
+      ((paragraph-p node)
+       (%mw-make-render-frame
+        :following-block-p following
+        :minimize-inline-escapes-p t))
+      ((heading-p node)
+       (%mw-make-render-frame
+        :following-block-p following
+        :minimize-inline-escapes-p t
+        :heading-p t
+        :heading-closing-hash-allowed-p t))
+      ((table-cell-p node)
+       (%mw-make-render-frame
+        :following-block-p following
+        :table-cell-p t
+        :minimize-inline-escapes-p t))
+      (t
+       (%mw-make-render-frame :following-block-p following)))))
+
+  (defun %mw-capture-render-frame (frame function)
+    (let ((*mw-line-start-p* (%mw-render-frame-line-start-p frame))
+          (*mw-line-indent* (%mw-render-frame-line-indent frame))
+          (*mw-table-cell-p* (%mw-render-frame-table-cell-p frame))
+          (*mw-escape-table-pipes-p*
+            (%mw-render-frame-escape-table-p frame))
+          (*mw-heading-p* (%mw-render-frame-heading-p frame))
+          (*mw-autolink-label-p*
+            (%mw-render-frame-autolink-label-p frame))
+          (*mw-escape-trailing-bang-p*
+            (%mw-render-frame-escape-trailing-bang-p frame))
+          (*mw-following-block-p*
+            (%mw-render-frame-following-block-p frame))
+          (*mw-minimize-inline-escapes-p*
+            (%mw-render-frame-minimize-inline-escapes-p frame))
+          (*mw-heading-closing-hash-allowed-p*
+            (%mw-render-frame-heading-closing-hash-allowed-p frame)))
+      (let ((result (with-output-to-string (stream)
+                      (funcall function stream))))
+        (setf (%mw-render-frame-line-start-p frame) *mw-line-start-p*
+              (%mw-render-frame-line-indent frame) *mw-line-indent*)
+        result)))
+
+  (defun %mw-advance-render-frame (frame text)
+    (%mw-capture-render-frame
+     frame
+     (lambda (stream)
+       (%mw-write-string text stream))))
+
+  (defun %mw-render-child-results (children results)
+    (with-output-to-string (stream)
+      (dolist (child children)
+        (write-string (or (gethash child results) "") stream))))
+
+  (defun %mw-render-inline-children
+      (children stream &optional minimize-escapes-p
+                           escape-terminal-backslash-p results)
+    (declare (ignore minimize-escapes-p escape-terminal-backslash-p))
+    (when results
+      (write-string (%mw-render-child-results children results) stream))))
+
 
 (defun %mw-escape-label (label)
   (with-output-to-string (stream)
@@ -523,105 +623,237 @@
     (%mw-write-link-string title stream :title-p t)
     (%mw-write-character #\" stream)))
 
-(defun %mw-render-inline-node (node stream)
-  (typecase node
-    (text
-     (%mw-write-text (text-value node) stream))
-    (code-span
-     (let* ((literal (substitute #\Space #\Newline
+(progn
+  (defun %mw-render-inline-text-run (context node frame)
+  (if (%mw-inline-text-run-node-p
+       (%mw-render-session-previous-sibling context))
+      ""
+      (let* ((parent (%mw-render-session-parent context))
+             (children (and parent (node-children parent)))
+             (tail (and children (member node children :test #'eq)))
+             (remaining tail)
+             (text-nodes nil))
+        (loop while (and remaining
+                         (%mw-inline-text-run-node-p (first remaining)))
+              do (push (pop remaining) text-nodes))
+        (setf text-nodes (nreverse text-nodes))
+        (let* ((text
+                 (with-output-to-string (output)
+                   (dolist (text-node text-nodes)
+                     (when (text-p text-node)
+                       (write-string (text-value text-node) output)))))
+               (base-minimize-p
+                 (%mw-render-frame-minimize-inline-escapes-p frame))
+               (effective-minimize-p
+                 (and base-minimize-p
+                      (not (%mw-fence-marker-line-p text))
+                      (%mw-inline-markup-free-p text)))
+               (boundary-escapes
+                 (and base-minimize-p
+                      (%mw-inline-boundary-escape-indices
+                       text
+                       (%mw-render-session-previous-sibling context)
+                       (first remaining))))
+               (escape-trailing-bang-p
+                 (and (%mw-inline-node-starts-link-label-p
+                       (first remaining))
+                      (plusp (length text))
+                      (char= (char text (1- (length text))) #\!)))
+               (heading-hash-allowed-p
+                 (let ((*mw-heading-p*
+                         (%mw-render-frame-heading-p frame))
+                       (*mw-heading-closing-hash-allowed-p*
+                         (%mw-render-frame-heading-closing-hash-allowed-p
+                          frame)))
+                   (%mw-heading-closing-hash-allowed-after-p remaining)))
+               (encode-terminal-whitespace-p
+                 (or (null remaining)
+                     (soft-break-p (first remaining))
+                     (hard-break-p (first remaining)))))
+          (%mw-capture-render-frame
+           frame
+           (lambda (stream)
+             (let ((*mw-minimize-inline-escapes-p*
+                     effective-minimize-p)
+                   (*mw-escape-trailing-bang-p*
+                     escape-trailing-bang-p)
+                   (*mw-heading-closing-hash-allowed-p*
+                     heading-hash-allowed-p))
+               (%mw-write-text
+                text stream boundary-escapes
+                (or remaining
+                    (%mw-render-frame-following-block-p frame)
+                    (%mw-render-frame-escape-terminal-backslash-p frame))
+                encode-terminal-whitespace-p))))))))
+
+  (defun %mw-inline-wrapper-prefix (node kind)
+    (ecase kind
+      (:emphasis
+       (string (or (emphasis-delimiter-character node) #\*)))
+      (:strong
+       (make-string 2
+                   :initial-element
+                   (or (strong-delimiter-character node) #\*)))
+      (:strikethrough "~~")
+      (:link "[")
+      (:image "![")))
+
+  (defun %mw-inline-wrapper-suffix (node frame kind)
+    (ecase kind
+      (:emphasis
+       (%mw-inline-wrapper-prefix node kind))
+      (:strong
+       (%mw-inline-wrapper-prefix node kind))
+      (:strikethrough "~~")
+      ((:link :image)
+       (%mw-capture-render-frame
+        frame
+        (lambda (stream)
+          (%mw-write-string "](" stream)
+          (%mw-write-link-destination
+           (if (link-p node)
+               (link-destination node)
+               (image-destination node))
+           stream)
+          (%mw-write-link-title
+           (if (link-p node)
+               (link-title node)
+               (image-title node))
+           stream)
+          (%mw-write-character #\) stream))))))
+
+  (defun %mw-render-inline-result (context node frame kind)
+    (let ((children (node-children node))
+          (results (%mw-render-session-results context)))
+      (ecase kind
+        (:text
+         (%mw-render-inline-text-run context node frame))
+        (:code-span
+         (%mw-capture-render-frame
+          frame
+          (lambda (stream)
+            (let* ((literal
+                     (substitute #\Space #\Newline
                                  (code-span-literal-text node)))
-            (fence-length (1+ (%mw-longest-run literal #\`)))
-            (fence (make-string (max 1 fence-length) :initial-element #\`))
-            (non-space-p
-              (find-if-not (lambda (character)
-                             (char= character #\Space))
-                           literal))
-            (pad-p
-              (and (plusp (length literal))
-                   non-space-p
-                   (or (and (char= (char literal 0) #\Space)
-                            (char= (char literal (1- (length literal)))
-                                   #\Space))
-                       (char= (char literal 0) #\`)
-                       (char= (char literal (1- (length literal))) #\`)))))
-       (%mw-write-string fence stream)
-       (when pad-p (%mw-write-character #\Space stream))
-       (%mw-write-string literal stream)
-       (when pad-p (%mw-write-character #\Space stream))
-       (%mw-write-string fence stream)))
+                   (backtick (code-char 96))
+                   (fence-length (1+ (%mw-longest-run literal backtick)))
+                   (fence (make-string (max 1 fence-length)
+                                       :initial-element backtick))
+                   (non-space-p
+                     (find-if-not
+                      (lambda (character) (char= character #\Space))
+                      literal))
+                   (pad-p
+                     (and (plusp (length literal))
+                          non-space-p
+                          (or (and (char= (char literal 0) #\Space)
+                                   (char= (char literal (1- (length literal)))
+                                          #\Space))
+                              (char= (char literal 0) backtick)
+                              (char= (char literal (1- (length literal)))
+                                     backtick)))))
+              (%mw-write-string fence stream)
+              (when pad-p (%mw-write-character #\Space stream))
+              (%mw-write-string literal stream)
+              (when pad-p (%mw-write-character #\Space stream))
+              (%mw-write-string fence stream))))) (:html-inline
+         (if (zerop (length (html-inline-body node)))
+             (%mw-render-inline-text-run context node frame)
+             (%mw-capture-render-frame
+              frame
+              (lambda (stream)
+                (%mw-write-string (html-inline-body node) stream))))) (:soft-break
+         (%mw-capture-render-frame
+          frame
+          (lambda (stream)
+            (if (%mw-render-frame-heading-p frame)
+                (%mw-write-string "&#10;" stream)
+                (%mw-write-character #\Newline stream))))) (:hard-break
+         (%mw-capture-render-frame
+          frame
+          (lambda (stream)
+            (%mw-write-string (format nil "\\~%") stream)))) ((:emphasis :strong :strikethrough :link :image)
+         (concatenate
+          'string
+          (%mw-render-frame-prefix frame)
+          (%mw-render-child-results children results)
+          (%mw-inline-wrapper-suffix node frame kind))) (:autolink
+         (%mw-capture-render-frame
+          frame
+          (lambda (stream)
+            (let ((display-text (autolink-display-text node))
+                  (destination (autolink-destination node)))
+              (if (string= display-text destination)
+                  (progn
+                    (%mw-write-character #\< stream)
+                    (%mw-write-string display-text stream)
+                    (%mw-write-character #\> stream))
+                  (progn
+                    (%mw-write-character #\[ stream)
+                    (let ((*mw-autolink-label-p* t)
+                          (*mw-minimize-inline-escapes-p* nil))
+                      (%mw-write-text display-text stream nil t))
+                    (%mw-write-string "](" stream)
+                    (%mw-write-link-destination destination stream)
+                    (%mw-write-character #\) stream))))))) (:footnote-reference
+         (%mw-capture-render-frame
+          frame
+          (lambda (stream)
+            (%mw-write-string "[^" stream)
+            (%mw-write-string
+             (%mw-escape-label
+              (footnote-reference-normalized-label node))
+             stream)
+            (%mw-write-character #\] stream))))))) (defun %mw-render-inline-dispatch-event (context node phase kind)
+    (let ((frame
+            (gethash node (%mw-render-session-frames context))))
+      (case phase
+        (:enter
+         (when (%mw-inline-wrapper-p node)
+           (let ((prefix (%mw-inline-wrapper-prefix node kind)))
+             (setf (%mw-render-frame-prefix frame) prefix)
+             (%mw-advance-render-frame frame prefix)))
+         :descend)
+        (:leave
+         (setf (gethash node (%mw-render-session-results context))
+               (%mw-render-inline-result context node frame kind))
+         nil)
+        (otherwise
+         (error "Unsupported Markdown renderer phase ~S." phase))))) (define-node-dispatch (%mw-render-inline-event (context node phase))
+      :operation :markdown-renderer
+      :family :inline
+    (text
+     (%mw-render-inline-dispatch-event context node phase :text))
+    (code-span
+     (%mw-render-inline-dispatch-event context node phase :code-span))
     (html-inline
-     (%mw-write-string (html-inline-body node) stream))
+     (%mw-render-inline-dispatch-event context node phase :html-inline))
     (soft-break
-     (if *mw-heading-p*
-         (%mw-write-string "&#10;" stream)
-         (%mw-write-character #\Newline stream)))
+     (%mw-render-inline-dispatch-event context node phase :soft-break))
     (hard-break
-     (%mw-write-string (format nil "\\~%") stream))
+     (%mw-render-inline-dispatch-event context node phase :hard-break))
     (emphasis
-     (let ((delimiter (or (emphasis-delimiter-character node) #\*)))
-       (%mw-write-character delimiter stream)
-       (%mw-render-inline-children (emphasis-children node) stream nil t)
-       (%mw-write-character delimiter stream)))
+     (%mw-render-inline-dispatch-event context node phase :emphasis))
     (strong
-     (let ((delimiter (or (strong-delimiter-character node) #\*)))
-       (%mw-write-character delimiter stream)
-       (%mw-write-character delimiter stream)
-       (%mw-render-inline-children (strong-children node) stream nil t)
-       (%mw-write-character delimiter stream)
-       (%mw-write-character delimiter stream)))
-    (strikethrough
-     (%mw-write-string "~~" stream)
-     (%mw-render-inline-children
-      (strikethrough-children node) stream nil t)
-     (%mw-write-string "~~" stream))
+     (%mw-render-inline-dispatch-event context node phase :strong))
     (link
-     (%mw-write-character #\[ stream)
-     (%mw-render-inline-children (link-children node) stream nil t)
-     (%mw-write-string "](" stream)
-     (%mw-write-link-destination (link-destination node) stream)
-     (%mw-write-link-title (link-title node) stream)
-     (%mw-write-character #\) stream))
+     (%mw-render-inline-dispatch-event context node phase :link))
     (image
-     (%mw-write-string "![" stream)
-     (%mw-render-inline-children (image-children node) stream nil t)
-     (%mw-write-string "](" stream)
-     (%mw-write-link-destination (image-destination node) stream)
-     (%mw-write-link-title (image-title node) stream)
-     (%mw-write-character #\) stream))
+     (%mw-render-inline-dispatch-event context node phase :image))
+    (strikethrough
+     (%mw-render-inline-dispatch-event context node phase :strikethrough))
     (autolink
-     (let ((display-text (autolink-display-text node))
-           (destination (autolink-destination node)))
-       (if (string= display-text destination)
-           (progn
-             (%mw-write-character #\< stream)
-             (%mw-write-string display-text stream)
-             (%mw-write-character #\> stream))
-           (progn
-             (%mw-write-character #\[ stream)
-             (let ((*mw-autolink-label-p* t)
-                   (*mw-minimize-inline-escapes-p* nil))
-               (%mw-write-text display-text stream nil t))
-             (%mw-write-string "](" stream)
-             (%mw-write-link-destination destination stream)
-             (%mw-write-character #\) stream)))))
+     (%mw-render-inline-dispatch-event context node phase :autolink))
     (footnote-reference
-     (%mw-write-string "[^" stream)
-     (%mw-write-string
-      (%mw-escape-label (footnote-reference-normalized-label node))
-      stream)
-     (%mw-write-character #\] stream))
-    (t
-     (error "Unsupported inline node ~S." (type-of node)))))
+     (%mw-render-inline-dispatch-event context node phase :footnote-reference))))
 
-(defun %mw-render-inline-string (children &key table-cell-p escape-table-pipes-p
-                                              minimize-escapes-p)
-  (let ((*mw-line-start-p* t)
-        (*mw-line-indent* 0)
-        (*mw-table-cell-p* table-cell-p)
-        (*mw-escape-table-pipes-p* escape-table-pipes-p))
-    (with-output-to-string (stream)
-      (%mw-render-inline-children children stream minimize-escapes-p))))
 
+(defun %mw-render-inline-string (children results
+                                               &key table-cell-p
+                                                 escape-table-pipes-p
+                                                 minimize-escapes-p)
+  (declare (ignore table-cell-p escape-table-pipes-p minimize-escapes-p))
+  (%mw-render-child-results children results))
 (defun %mw-table-cell-ranges (line)
   (%bp-table-cells (%make-block-line line #() 0 0 0 0)))
 
@@ -684,9 +916,9 @@
 (defun %mw-table-start-follows-p (text)
   (not (null (%mw-table-alignment-breaker-position text))))
 
-(defun %mw-render-paragraph (node)
+(defun %mw-render-paragraph (node results)
   (let* ((children (paragraph-children node))
-         (text (%mw-render-inline-string children :minimize-escapes-p t))
+         (text (%mw-render-inline-string children results))
          (alignment-breaker-position
            (%mw-table-alignment-breaker-position text)))
     (if alignment-breaker-position
@@ -696,26 +928,26 @@
                      (subseq text alignment-breaker-position))
         text)))
 
-(defun %mw-render-blocks (nodes &optional (separator (format nil "~%~%")))
+(defun %mw-render-blocks
+    (nodes results &optional (separator (format nil "~%~%")))
   (with-output-to-string (stream)
-    (loop for remaining-nodes on nodes
+    (loop with previous = nil
+          for remaining-nodes on nodes
           for node = (car remaining-nodes)
-          for index from 0
-          for previous = (and (> index 0) (nth (1- index) nodes))
           do (when previous
                (if (and *mw-list-boundary-token*
                         (list-node-p previous)
                         (list-node-p node)
-                        (eq (list-node-kind previous) (list-node-kind node)))
+                        (eq (list-node-kind previous)
+                            (list-node-kind node)))
                    (progn
                      (write-string separator stream)
                      (write-string *mw-list-boundary-token* stream)
                      (write-string separator stream)
                      (incf *mw-list-boundary-count*))
                    (write-string separator stream)))
-             (let ((*mw-following-block-p*
-                     (or *mw-following-block-p* (cdr remaining-nodes))))
-               (write-string (%mw-render-block node) stream)))))
+             (write-string (or (gethash node results) "") stream)
+             (setf previous node))))
 
 (defun %mw-prefix-lines (text prefix)
   (if (zerop (length text))
@@ -774,7 +1006,7 @@
         while (char= (char text index) #\Newline)
         count t))
 
-(defun %mw-render-list (node)
+(defun %mw-render-list (node results)
   (let* ((items (list-node-items node))
          (tight-p (list-node-tight-p node))
          (separator-count (if tight-p 1 2))
@@ -795,11 +1027,8 @@
                                          "[x] "
                                          "[ ] "))
               for child-markdown = (when children
-                                     (let ((*mw-following-block-p*
-                                             (or *mw-following-block-p*
-                                                 (cdr remaining-items))))
-                                       (%mw-render-blocks children
-                                                          child-separator)))
+                                     (%mw-render-blocks
+                                      children results child-separator))
               for content =
                 (cond
                   ((and task-p children
@@ -831,15 +1060,16 @@
                  (write-string content stream)
                  (setf previous-content content))))))
 
-(defun %mw-render-table-row (row)
+(defun %mw-render-table-row (row results)
   (with-output-to-string (stream)
     (write-char #\| stream)
     (dolist (cell (table-row-cells row))
       (write-char #\Space stream)
-      (write-string (%mw-render-inline-string (table-cell-children cell)
-                                               :table-cell-p t
-                                               :minimize-escapes-p t)
-                    stream)
+      (write-string
+       (%mw-render-inline-string (table-cell-children cell) results
+                                 :table-cell-p t
+                                 :minimize-escapes-p t)
+       stream)
       (write-string " |" stream))))
 
 (defun %mw-alignment-marker (alignment)
@@ -849,13 +1079,13 @@
     (:center ":---:")
     (otherwise "---")))
 
-(defun %mw-render-table (node)
+(defun %mw-render-table (node results)
   (let ((rows (table-rows node))
         (alignments (table-alignments node)))
     (if (null rows)
         ""
         (with-output-to-string (stream)
-          (write-string (%mw-render-table-row (first rows)) stream)
+          (write-string (%mw-render-table-row (first rows) results) stream)
           (write-char #\Newline stream)
           (write-char #\| stream)
           (loop for cell in (table-row-cells (first rows))
@@ -865,7 +1095,7 @@
                    (write-string " |" stream))
           (dolist (row (rest rows))
             (write-char #\Newline stream)
-            (write-string (%mw-render-table-row row) stream))))))
+            (write-string (%mw-render-table-row row results) stream))))))
 
 (defun %mw-normalize-newlines (text)
   (with-output-to-string (stream)
@@ -879,82 +1109,144 @@
                (t
                 (write-char character stream))))))
 
-(defun %mw-render-block (node)
-  (let ((*mw-line-start-p* t)
-        (*mw-line-indent* 0)
-        (*mw-table-cell-p* nil)
-        (*mw-escape-table-pipes-p* nil))
-    (with-output-to-string (stream)
-      (typecase node
-        (paragraph
-         (write-string (%mw-render-paragraph node) stream))
-        (heading
-         (write-string (make-string (heading-level node)
-                                    :initial-element #\#)
-                       stream)
-         (unless (null (heading-children node))
-           (write-char #\Space stream)
-           (let ((*mw-heading-p* t)
-                 (*mw-heading-closing-hash-allowed-p* t))
-             (%mw-render-inline-children (heading-children node) stream t))))
-        (thematic-break
-         (write-string "* * *" stream))
-        (code-block
-         (write-string (%mw-render-code-block node) stream))
-        (html-block
-         (write-string (html-block-body node) stream))
-        (block-quote
-         (if (null (block-quote-children node))
-             (write-string ">" stream)
-             (write-string
-              (%mw-prefix-lines (%mw-render-blocks (block-quote-children node))
-                                "> ")
-              stream)))
-        (list-node
-         (write-string (%mw-render-list node) stream))
-        (table
-         (write-string (%mw-render-table node) stream))
-        (link-reference-definition
-         (write-char #\[ stream)
-         (write-string
-          (%mw-escape-label
-           (let ((normalized
-                   (link-reference-definition-normalized-label node)))
-             (if (plusp (length normalized))
-                 normalized
-                 (link-reference-definition-raw-label node))))
-          stream)
-         (write-string "]: " stream)
-         (%mw-write-link-destination
-          (link-reference-definition-destination node) stream)
-         (%mw-write-link-title (link-reference-definition-title node) stream))
-        (footnote-definition
-         (write-string "[^" stream)
-         (write-string
-          (%mw-escape-label
-           (footnote-definition-normalized-label node))
-          stream)
-         (write-string "]:" stream)
-         (unless (null (footnote-definition-children node))
-           (write-char #\Newline stream)
-           (write-string
-            (%mw-prefix-lines
-             (%mw-render-blocks (footnote-definition-children node))
-             "    ")
-            stream)))
-        (front-matter
+(progn
+  (defun %mw-render-block-result (context node frame kind)
+    (let ((results (%mw-render-session-results context)))
+      (ecase kind
+        (:document
+         (%mw-render-blocks (document-children node) results))
+        (:front-matter
          (let ((raw-text (%mw-normalize-newlines
                           (front-matter-raw-text node))))
-           (write-string "---" stream)
-           (write-char #\Newline stream)
-           (write-string raw-text stream)
-           (unless (or (zerop (length raw-text))
-                       (char= (char raw-text (1- (length raw-text)))
-                              #\Newline))
-             (write-char #\Newline stream))
-           (write-string "---" stream)))
-        (t
-         (error "Unsupported block node ~S." (type-of node)))))))
+           (with-output-to-string (stream)
+             (write-string "---" stream)
+             (write-char #\Newline stream)
+             (write-string raw-text stream)
+             (unless (or (zerop (length raw-text))
+                         (char= (char raw-text (1- (length raw-text)))
+                                #\Newline))
+               (write-char #\Newline stream))
+             (write-string "---" stream))))
+        (:block-quote
+         (let ((children (block-quote-children node)))
+           (if (null children)
+               ">"
+               (%mw-prefix-lines
+                (%mw-render-blocks children results)
+                "> "))))
+        (:list-node
+         (%mw-render-list node results))
+        ((:list-item :task-list-item)
+         "")
+        (:paragraph
+         (%mw-render-paragraph node results))
+        (:heading
+         (concatenate
+          'string
+          (%mw-render-frame-prefix frame)
+          (%mw-render-child-results (heading-children node) results)))
+        (:thematic-break
+         "* * *")
+        (:code-block
+         (%mw-capture-render-frame
+          frame
+          (lambda (stream)
+            (%mw-write-string (%mw-render-code-block node) stream))))
+        (:html-block
+         (html-block-body node))
+        (:link-reference-definition
+         (%mw-capture-render-frame
+          frame
+          (lambda (stream)
+            (%mw-write-character #\[ stream)
+            (%mw-write-string
+             (%mw-escape-label
+              (let ((normalized
+                      (link-reference-definition-normalized-label node)))
+                (if (plusp (length normalized))
+                    normalized
+                    (link-reference-definition-raw-label node))))
+             stream)
+            (%mw-write-string "]: " stream)
+            (%mw-write-link-destination
+             (link-reference-definition-destination node) stream)
+            (%mw-write-link-title
+             (link-reference-definition-title node) stream)))) (:table
+         (%mw-render-table node results)) (:table-row
+         (%mw-render-table-row node results)) (:table-cell
+         (%mw-render-child-results (table-cell-children node) results)) (:footnote-definition
+         (with-output-to-string (stream)
+           (write-string "[^" stream)
+           (write-string
+            (%mw-escape-label
+             (footnote-definition-normalized-label node))
+            stream)
+           (write-string "]:" stream)
+           (unless (null (footnote-definition-children node))
+             (write-char #\Newline stream)
+             (write-string
+              (%mw-prefix-lines
+               (%mw-render-blocks
+                (footnote-definition-children node) results)
+               "    ")
+              stream)))))))
+  (defun %mw-render-block-dispatch-event (context node phase kind)
+    (let ((frame (gethash node (%mw-render-session-frames context))))
+      (case phase
+        (:enter
+         (when (heading-p node)
+           (let ((prefix
+                   (concatenate
+                    'string
+                    (make-string (heading-level node) :initial-element #\#)
+                    (if (null (heading-children node)) "" " "))))
+             (setf (%mw-render-frame-prefix frame) prefix)
+             (%mw-advance-render-frame frame prefix)))
+         :descend)
+        (:leave
+         (setf (gethash node (%mw-render-session-results context))
+               (%mw-render-block-result context node frame kind))
+         nil)
+        (otherwise
+         (error "Unsupported Markdown renderer phase ~S." phase))))) (define-node-dispatch (%mw-render-block-event (context node phase))
+      :operation :markdown-renderer
+      :family :block
+    (document
+     (%mw-render-block-dispatch-event context node phase :document))
+    (front-matter
+     (%mw-render-block-dispatch-event context node phase :front-matter))
+    (block-quote
+     (%mw-render-block-dispatch-event context node phase :block-quote))
+    (list-node
+     (%mw-render-block-dispatch-event context node phase :list-node))
+    (task-list-item
+     (%mw-render-block-dispatch-event context node phase :task-list-item))
+    (list-item
+     (%mw-render-block-dispatch-event context node phase :list-item))
+    (paragraph
+     (%mw-render-block-dispatch-event context node phase :paragraph))
+    (heading
+     (%mw-render-block-dispatch-event context node phase :heading))
+    (thematic-break
+     (%mw-render-block-dispatch-event context node phase :thematic-break))
+    (code-block
+     (%mw-render-block-dispatch-event context node phase :code-block))
+    (html-block
+     (%mw-render-block-dispatch-event context node phase :html-block))
+    (link-reference-definition
+     (%mw-render-block-dispatch-event
+      context node phase :link-reference-definition))
+    (table
+     (%mw-render-block-dispatch-event context node phase :table))
+    (table-row
+     (%mw-render-block-dispatch-event context node phase :table-row))
+    (table-cell
+     (%mw-render-block-dispatch-event context node phase :table-cell))
+    (footnote-definition
+     (%mw-render-block-dispatch-event
+      context node phase :footnote-definition))) (verify-node-dispatches
+   :operation :markdown-renderer
+   :families '(:block :inline)))
 
 (defun %mw-substring-count (string substring)
   (loop with start = 0
@@ -980,38 +1272,78 @@
         unless (search label markdown :test #'char-equal)
           return (format nil "[~A]: <>" label)))
 
-(defun %mw-render-document-markdown (document)
-  (let ((*mw-line-start-p* t)
-        (*mw-line-indent* 0)
-        (*mw-table-cell-p* nil)
-        (*mw-escape-table-pipes-p* nil)
-        (*mw-text-autolink-breakpoints* nil)
-        (*mw-heading-p* nil)
-        (*mw-autolink-label-p* nil)
-        (*mw-escape-trailing-bang-p* nil)
-        (*mw-list-boundary-token* nil)
-        (*mw-list-boundary-count* 0)
-        (*mw-following-block-p* nil)
-        (*mw-minimize-inline-escapes-p* nil)
-        (*mw-heading-closing-hash-allowed-p* nil))
-    (loop with token-length = 1
-          for token = (concatenate
-                       'string
-                       (make-string token-length :initial-element #\Null)
-                       "markdown-writer-list-boundary"
-                       (make-string token-length :initial-element #\Null))
-          do (let* ((boundary-count 0)
-                    (markdown
-                      (let ((*mw-list-boundary-token* token)
-                            (*mw-list-boundary-count* 0))
-                        (prog1 (%mw-render-blocks (document-children document))
-                          (setf boundary-count *mw-list-boundary-count*))))
-                    (token-count (%mw-substring-count markdown token)))
-               (when (= boundary-count token-count)
-                 (return
-                   (%mw-replace-substring
-                    markdown token (%mw-list-boundary-definition markdown))))
-               (incf token-length)))))
+(progn
+  (defun %mw-render-document-tree (document)
+    (let ((context (%mw-make-render-session)))
+      (walk-node-tree-cps
+       document
+       (lambda (node phase parent grandparent previous-sibling next-sibling
+                     child-index last-child-p)
+         (setf (%mw-render-session-parent context) parent
+               (%mw-render-session-grandparent context) grandparent
+               (%mw-render-session-previous-sibling context) previous-sibling
+               (%mw-render-session-next-sibling context) next-sibling
+               (%mw-render-session-child-index context) child-index
+               (%mw-render-session-last-child-p context) last-child-p)
+         (when (eq phase :enter)
+           (setf (gethash node (%mw-render-session-frames context))
+                 (%mw-make-node-render-frame context node)))
+         (let ((event-result
+                 (cond
+                   ((inline-node-p node)
+                    (%mw-render-inline-event context node phase))
+                   ((block-node-p node)
+                    (%mw-render-block-event context node phase))
+                   (t
+                    (error "Unsupported Markdown node: ~S" node)))))
+           (when (and (eq phase :leave)
+                      parent
+                      (%mw-inline-children-parent-p parent))
+             (let ((parent-frame
+                     (gethash parent
+                              (%mw-render-session-frames context))))
+               (when parent-frame
+                 (%mw-advance-render-frame
+                  parent-frame
+                  (or (gethash node
+                               (%mw-render-session-results context))
+                      "")))))
+           event-result)))
+      (gethash document (%mw-render-session-results context))))
+
+  (defun %mw-render-document-markdown (document)
+    (let ((*mw-line-start-p* t)
+          (*mw-line-indent* 0)
+          (*mw-table-cell-p* nil)
+          (*mw-escape-table-pipes-p* nil)
+          (*mw-text-autolink-breakpoints* nil)
+          (*mw-heading-p* nil)
+          (*mw-autolink-label-p* nil)
+          (*mw-escape-trailing-bang-p* nil)
+          (*mw-list-boundary-token* nil)
+          (*mw-list-boundary-count* 0)
+          (*mw-following-block-p* nil)
+          (*mw-minimize-inline-escapes-p* nil)
+          (*mw-heading-closing-hash-allowed-p* nil))
+      (loop with token-length = 1
+            for token = (concatenate
+                         'string
+                         (make-string token-length :initial-element #\Null)
+                         "markdown-writer-list-boundary"
+                         (make-string token-length :initial-element #\Null))
+            do (let* ((boundary-count 0)
+                      (markdown
+                        (let ((*mw-list-boundary-token* token)
+                              (*mw-list-boundary-count* 0))
+                          (prog1 (%mw-render-document-tree document)
+                            (setf boundary-count *mw-list-boundary-count*))))
+                      (token-count (%mw-substring-count markdown token)))
+                 (when (= boundary-count token-count)
+                   (return
+                     (%mw-replace-substring
+                      markdown token
+                      (%mw-list-boundary-definition markdown))))
+                 (incf token-length))))))
 
 (defun write-markdown-to-stream (document stream)
   (check-type document document)

@@ -136,7 +136,7 @@
                        (cl-markdown-kit:emphasis-delimiter-character node))
                       (cl-markdown-kit:strong
                        (cl-markdown-kit:strong-delimiter-character node))))
-            (run (if (cl-markdown-kit:strong-p node) 2 1)))
+            (run (if (typep node 'cl-markdown-kit:strong) 2 1)))
        (unless (and (>= (length slice) (* 2 run))
                     (>= (positions-test-leading-run slice marker) run)
                     (>= (positions-test-trailing-run slice marker) run))
@@ -149,7 +149,7 @@
                     (> (length slice) (* 2 opening)))
          :strikethrough-delimiters)))
     ((or cl-markdown-kit:link cl-markdown-kit:image)
-     (let* ((image-p (cl-markdown-kit:image-p node))
+     (let* ((image-p (typep node 'cl-markdown-kit:image))
             (prefix (if image-p "![" "["))
             (kind (if image-p
                       (cl-markdown-kit:image-reference-kind node)

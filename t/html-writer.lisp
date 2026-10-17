@@ -613,4 +613,30 @@
                  (html-writer-test-document) "not-a-stream")
                 nil)
        (type-error () t))
-     :to-be-truthy)))
+     :to-be-truthy))
+  (it "writes deeply nested block and inline trees"
+    (let ((inline (cl-markdown-kit:make-text :value "deep")))
+      (dotimes (depth 4096)
+        (setf inline
+              (cl-markdown-kit:make-emphasis
+               :children (list inline))))
+      (let ((node (cl-markdown-kit:make-paragraph
+                   :children (list inline))))
+        (dotimes (depth 256)
+          (setf node
+                (cl-markdown-kit:make-block-quote
+                 :children (list node))))
+        (let ((html (cl-markdown-kit:write-html
+                     (cl-markdown-kit:make-document
+                      :children (list node)))))
+          (labels ((count-occurrences (needle)
+                     (loop with start = 0
+                           for position = (search needle html :start2 start)
+                           while position
+                           count t
+                           do (setf start (+ position (length needle))))))
+            (expect (count-occurrences "<blockquote>") :to-equal 256)
+            (expect (count-occurrences "</blockquote>") :to-equal 256)
+            (expect (count-occurrences "<em>") :to-equal 4096)
+            (expect (count-occurrences "</em>") :to-equal 4096)
+            (expect (search "deep" html) :to-be-truthy)))))))

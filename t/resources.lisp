@@ -89,7 +89,7 @@
           (cpu-start (get-internal-run-time)))
       (handler-case
           (let ((document (cl-markdown-kit:parse-string input)))
-            (unless (cl-markdown-kit:document-p document)
+            (unless (typep document 'cl-markdown-kit:document)
               (error "Pathological case ~A returned a non-document." name))
             (format t "T-007 resource case=~A chars=~D bytes=~D wall=~,6Fs cpu=~,6Fs result=DOCUMENT~%"
                     name characters bytes
@@ -272,7 +272,7 @@
               (cl-markdown-kit:parse-string
                input :max-nesting-depth 2048
                      :max-inline-delimiter-depth 16384)))
-        (unless (cl-markdown-kit:document-p document)
+        (unless (typep document 'cl-markdown-kit:document)
           (error "Scaling input returned a non-document."))
         (unless (and (= (cl-markdown-kit:document-max-nesting-depth document) 2048)
                      (= (cl-markdown-kit:document-max-inline-delimiter-depth document)
