@@ -320,6 +320,7 @@
         GFM_TEST_SUITE = "${cmark-gfm}/test/extensions.txt";
       };
       sourceInclude = [
+        ./data
         ./docs
         ./scripts
       ];
