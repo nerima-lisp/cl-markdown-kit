@@ -20,6 +20,7 @@
   :components ((:file "package")
                (:file "conditions")
                (:file "html-entities-data")
+               (:file "parser-common")
                (:file "character-data")
                (:file "html-escaping")
                (:file "source")

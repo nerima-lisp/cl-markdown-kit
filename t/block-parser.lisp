@@ -1209,7 +1209,7 @@
                        (format nil "~C " #\Tab) 0 2 2)
                       3)
                    (equal quote-indent '(1 4))
-                   (cl-markdown-kit::%bp-prefix-p "Ab" "ab" 0 t)
+                   (cl-markdown-kit::%bp-prefix-p "Ab" "Ab" 0)
                    (string= (cl-markdown-kit::normalize-link-label "ASCII")
                             "ascii")
                    (string= (cl-markdown-kit::normalize-link-label "Ä")
@@ -1244,12 +1244,11 @@
              (cl-markdown-kit::%bp-parse-destination "" 0))
            (escaped-title
              (multiple-value-list
-              (cl-markdown-kit::%bp-parse-title
-               "\"escaped \\\" title\"" 0)))
+              (cl-markdown-kit::%pc-parse-title "\"escaped \\\" title\"" 0 (length "\"escaped \\\" title\"") :backslash-mode :any-character)))
            (unfinished-title
-             (cl-markdown-kit::%bp-parse-title "\"unfinished" 0))
-           (empty-title (cl-markdown-kit::%bp-parse-title "" 0))
-           (ordinary-title (cl-markdown-kit::%bp-parse-title "plain" 0))
+             (cl-markdown-kit::%pc-parse-title "\"unfinished" 0 (length "\"unfinished") :backslash-mode :any-character))
+           (empty-title (cl-markdown-kit::%pc-parse-title "" 0 (length "") :backslash-mode :any-character))
+           (ordinary-title (cl-markdown-kit::%pc-parse-title "plain" 0 (length "plain") :backslash-mode :any-character))
            (valid-definition
              (multiple-value-list
               (cl-markdown-kit::%bp-link-definition
