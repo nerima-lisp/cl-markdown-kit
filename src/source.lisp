@@ -120,9 +120,7 @@ BOUNDARIES has one entry for each text boundary, including both ends."
 
 (defun %bom-character ()
   #+sb-unicode
-  (code-char #xfeff)
-  #-sb-unicode
-  (error "This implementation cannot represent the Unicode BOM."))
+  (code-char #xfeff))
 
 (defun %starts-with-bom-p (string)
   (and (plusp (length string))

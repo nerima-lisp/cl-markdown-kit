@@ -130,8 +130,8 @@
      (error "Unsupported block node in Markdown writer test: ~S" node))))
 
 (defun markdown-writer-list-item-signature (node)
-  (list (if (cl-markdown-kit:task-list-item-p node) :task-item :item)
-        (when (cl-markdown-kit:task-list-item-p node)
+  (list (if (typep node 'cl-markdown-kit:task-list-item) :task-item :item)
+        (when (typep node 'cl-markdown-kit:task-list-item)
           (cl-markdown-kit:task-list-item-checked-p node))
         (mapcar #'markdown-writer-block-signature
                 (cl-markdown-kit:node-children node))))
@@ -251,7 +251,7 @@
         (expect cl-markdown-kit::*mw-line-indent* :to-equal 4)))
     (with-mw-writer-state
       (flet ((render (text)
-               (cl-markdown-kit::%mw-render-inline-string
+               (markdown-writer-render-inline-nodes
                 (list (cl-markdown-kit:make-text :value text)))))
         (expect (render (format nil "    x")) :to-equal "&#32;   x")
         (expect (render (format nil "~Cx" #\Tab)) :to-equal "&#9;x")
@@ -615,7 +615,7 @@
   (it "renders inline node variants and escapes link components"
     (with-mw-writer-state
       (flet ((render (&rest nodes)
-               (cl-markdown-kit::%mw-render-inline-string nodes)))
+               (markdown-writer-render-inline-nodes nodes)))
         (expect (render (cl-markdown-kit:make-code-span :literal-text " a "))
                 :to-equal "`  a  `")
         (expect (render (cl-markdown-kit:make-code-span :literal-text "   "))
@@ -672,17 +672,13 @@
                   :destination "https://example.test" :display-text "example"))
          :to-equal "[example](<https://example.test>)")
         (expect
-         (with-output-to-string (stream)
-           (cl-markdown-kit::%mw-render-inline-node
-            (cl-markdown-kit:make-text :value "direct") stream))
+         (markdown-writer-render-inline-nodes (list (cl-markdown-kit:make-text :value "direct")))
          :to-equal "direct")
         (expect
-         (cl-markdown-kit::%mw-render-inline-string
-          (list (cl-markdown-kit:make-link
-                 :destination "target"
-                 :children (list (cl-markdown-kit:make-text :value "link")))
+         (render (cl-markdown-kit:make-link
+                  :destination "target"
+                  :children (list (cl-markdown-kit:make-text :value "link")))
                 (cl-markdown-kit:make-text :value "[tail]"))
-          :minimize-escapes-p t)
          :to-equal "[link](<target>)\\[tail\\]")
         (expect
          (render (cl-markdown-kit:make-footnote-reference
@@ -692,8 +688,7 @@
         (expect
          (handler-case
              (progn
-               (cl-markdown-kit::%mw-render-inline-string
-                (list (cl-markdown-kit:make-node)))
+               (markdown-writer-render-inline-nodes (list (cl-markdown-kit:make-node)))
                nil)
            (error () t))
         :to-be-truthy)))
@@ -729,7 +724,7 @@
             :to-equal nil)
     (with-mw-writer-state
       (expect
-       (cl-markdown-kit::%mw-render-paragraph
+       (markdown-writer-render-node
         (cl-markdown-kit:make-paragraph
          :children (list (cl-markdown-kit:make-text
                           :value (format nil "a|b~%---|---")))))
@@ -774,15 +769,16 @@
                    document :raw-html :pass-through :unsafe-urls t)))))
     (with-mw-writer-state
       (expect
-       (cl-markdown-kit::%mw-render-blocks
-        (list (cl-markdown-kit:make-paragraph
-               :children (list (cl-markdown-kit:make-text :value "first")))
-              (cl-markdown-kit:make-paragraph
-               :children (list (cl-markdown-kit:make-text :value "second")))
-              (cl-markdown-kit:make-paragraph
-               :children (list (cl-markdown-kit:make-text :value "third"))))
-        (format nil "~%"))
-       :to-equal (format nil "first~%second~%third")))
+       (cl-markdown-kit:write-markdown
+        (cl-markdown-kit:make-document
+         :children
+         (list (cl-markdown-kit:make-paragraph
+                :children (list (cl-markdown-kit:make-text :value "first")))
+               (cl-markdown-kit:make-paragraph
+                :children (list (cl-markdown-kit:make-text :value "second")))
+               (cl-markdown-kit:make-paragraph
+                :children (list (cl-markdown-kit:make-text :value "third"))))))
+       :to-equal (format nil "first~%~%second~%~%third")))
     (expect (cl-markdown-kit::%mw-prefix-lines "" "> ") :to-equal "")
     (expect (cl-markdown-kit::%mw-prefix-lines (format nil "a~%b~%") "> ")
             :to-equal (format nil "> a~%> b~%"))
@@ -807,7 +803,7 @@
        :to-equal (format nil "```~%```")))
     (with-mw-writer-state
       (expect
-       (cl-markdown-kit::%mw-render-list
+       (markdown-writer-render-node
         (cl-markdown-kit:make-list-node
          :kind :unordered :tight-p t
          :items
@@ -826,7 +822,7 @@
                (cl-markdown-kit:make-list-item :children nil))))
        :to-equal (format nil "- one~%  two~%- [x] done~%- [ ]~%- "))
       (expect
-       (cl-markdown-kit::%mw-render-list
+       (markdown-writer-render-node
         (cl-markdown-kit:make-list-node
          :kind :ordered :start-number 5 :tight-p nil
          :items
@@ -843,11 +839,11 @@
        :to-equal (format nil "5. [ ]~%   ```~%   code~%   ```~%~%6. regular"))
       (expect (cl-markdown-kit::%mw-alignment-marker :center) :to-equal ":---:")
       (expect (cl-markdown-kit::%mw-alignment-marker :unknown) :to-equal "---")
-      (expect (cl-markdown-kit::%mw-render-list
+      (expect (markdown-writer-render-node
                (cl-markdown-kit:make-list-node :items nil))
               :to-equal "")
       (let ((loose-task
-              (cl-markdown-kit::%mw-render-list
+              (markdown-writer-render-node
                (cl-markdown-kit:make-list-node
                 :tight-p nil
                 :items
@@ -859,7 +855,7 @@
                               (list (cl-markdown-kit:make-text :value "task"))))))))))
         (expect (search "task" loose-task) :to-be-truthy))
       (let ((tight-task-with-code
-              (cl-markdown-kit::%mw-render-list
+              (markdown-writer-render-node
                (cl-markdown-kit:make-list-node
                 :tight-p t
                 :items
@@ -869,7 +865,7 @@
                        (list (cl-markdown-kit:make-code-block :body "code"))))))))
         (expect (search "code" tight-task-with-code) :to-be-truthy))
       (expect
-       (cl-markdown-kit::%mw-render-table (cl-markdown-kit:make-table :rows nil))
+       (markdown-writer-render-node (cl-markdown-kit:make-table :rows nil))
        :to-equal "")))
 
   (it "renders remaining block variants and rejects invalid writer inputs"
@@ -882,49 +878,49 @@
             :to-equal (format nil "end~%"))
     (with-mw-writer-state
       (expect
-       (cl-markdown-kit::%mw-render-block
+       (markdown-writer-render-node
         (cl-markdown-kit:make-front-matter
          :raw-text (format nil "a~C~%b~Cc~%" #\Return #\Return)))
        :to-equal (format nil "---~%a~%b~%c~%---"))
       (expect
-       (cl-markdown-kit::%mw-render-block
+       (markdown-writer-render-node
         (cl-markdown-kit:make-front-matter :raw-text ""))
        :to-equal (format nil "---~%---"))
       (expect
-       (cl-markdown-kit::%mw-render-block
+       (markdown-writer-render-node
         (cl-markdown-kit:make-front-matter :raw-text "content"))
        :to-equal (format nil "---~%content~%---"))
       (expect
-       (cl-markdown-kit::%mw-render-block
+       (markdown-writer-render-node
         (cl-markdown-kit:make-heading :level 2 :children nil))
        :to-equal "##")
-      (expect (cl-markdown-kit::%mw-render-block
+      (expect (markdown-writer-render-node
                (cl-markdown-kit:make-thematic-break))
               :to-equal "* * *")
-      (expect (cl-markdown-kit::%mw-render-block
+      (expect (markdown-writer-render-node
                (cl-markdown-kit:make-html-block :body "<hr>"))
               :to-equal "<hr>")
-      (expect (cl-markdown-kit::%mw-render-block
+      (expect (markdown-writer-render-node
                (cl-markdown-kit:make-block-quote :children nil))
               :to-equal ">")
       (expect
-       (cl-markdown-kit::%mw-render-block
+       (markdown-writer-render-node
         (cl-markdown-kit:make-link-reference-definition
          :raw-label "raw[&]" :normalized-label "" :destination "target"
          :title "say \"hi\""))
        :to-equal (format nil "[raw~C[&amp;~C]]: <target> \"say ~C\"hi~C\"\""
                          #\\ #\\ #\\ #\\))
       (expect
-       (cl-markdown-kit::%mw-render-block
+       (markdown-writer-render-node
         (cl-markdown-kit:make-link-reference-definition
          :raw-label "raw" :normalized-label "normalized" :destination "target"))
        :to-equal "[normalized]: <target>")
       (expect
-       (cl-markdown-kit::%mw-render-block
+       (markdown-writer-render-node
         (cl-markdown-kit:make-footnote-definition :normalized-label "note"))
        :to-equal "[^note]:")
       (expect
-       (cl-markdown-kit::%mw-render-block
+       (markdown-writer-render-node
         (cl-markdown-kit:make-footnote-definition
          :normalized-label "note"
          :children
@@ -935,7 +931,7 @@
       (expect
        (handler-case
            (progn
-             (cl-markdown-kit::%mw-render-block (cl-markdown-kit:make-node))
+             (markdown-writer-render-node (cl-markdown-kit:make-node))
              nil)
          (error () t))
        :to-be-truthy))
@@ -1409,6 +1405,28 @@
         (expect-roundtrip
          split-entity "\\&amp;"
          '((:paragraph ((:text "&amp;"))))))))
+  (it "writes deeply nested Markdown block and inline trees"
+    (let ((inline (cl-markdown-kit:make-text :value "deep")))
+      (dotimes (depth 4096)
+        (setf inline
+              (cl-markdown-kit:make-emphasis
+               :children (list inline))))
+      (let ((block (cl-markdown-kit:make-paragraph
+                    :children (list inline))))
+        (dotimes (depth 256)
+          (setf block
+                (cl-markdown-kit:make-block-quote
+                 :children (list block))))
+        (let ((markdown
+                (cl-markdown-kit:write-markdown
+                 (cl-markdown-kit:make-document
+                  :children (list block)))))
+          (labels ((count-character (character)
+                     (loop for candidate across markdown
+                           count (char= candidate character))))
+            (expect (search "deep" markdown) :to-be-truthy)
+            (expect (count-character #\*) :to-equal 8192)
+            (expect (count-character #\>) :to-equal 256))))))
 
   (it "normalizes front matter line endings without changing HTML round trips"
     (let* ((source

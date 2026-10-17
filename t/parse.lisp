@@ -115,15 +115,14 @@
           (*parser-contract-inline-calls* nil))
       (call-with-parser-contract-stubs
        (lambda ()
-         (expect (cl-markdown-kit:document-p (cl-markdown-kit:parse "x"))
+         (expect (typep (cl-markdown-kit:parse "x") 'cl-markdown-kit:document)
                  :to-be-truthy)
-         (expect (cl-markdown-kit:document-p
-                  (cl-markdown-kit:parse
+         (expect (typep (cl-markdown-kit:parse
                    (make-array 1 :element-type '(unsigned-byte 8)
-                               :initial-contents '(65))))
+                               :initial-contents '(65))) 'cl-markdown-kit:document)
                  :to-be-truthy)
          (expect (with-input-from-string (stream "x")
-                   (cl-markdown-kit:document-p (cl-markdown-kit:parse stream)))
+                   (typep (cl-markdown-kit:parse stream) 'cl-markdown-kit:document))
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda () (cl-markdown-kit:parse :invalid)))
@@ -260,5 +259,5 @@
               :to-be-truthy)
       (expect (find-if #'cl-markdown-kit:front-matter-p disabled-children)
               :to-equal nil)
-      (expect (cl-markdown-kit:thematic-break-p (first disabled-children))
+      (expect (typep (first disabled-children) 'cl-markdown-kit:thematic-break)
               :to-be-truthy))))
