@@ -1,19 +1,14 @@
 (in-package #:cl-markdown-kit)
 
-(defparameter +default-max-nesting-depth+
-  256)
+(defconstant +default-max-nesting-depth+ 256)
 
-(defparameter +default-max-inline-delimiter-depth+
-  4096)
+(defconstant +default-max-inline-delimiter-depth+ 4096)
 
-(defparameter +max-ordered-list-marker-digits+
-  9)
+(defconstant +max-ordered-list-marker-digits+ 9)
 
-(defparameter +html-block-type-1-tags+
-  '("script" "pre" "style" "textarea"))
+(sb-ext:defglobal +html-block-type-1-tags+ '("script" "pre" "style" "textarea"))
 
-(defparameter +html-block-type-6-tags+
-  '("address" "article"
+(sb-ext:defglobal +html-block-type-6-tags+ '("address" "article"
               "aside"
               "base"
               "basefont"
@@ -75,8 +70,7 @@
               "track"
               "ul"))
 
-(defparameter +gfm-tagfilter-tags+
-  '("title" "textarea"
+(sb-ext:defglobal +gfm-tagfilter-tags+ '("title" "textarea"
             "style"
             "xmp"
             "iframe"
@@ -85,145 +79,42 @@
             "script"
             "plaintext"))
 
-(defparameter +html-c1-replacements+
-  '((#x80 . #x20AC) (#x82 . #x201A)
-    (#x83 . #x0192)
-    (#x84 . #x201E)
-    (#x85 . #x2026)
-    (#x86 . #x2020)
-    (#x87 . #x2021)
-    (#x88 . #x02C6)
-    (#x89 . #x2030)
-    (#x8A . #x0160)
-    (#x8B . #x2039)
-    (#x8C . #x0152)
-    (#x8E . #x017D)
-    (#x91 . #x2018)
-    (#x92 . #x2019)
-    (#x93 . #x201C)
-    (#x94 . #x201D)
-    (#x95 . #x2022)
-    (#x96 . #x2013)
-    (#x97 . #x2014)
-    (#x98 . #x02DC)
-    (#x99 . #x2122)
-    (#x9A . #x0161)
-    (#x9B . #x203A)
-    (#x9C . #x0153)
-    (#x9E . #x017E)
-    (#x9F . #x0178)))
+(sb-ext:defglobal +html-attribute-start-characters+ "_:")
 
-(defparameter +unicode-punctuation-categories+
-  '(:pc :pd :ps :pe :pi :pf :po))
+(sb-ext:defglobal +html-attribute-name-extra-characters+ ":._-")
 
-(defparameter +unicode-symbol-categories+
-  '(:sm :sc :sk :so))
+(sb-ext:defglobal +html-unquoted-attribute-excluded-characters+ (concatenate 'string (string #\") "'=<>" (string (code-char #x60))))
 
-(defparameter +unicode-non-domain-categories+
-  '(:cc :cf :cs :co :cn))
+(sb-ext:defglobal +autolink-angle-excluded-characters+ "<>")
 
-(defparameter +unicode-whitespace-control-codepoints+
-  '(#x09 #x0A #x0C #x0D))
+(sb-ext:defglobal +uri-scheme-extra-characters+ "+.-")
 
-(defun %pc-unicode-punctuation-p (character)
-  (not
-   (null
-    (member (sb-unicode:general-category character)
-            +unicode-punctuation-categories+
-            :test
-            #'eq))))
-
-(defun %pc-unicode-symbol-p (character)
-  (member (sb-unicode:general-category character)
-          +unicode-symbol-categories+
-          :test
-          #'eq))
-
-(defparameter +html-attribute-start-characters+
-  "_:")
-
-(defparameter +html-attribute-name-extra-characters+
-  ":._-")
-
-(defparameter +html-unquoted-attribute-excluded-characters+
-  (concatenate 'string (string #\") "'=<>" (string (code-char #x60))))
-
-(defparameter +autolink-angle-excluded-characters+
-  "<>")
-
-(defparameter +uri-scheme-extra-characters+
-  "+.-")
-
-(defparameter +angle-email-local-part-characters+
-  (concatenate 'string
+(sb-ext:defglobal +angle-email-local-part-characters+ (concatenate 'string
                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.!#$%&'*+/=?^_"
                (string (code-char #x60))
                "{|}~-"))
 
-(defparameter +email-local-part-extra-characters+
-  ".-_+")
+(sb-ext:defglobal +email-local-part-extra-characters+ ".-_+")
 
-(defparameter +gfm-domain-extra-characters+
-  "_-")
+(sb-ext:defglobal +gfm-domain-extra-characters+ "_-")
 
-(defparameter +bare-url-trailing-punctuation-characters+
-  "?!.,:*_~")
+(sb-ext:defglobal +bare-url-trailing-punctuation-characters+ "?!.,:*_~")
 
-(defparameter +common-quote-characters+
-  (list #\" #\'))
+(sb-ext:defglobal +common-quote-characters+ (list #\" #\'))
 
-(defparameter +link-label-unescape-characters+
-  (list #\\ #\[ #\]))
+(sb-ext:defglobal +link-label-unescape-characters+ (list #\\ #\[ #\]))
 
-(defparameter +reference-label-space-characters+
-  (list #\Space #\Tab #\Newline))
+(sb-ext:defglobal +reference-label-space-characters+ (list #\Space #\Tab #\Newline))
 
-(defparameter +inline-delimiter-characters+
-  (list #\* #\_ #\~))
+(sb-ext:defglobal +inline-delimiter-characters+ (list #\* #\_ #\~))
 
-(defparameter +inline-text-special-characters+
-  (list #\\ #\` #\& #\< #\Newline #\Space #\Tab #\! #\[ #\] #\* #\_ #\~))
+(sb-ext:defglobal +inline-text-special-characters+ (list #\\ #\` #\& #\< #\Newline #\Space #\Tab #\! #\[ #\] #\* #\_ #\~))
 
-(defparameter +commonmark-space-characters+
-  (list #\Space #\Tab))
+(sb-ext:defglobal +numeric-reference-hex-prefix-characters+ "xX")
 
-(defparameter +html-space-characters+
-  (list #\Space #\Tab #\Newline #\Return #\Page))
+(sb-ext:defglobal +ascii-hexadecimal-letter-characters+ "abcdefABCDEF")
 
-(defparameter +link-label-space-characters+
-  (list #\Space #\Tab #\Newline #\Return))
-
-(defparameter +numeric-reference-hex-prefix-characters+
-  "xX")
-
-(defparameter +ascii-hexadecimal-letter-characters+
-  "abcdefABCDEF")
-
-(defparameter +bare-url-preceding-excluded-characters+
-  ":/@<")
-
-(declaim (ftype function
-                ascii-punctuation-p
-                decode-numeric-character-reference
-                lookup-html5-entity
-                unicode-whitespace-p
-                normalize-uri-percent-encoding
-                %pc-entity-at
-                %pc-unescape
-                %pc-email-local-character-p
-                %pc-gfm-domain-end
-                %pc-email-domain-end
-                %pc-url-end
-                %pc-trim-url-end))
-
-(defun %pc-space-p (character)
-  (find character +commonmark-space-characters+))
-
-(defun %pc-html-space-p (character)
-  (find character +html-space-characters+))
-
-(defun %pc-link-label-space-p (character)
-  (find character +link-label-space-characters+))
+(sb-ext:defglobal +bare-url-preceding-excluded-characters+ ":/@<")
 
 (defun %pc-trim-indices (text start end)
   (loop while (and (< start end) (%pc-space-p (char text start)))
@@ -235,17 +126,6 @@
 (defun %pc-trimmed-string (text)
   (multiple-value-bind (start end) (%pc-trim-indices text 0 (length text))
     (subseq text start end)))
-
-(defun %pc-ascii-alpha-p (character)
-  (let ((code (char-code character)))
-    (or (<= #x41 code #x5A) (<= #x61 code #x7A))))
-
-(defun %pc-ascii-digit-p (character)
-  (let ((code (char-code character)))
-    (<= #x30 code #x39)))
-
-(defun %pc-ascii-alphanumeric-p (character)
-  (or (%pc-ascii-alpha-p character) (%pc-ascii-digit-p character)))
 
 (defun %pc-ascii-prefix-p (text start prefix)
   (and (<= (+ start (length prefix)) (length text))
@@ -293,8 +173,7 @@
                  (incf index))))
     matches))
 
-(defparameter +link-title-delimiters+
-  (list #\" #\' #\())
+(sb-ext:defglobal +link-title-delimiters+ (list #\" #\' #\())
 
 (defun %pc-check-depth (depth limit kind)
   (when (> depth limit)
@@ -360,17 +239,6 @@
                (t (incf cursor)))
           finally (return (values nil nil)))))
 
-(defun %pc-c1-replacement (codepoint)
-  (cdr (assoc codepoint +html-c1-replacements+ :test #'=)))
-
-(defun %pc-decode-numeric-reference (digits radix)
-  (let* ((decoded (decode-numeric-character-reference digits radix))
-         (replacement
-          (and decoded (%pc-c1-replacement (parse-integer digits :radix radix)))))
-    (if replacement
-        (string (code-char replacement))
-        decoded)))
-
 (defstruct
     (%pc-candidate
      (:constructor %pc-make-candidate (start end destination display-text kind)))
@@ -415,103 +283,13 @@
          (let ((name-start cursor))
            (loop while (and (< cursor end)
                             (< (- cursor name-start) 32)
-                            (or (%pc-ascii-alphanumeric-p (char text cursor))))
+                            (%pc-ascii-alphanumeric-p (char text cursor)))
                  do (incf cursor))
            (when (and (< cursor end) (char= (char text cursor) #\;))
              (let ((value
                     (lookup-html5-entity (subseq text name-start (1+ cursor)))))
                (when value
                  (values value (1+ cursor)))))))))))
-
-(defun %pc-bare-url-start-p (text index)
-  (or (zerop index)
-      (let ((previous (char text (1- index))))
-        (and (not (%pc-ascii-alphanumeric-p previous))
-             (not (find previous +bare-url-preceding-excluded-characters+))))))
-
-(defun %pc-bare-email-start-p (text index)
-  (or (zerop index)
-      (let ((previous (char text (1- index))))
-        (and (not (%pc-ascii-alphanumeric-p previous))
-             (not (char= previous #\@))))))
-
-(defun %pc-bare-candidate-at (text index end)
-  (cond
-    ((and (%pc-bare-url-start-p text index)
-          (or (%pc-ascii-prefix-p text index "https://")
-              (%pc-ascii-prefix-p text index "http://")
-              (%pc-ascii-prefix-p text index "www.")))
-     (let* ((www-p (%pc-ascii-prefix-p text index "www."))
-            (prefix-length
-             (cond
-               (www-p 4)
-               ((%pc-ascii-prefix-p text index "https://") 8)
-               (t 7)))
-            (domain-end
-             (%pc-gfm-domain-end text
-                                 (+ index prefix-length)
-                                 end
-                                 nil
-                                 (not www-p)))
-            (raw-end (and domain-end (%pc-url-end text index end)))
-            (link-end (and raw-end (%pc-trim-url-end text index raw-end))))
-       (when (and link-end (>= link-end domain-end))
-         (let* ((display (subseq text index link-end))
-                (destination
-                 (normalize-uri-percent-encoding
-                  (if www-p
-                      (concatenate 'string "http://" display)
-                      display))))
-           (%pc-make-candidate index link-end destination display :bare-url)))))
-    ((and (%pc-bare-email-start-p text index)
-          (%pc-ascii-prefix-p text index "mailto:"))
-     (let* ((address-start (+ index (length "mailto:")))
-            (local-end address-start))
-       (loop while (and (< local-end end)
-                        (%pc-email-local-character-p (char text local-end)))
-             do (incf local-end))
-       (when (and (< local-end end) (char= (char text local-end) #\@))
-         (let ((domain-end (%pc-email-domain-end text (1+ local-end) end)))
-           (when domain-end
-             (let ((display (subseq text index domain-end)))
-               (%pc-make-candidate index
-                                   domain-end
-                                   (normalize-uri-percent-encoding display)
-                                   display
-                                   :bare-email)))))))
-    ((and (%pc-bare-url-start-p text index)
-          (%pc-ascii-prefix-p text index "xmpp:"))
-     (let* ((address-start (+ index (length "xmpp:")))
-            (local-end address-start))
-       (loop while (and (< local-end end)
-                        (%pc-email-local-character-p (char text local-end)))
-             do (incf local-end))
-       (when (and (< local-end end) (char= (char text local-end) #\@))
-         (let ((domain-end (%pc-email-domain-end text (1+ local-end) end)))
-           (when domain-end
-             (let* ((raw-end (%pc-url-end text index end))
-                    (link-end (%pc-trim-url-end text index raw-end))
-                    (display (subseq text index link-end))
-                    (destination (normalize-uri-percent-encoding display)))
-               (%pc-make-candidate index link-end destination display :bare-url)))))))
-    ((and (%pc-bare-email-start-p text index)
-          (%pc-email-local-character-p (char text index)))
-     (let ((local-end index))
-       (loop while (and (< local-end end)
-                        (%pc-email-local-character-p (char text local-end)))
-             do (incf local-end))
-       (when (and (< local-end end) (char= (char text local-end) #\@))
-         (let ((domain-end (%pc-email-domain-end text (1+ local-end) end)))
-           (when domain-end
-             (let* ((display (subseq text index domain-end))
-                    (destination
-                     (normalize-uri-percent-encoding
-                      (concatenate 'string "mailto:" display))))
-               (%pc-make-candidate index
-                                   domain-end
-                                   destination
-                                   display
-                                   :bare-email)))))))))
 
 (defun %pc-table-cells (text)
   (let* ((length (length text))
@@ -550,125 +328,6 @@
                (char= (char text (1- end)) #\|))
         (pop cells)))
     (nreverse cells)))
-
-(defun %pc-email-local-character-p (character)
-  (or (%pc-ascii-alphanumeric-p character)
-      (find character +email-local-part-extra-characters+)))
-
-(defun %pc-commonmark-punctuation-p (character)
-  (or (ascii-punctuation-p character)
-      (%pc-unicode-punctuation-p character)
-      (not (null (%pc-unicode-symbol-p character)))))
-
-(defun %pc-gfm-domain-character-p (character)
-  (or (%pc-ascii-alphanumeric-p character)
-      (find character +gfm-domain-extra-characters+)
-      (let ((category (sb-unicode:general-category character)))
-        (and (> (char-code character) #x7F)
-             (not (unicode-whitespace-p character))
-             (not (%pc-unicode-punctuation-p character))
-             (not (member category +unicode-non-domain-categories+ :test #'eq))))))
-
-(defun %pc-gfm-domain-end (text start end &optional email-p allow-single-label)
-  (let ((cursor start)
-        (segments nil))
-    (loop (let ((segment-start cursor))
-            (loop while (and (< cursor end)
-                             (%pc-gfm-domain-character-p (char text cursor)))
-                  do (incf cursor))
-            (when (= cursor segment-start)
-              (return-from %pc-gfm-domain-end
-                nil))
-            (push (cons segment-start cursor) segments)) (cond
-                                                           ((= cursor end)
-                                                            (return))
-                                                           ((char=
-                                                             (char text cursor)
-                                                             #\.)
-                                                            (if (and
-                                                                 (< (1+ cursor)
-                                                                    end)
-                                                                 (%pc-gfm-domain-character-p
-                                                                  (char text
-                                                                        (1+
-                                                                         cursor))))
-                                                                (incf cursor)
-                                                                (return)))
-                                                           (t (return))))
-    (let* ((ordered-segments (nreverse segments))
-           (last-two (last ordered-segments 2))
-           (domain-end (cdr (car (last ordered-segments)))))
-      (when
-          (and (or allow-single-label (> (length ordered-segments) 1))
-               (or email-p
-                   (every
-                    (lambda (segment)
-                      (not
-                       (position #\_
-                                 text
-                                 :start
-                                 (car segment)
-                                 :end
-                                 (cdr segment))))
-                    last-two))
-               (or (not email-p)
-                   (every
-                    (lambda (segment)
-                      (let ((segment-start (car segment))
-                            (segment-end (cdr segment)))
-                        (and
-                         (not
-                          (position #\_
-                                    text
-                                    :start
-                                    segment-start
-                                    :end
-                                    segment-end))
-                         (not (char= (char text segment-start) #\-))
-                         (not (char= (char text (1- segment-end)) #\-)))))
-                    ordered-segments)))
-        domain-end))))
-
-(defun %pc-email-domain-end (text start end)
-  (%pc-gfm-domain-end text start end t))
-
-(defun %pc-url-end (text start end)
-  (loop with cursor = start
-        while (and (< cursor end)
-                   (let ((character (char text cursor)))
-                     (and (not (unicode-whitespace-p character))
-                          (not (char= character #\<)))))
-        do (incf cursor)
-        finally (return cursor)))
-
-(defun %pc-trim-url-end (text start end)
-  (let ((open-parentheses 0)
-        (close-parentheses 0)
-        (cursor end))
-    (loop for index from start below
-          end
-          do (case (char text index)
-               (#\( (incf open-parentheses))
-               (#\) (incf close-parentheses))))
-    (loop while (> cursor start)
-          for character = (char text (1- cursor))
-          while (or (find character +bare-url-trailing-punctuation-characters+)
-                    (find character +common-quote-characters+)
-                    (and (char= character #\))
-                         (> close-parentheses open-parentheses)))
-          do (when (char= character #\))
-               (decf close-parentheses)) (decf cursor))
-    (when (and (> cursor start) (char= (char text (1- cursor)) #\;))
-      (let ((ampersand
-             (position #\& text :start start :end (1- cursor) :from-end t)))
-        (when
-            (and ampersand
-                 (< ampersand (1- cursor))
-                 (< (1+ ampersand) (1- cursor))
-                 (loop for index from (1+ ampersand) below (1- cursor)
-                       always (%pc-ascii-alphanumeric-p (char text index))))
-          (setf cursor ampersand))))
-    cursor))
 
 (defun %pc-unescape (text &optional (start 0) (end (length text)))
   (with-output-to-string (output)
