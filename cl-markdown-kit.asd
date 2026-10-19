@@ -37,7 +37,6 @@
                (:file "html-writer-block-elements")
                (:file "html-writer-block-events")
                (:file "html-writer")
-               (:file "markdown-writer")
                (:file "markdown-writer-escape")
                (:file "markdown-writer-state")
                (:file "markdown-writer-inline")

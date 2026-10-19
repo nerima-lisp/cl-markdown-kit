@@ -148,6 +148,8 @@
           (merge-pathnames "block-parse-result.lisp" source-directory))
          (entities-file
           (merge-pathnames "html-entities-data.lisp" source-directory))
+         (escape-data-file
+          (merge-pathnames "markdown-writer-escape-data.lisp" source-directory))
          (summary-file (merge-pathnames "per-file.tsv" temporary-directory))
          (exclusions-file
           (merge-pathnames "scripts/coverage-exclusions.sexp" root)))
@@ -202,6 +204,13 @@
         "    (dolist (entry (quote ((\"amp;\" #x26))))"
         "      (setf (gethash (first entry) table) (second entry)))"
         "    table))"))
+      (write-fixture
+       escape-data-file
+       (list
+        "(defparameter +mw-escape-bracket-characters+"
+        "  (quote (#\\[ #\\])))"
+        "(defparameter +mw-escape-punctuation-characters+"
+        "  (quote (#\\` #\\* #\\_ #\\< #\\~)))"))
       (with-open-file
           (stream summary-file
                   :direction :output
@@ -216,7 +225,10 @@
                        "render-frame.lisp" "block-parse-result.lisp"
                        "html-entities-data.lisp"))
           (format stream "~A~C0~C1~C0~C2~C1~C1:0/2~%"
-                  file #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)))
+                  file #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab))
+        (format stream "~A~C0~C2~C0~C2~C1,3~C1:0/1,3:0/1~%"
+                "markdown-writer-escape-data.lisp"
+                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab))
       (let* ((status nil)
              (report
                (with-output-to-string (output)
@@ -232,7 +244,7 @@
                                          :output
                                          output)))))
         (unless (= status 0)
-          (error "Expected declaration forms to be excluded, got status ~D:~%~A"
+          (error "Expected coverage exclusions for declarations and static data, got status ~D:~%~A"
                  status
                  report))
         (unless (and (search "| direct.lisp | 0.0% | n/a | 1 |" report)
@@ -241,9 +253,11 @@
                      (search "| render-frame.lisp | 0.0% | n/a | 1 |" report)
                      (search "| block-parse-result.lisp | 0.0% | n/a | 1 |" report)
                      (search "| html-entities-data.lisp | 0.0% | n/a | 1 |" report)
-                     (search "coverage gate: PASS (all 6 files at or above threshold)" report))
-          (error "Declaration exclusions were not reported as expected:~%~A" report))
-        (format t "coverage gate regression passed: struct declarations and *html5-entities* data are excluded.~%")))))
+                     (search "| markdown-writer-escape-data.lisp | 0.0% | n/a | 1,3 |" report)
+                     (search "coverage gate: PASS (all 7 files at or above threshold)" report))
+          (error "Coverage exclusions for declarations, entity data, and writer data were not reported as expected:~%~A"
+                 report))
+        (format t "coverage gate regression passed: declaration forms, entity data, and writer character data are excluded.~%")))))
 (let* ((script
         (or *load-truename*
             *compile-file-truename*

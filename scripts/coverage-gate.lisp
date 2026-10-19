@@ -799,7 +799,9 @@
               (consp (second form))
               (named-p (first (second form)) "DEFSTRUCT"))))
       ((string= head "defparameter")
-       (string-equal name "*html5-entities*"))
+       (or (string-equal name "*html5-entities*")
+           (string-equal name "+mw-escape-bracket-characters+")
+           (string-equal name "+mw-escape-punctuation-characters+")))
       (t
        (let* ((form (read-form))
               (initializer (and (consp form) (third form))))
