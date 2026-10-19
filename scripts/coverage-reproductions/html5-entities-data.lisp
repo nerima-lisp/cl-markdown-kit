@@ -1,4 +1,5 @@
 (defparameter *html5-entities*
-  '(("amp;" #x26)
-    ("lt;" #x3C)
-    ("gt;" #x3E)))
+  (let ((table (make-hash-table :test (quote equal))))
+    (dolist (entry (quote (("amp;" #x26))))
+      (setf (gethash (first entry) table) (second entry)))
+    table))

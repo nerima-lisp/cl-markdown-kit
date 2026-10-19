@@ -134,12 +134,20 @@
   (let* ((temporary-directory
           (merge-pathnames
            (format nil
-                   "cl-markdown-kit-defstruct-coverage-~D/"
+                   "cl-markdown-kit-declaration-coverage-~D/"
                    (get-internal-real-time))
            (uiop:ensure-directory-pathname (uiop:temporary-directory))))
          (source-directory (merge-pathnames "source/" temporary-directory))
          (direct-file (merge-pathnames "direct.lisp" source-directory))
          (wrapped-file (merge-pathnames "wrapped.lisp" source-directory))
+         (inline-context-file
+          (merge-pathnames "inline-context.lisp" source-directory))
+         (render-frame-file
+          (merge-pathnames "render-frame.lisp" source-directory))
+         (block-parse-result-file
+          (merge-pathnames "block-parse-result.lisp" source-directory))
+         (entities-file
+          (merge-pathnames "html-entities-data.lisp" source-directory))
          (summary-file (merge-pathnames "per-file.tsv" temporary-directory))
          (exclusions-file
           (merge-pathnames "scripts/coverage-exclusions.sexp" root)))
@@ -155,10 +163,45 @@
                  (write-line line stream)))))
       (write-fixture direct-file
                      (list
-  "(defstruct (point (:constructor make-point (value))) (value 0 :type (integer 0 *)))"))
+                      "(defstruct (point (:constructor make-point (value))) (value 0 :type (integer 0 *)))"))
       (write-fixture wrapped-file
                      (list
-  "(define-node (defstruct (point (:constructor make-point (value))) (value 0 :type (integer 0 *))) :kind :point)"))
+                      "(define-node"
+                      "  (defstruct (document (:constructor make-document))"
+                      "    (max-nesting-depth +default-max-nesting-depth+ :type (integer 1 *)))"
+                      "  :kind :document)"))
+      (write-fixture
+       inline-context-file
+       (list
+        "(defstruct (%ip-context"
+        "             (:constructor %ip-make-context (text boundary-map reference-index limit)))"
+        "  (limit +default-max-inline-delimiter-depth+ :type (integer 1 *)))"))
+      (write-fixture
+       render-frame-file
+       (list
+        "(defstruct (%mw-render-frame"
+        "             (:constructor %mw-make-render-frame"
+        "                 (&key (line-start-p t) (line-indent 0) prefix)))"
+        "  (line-start-p t)"
+        "  (line-indent 0)"
+        "  (prefix \"\" :type string))"))
+      (write-fixture
+       block-parse-result-file
+       (list
+        "(defstruct (block-parse-result"
+        "             (:constructor make-block-parse-result"
+        "                 (&key document inline-fragments reference-index)))"
+        "  document"
+        "  (inline-fragments nil :type list)"
+        "  (reference-index (make-hash-table :test (quote equal)) :type hash-table))"))
+      (write-fixture
+       entities-file
+       (list
+        "(defparameter *html5-entities*"
+        "  (let ((table (make-hash-table :test (quote equal))))"
+        "    (dolist (entry (quote ((\"amp;\" #x26))))"
+        "      (setf (gethash (first entry) table) (second entry)))"
+        "    table))"))
       (with-open-file
           (stream summary-file
                   :direction :output
@@ -168,10 +211,12 @@
         (format stream
                 "file~Cline-covered~Cline-total~Cbranch-covered~Cbranch-total~Cuncovered-lines~Cbranch-locations~%"
                 #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
-        (format stream "direct.lisp~C0~C1~C0~C2~C1~C1:0/2~%"
-        #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
-        (format stream "wrapped.lisp~C0~C1~C0~C2~C1~C1:0/2~%"
-        #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab))
+        (dolist (file
+                 (list "direct.lisp" "wrapped.lisp" "inline-context.lisp"
+                       "render-frame.lisp" "block-parse-result.lisp"
+                       "html-entities-data.lisp"))
+          (format stream "~A~C0~C1~C0~C2~C1~C1:0/2~%"
+                  file #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)))
       (let* ((status nil)
              (report
                (with-output-to-string (output)
@@ -187,12 +232,18 @@
                                          :output
                                          output)))))
         (unless (= status 0)
-          (error "Expected typed slot declarations to be excluded in both struct forms, got status ~D:~%~A"
+          (error "Expected declaration forms to be excluded, got status ~D:~%~A"
                  status
                  report))
-        (unless (and (search "| direct.lisp | 0.0% | n/a | 1 |" report) (search "| wrapped.lisp | 0.0% | n/a | 1 |" report) (search "coverage gate: PASS (all 2 files at or above threshold)" report))
-          (error "Typed slot exclusions were not reported as expected:~%~A" report))
-        (format t "coverage gate regression passed: typed slots are excluded in direct and wrapped struct forms.~%")))))
+        (unless (and (search "| direct.lisp | 0.0% | n/a | 1 |" report)
+                     (search "| wrapped.lisp | 0.0% | n/a | 1 |" report)
+                     (search "| inline-context.lisp | 0.0% | n/a | 1 |" report)
+                     (search "| render-frame.lisp | 0.0% | n/a | 1 |" report)
+                     (search "| block-parse-result.lisp | 0.0% | n/a | 1 |" report)
+                     (search "| html-entities-data.lisp | 0.0% | n/a | 1 |" report)
+                     (search "coverage gate: PASS (all 6 files at or above threshold)" report))
+          (error "Declaration exclusions were not reported as expected:~%~A" report))
+        (format t "coverage gate regression passed: struct declarations and *html5-entities* data are excluded.~%")))))
 (let* ((script
         (or *load-truename*
             *compile-file-truename*

@@ -299,28 +299,29 @@
          (operation (second options-and-clauses))
          (family (fourth options-and-clauses))
          (clauses (nthcdr 4 options-and-clauses))
-         (node-variable (find 'node lambda-list :test #'eq))
-         (types (mapcar #'first clauses))
-         (expected (%node-ensure-exact-coverage operation family types))
-         (ordered-clauses
-          (mapcar (lambda (type)
-                    (cons type (cdr (assoc type clauses :test #'eq))))
-                  expected)))
+         (node-variable (find 'node lambda-list :test #'eq)))
     (unless (and node-variable (symbolp node-variable))
       (error "DEFINE-NODE-DISPATCH lambda list has no node argument."))
     (unless (every (lambda (clause) (and (consp clause) (cdr clause))) clauses)
       (error "DEFINE-NODE-DISPATCH clauses must contain a type and body."))
-    `(progn
-       (defun ,function-name ,lambda-list
-         (check-type ,node-variable node)
-         (typecase ,node-variable
-           ,@ordered-clauses
-           (node
-            (error "No ~S dispatch clause for node type ~S."
-                   ',operation (type-of ,node-variable)))))
-       (eval-when (:compile-toplevel :load-toplevel :execute)
-         (%register-node-dispatch ',operation ',family ',function-name ',expected))
-       ',function-name)))
+    (let* ((types (mapcar #'first clauses))
+           (expected (%node-ensure-exact-coverage operation family types))
+           (ordered-clauses
+             (mapcar (lambda (type)
+                       (cons type (cdr (assoc type clauses :test #'eq))))
+                     expected)))
+      `(progn
+         (defun ,function-name ,lambda-list
+           (check-type ,node-variable node)
+           (typecase ,node-variable
+             ,@ordered-clauses
+             (node
+              (error "No ~S dispatch clause for node type ~S."
+                     ',operation (type-of ,node-variable)))))
+         (eval-when (:compile-toplevel :load-toplevel :execute)
+           (%register-node-dispatch ',operation ',family ',function-name ',expected))
+         ',function-name))))
+
 
     (progn
       (defun verify-node-dispatches (&key operation

@@ -776,7 +776,16 @@
               :to-equal
               '(:slot cl-markdown-kit::children
                 :accessor coverage-contract-inherited-node-children))))
-  (it "rejects malformed helper inputs"
+  (it "validates node helper inputs and dispatch clauses"
+    (expect (cl-markdown-kit::%node-form-slot-name 'value) :to-equal 'value)
+    (expect (cl-markdown-kit::%node-form-slot-name '(value 0 :type integer))
+            :to-equal 'value)
+    (expect (cl-markdown-kit::%node-inherited-slot-p
+             'cl-markdown-kit:list-item 'cl-markdown-kit::span)
+            :to-be-truthy)
+    (expect (cl-markdown-kit::%node-inherited-slot-p
+             'cl-markdown-kit:list-item 'cl-markdown-kit::unknown-slot)
+            :to-equal nil)
     (let ((condition
             (handler-case
                 (progn
@@ -814,7 +823,39 @@
       (expect condition :to-be-truthy)
       (expect (search "Invalid DEFINE-NODE :CHILDREN value"
                       (format nil "~A" condition))
-              :to-be-truthy)))
+              :to-be-truthy))
+    (dolist (definition (list 42 '(42 (context cl-markdown-kit::node))))
+      (let ((condition
+              (handler-case
+                  (progn
+                    (macroexpand-1
+                     (list 'cl-markdown-kit::define-node-dispatch
+                           definition
+                           :operation :coverage-contract
+                           :family :inline
+                           '(cl-markdown-kit:text nil)))
+                    nil)
+                (simple-error (condition) condition))))
+        (expect condition :to-be-truthy)
+        (expect
+         (search "requires (function-name lambda-list)" (format nil "~A" condition))
+         :to-be-truthy)))
+    (let ((condition
+            (handler-case
+                (progn
+                  (macroexpand-1
+                   '(cl-markdown-kit::define-node-dispatch
+                      (node-contract-non-list-clause
+                       (context cl-markdown-kit::node phase))
+                      :operation :coverage-contract
+                      :family :inline
+                      42))
+                  nil)
+              (simple-error (condition) condition))))
+      (expect condition :to-be-truthy)
+      (expect
+       (search "clauses must contain a type and body" (format nil "~A" condition))
+       :to-be-truthy)))
   (it "expands dispatch declarations and validates registration state"
     (let* ((types (cl-markdown-kit::%node-family-types :inline))
            (clauses
