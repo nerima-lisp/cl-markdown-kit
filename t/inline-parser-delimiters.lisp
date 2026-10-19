@@ -102,11 +102,11 @@
        (lambda (candidate)
          (incf match-calls)
          (incf continuation-calls)
-         (funcall next candidate))
+         (next candidate))
        (lambda ()
          (incf fail-calls)
          (incf continuation-calls)
-         (funcall next :failure)))
+         (next :failure)))
       (expect calledp :to-be-truthy)
       (expect result :to-be opener)
       (expect (list match-calls fail-calls continuation-calls)
@@ -119,14 +119,17 @@
        openers closer
        (lambda (candidate)
          (declare (ignore candidate)))
-       next)
+       (function next))
       (expect calledp :to-be-truthy)
       (expect result :to-be nil))))
 
 (it "selects tilde openers only for matching one or two marker runs"
     (labels ((best-opener (openers closer)
                (cl-weave:with-continuation-result (result next calledp)
-                 (cl-markdown-kit::%ip-best-opener openers closer next next)
+                 (cl-markdown-kit::%ip-best-opener
+                  openers closer
+                  (function next)
+                  (function next))
                  (expect calledp :to-be-truthy)
                  result)))
       (let* ((openers (make-hash-table :test #'eql))
