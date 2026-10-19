@@ -592,25 +592,25 @@
       "requires (function-name lambda-list)")
      (:malformed-dispatch-options
       (cl-markdown-kit::define-node-dispatch
-        (node-contract-missing-dispatch-options (context node phase))
+        (node-contract-missing-dispatch-options (context cl-markdown-kit::node phase))
         :operation :contract :family :inline)
       "requires :OPERATION and :FAMILY before clauses")
      (:missing-dispatch-type
       (cl-markdown-kit::define-node-dispatch
-        (node-contract-incomplete-dispatch (context node phase))
+        (node-contract-incomplete-dispatch (context cl-markdown-kit::node phase))
         :operation :html-renderer :family :inline
         (cl-markdown-kit:text nil))
       "Missing node type clause")
      (:duplicate-dispatch-type
       (cl-markdown-kit::define-node-dispatch
-        (node-contract-duplicate-dispatch (context node phase))
+        (node-contract-duplicate-dispatch (context cl-markdown-kit::node phase))
         :operation :html-renderer :family :inline
         (cl-markdown-kit:text nil)
         (cl-markdown-kit:text nil))
       "Duplicate node type clause")
      (:extra-dispatch-type
       (cl-markdown-kit::define-node-dispatch
-        (node-contract-extra-dispatch (context node phase))
+        (node-contract-extra-dispatch (context cl-markdown-kit::node phase))
         :operation :html-renderer :family :inline
         (cl-markdown-kit:paragraph nil))
       "Extra node type clause")
