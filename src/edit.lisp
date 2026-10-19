@@ -336,6 +336,21 @@
               (%range-contains-node-p candidate-target-range node)))))
     (%projection-difference before after start end replacement-length)))
 
+(defun %invalid-edit-range-condition (source start end)
+  (unless (and (integerp start) (integerp end)
+               (<= 0 start end (length source)))
+    (make-condition
+     'simple-error
+     :format-control "Invalid edit interval [~S,~S) for source length ~D."
+     :format-arguments (list start end (length source)))))
+
+(defun %edit-structure-change-condition (target difference)
+  (make-condition
+   'markdown-structure-changed-error
+   :target target
+   :difference difference
+   :message "The edit would change non-target Markdown structure."))
+
 (defun %edit-candidate (source start end replacement original line-ending)
   (let* ((replacement
            (if (= end (length source))
@@ -346,38 +361,63 @@
                  replacement
                  (subseq source end))))
 
-(defun %perform-edit (document start end markdown target target-range)
-  (let ((source (%edit-document-source document)))
-    (unless (and (integerp start) (integerp end)
-                 (<= 0 start end (length source)))
-      (error "Invalid edit interval [~S,~S) for source length ~D."
-             start end (length source)))
-    (let* ((line-ending (%edit-line-ending source start end))
-           (replacement (%normalize-newlines markdown line-ending)))
-      (labels ((candidate-for (replacement-text)
-                 (%edit-candidate source start end replacement-text source line-ending))
-               (difference-for (candidate replacement-text)
-                 (%candidate-structure-difference
-                  document candidate source start end (length replacement-text)
-                  target-range)))
-        (let* ((candidate (candidate-for replacement))
-               (difference (difference-for candidate replacement)))
-          (unless difference
-            (return-from %perform-edit candidate))
-          (let* ((prefix (subseq source 0 start))
-                 (suffix (subseq source end))
-                 (separated
-                   (%ensure-boundary-separation prefix replacement suffix line-ending)))
-            (unless (string= replacement separated)
-              (let* ((retry (candidate-for separated))
-                     (retry-difference (difference-for retry separated)))
-                (unless retry-difference
-                  (return-from %perform-edit retry))
-                (setf difference retry-difference)))
-            (error 'markdown-structure-changed-error
-                   :target target
-                   :difference difference
-                   :message "The edit would change non-target Markdown structure.")))))))
+(defun %perform-edit (document start end markdown target target-range
+                      on-match on-fail)
+  (multiple-value-bind (source source-error)
+      (handler-case
+          (values (%edit-document-source document) nil)
+        (error (condition)
+          (values nil condition)))
+    (if source-error
+        (funcall on-fail source-error)
+        (let ((range-error (%invalid-edit-range-condition source start end)))
+          (if range-error
+              (funcall on-fail range-error)
+              (let* ((line-ending (%edit-line-ending source start end))
+                     (replacement (%normalize-newlines markdown line-ending)))
+                (labels ((candidate-for (replacement-text)
+                           (%edit-candidate source start end replacement-text
+                                            source line-ending))
+                         (check-candidate (replacement-text)
+                           (let ((candidate (candidate-for replacement-text)))
+                             (handler-case
+                                 (values
+                                  candidate
+                                  (%candidate-structure-difference
+                                   document candidate source start end
+                                   (length replacement-text) target-range)
+                                  nil)
+                               (error (condition)
+                                 (values nil nil condition))))))
+                  (multiple-value-bind (candidate difference condition)
+                      (check-candidate replacement)
+                    (cond
+                      (condition
+                       (funcall on-fail condition))
+                      ((null difference)
+                       (funcall on-match candidate))
+                      (t
+                       (let* ((prefix (subseq source 0 start))
+                              (suffix (subseq source end))
+                              (separated
+                                (%ensure-boundary-separation
+                                 prefix replacement suffix line-ending)))
+                         (if (string= replacement separated)
+                             (funcall on-fail
+                                      (%edit-structure-change-condition
+                                       target difference))
+                             (multiple-value-bind
+                                   (retry retry-difference retry-condition)
+                                 (check-candidate separated)
+                               (cond
+                                 (retry-condition
+                                  (funcall on-fail retry-condition))
+                                 ((null retry-difference)
+                                  (funcall on-match retry))
+                                 (t
+                                  (funcall on-fail
+                                           (%edit-structure-change-condition
+                                            target retry-difference)))))))))))))))))
 
 (defun %section-edit-range (document address source)
   (let* ((section (find-section document address))
@@ -423,7 +463,7 @@
                                  markdown)
                     markdown)))
           (%perform-edit document body-start section-end replacement
-                         section target-range))))))
+                         section target-range #'identity #'error))))))
 
 (defun replace-section (document address markdown)
   (check-type document document)
@@ -431,14 +471,16 @@
   (let ((source (%edit-document-source document)))
     (multiple-value-bind (section start end)
         (%section-edit-range document address source)
-      (%perform-edit document start end markdown section (cons start end)))))
+      (%perform-edit document start end markdown section (cons start end)
+                     #'identity #'error))))
 
 (defun delete-section (document address)
   (check-type document document)
   (let ((source (%edit-document-source document)))
     (multiple-value-bind (section start end)
         (%section-edit-range document address source)
-      (%perform-edit document start end "" section (cons start end)))))
+      (%perform-edit document start end "" section (cons start end)
+                     #'identity #'error))))
 
 (defun %section-record-for-heading (records heading)
   (find (heading-record-node heading) records
@@ -500,7 +542,8 @@
   (check-type position (member :before :after :last-child))
   (let* ((source (%edit-document-source document))
          (offset (%insert-section-offset document address position source)))
-    (%perform-edit document offset offset markdown address nil)))
+    (%perform-edit document offset offset markdown address nil
+                       #'identity #'error)))
 
 (defun replace-node (document node markdown)
   (check-type document document)
@@ -516,7 +559,8 @@
          (replacement
            (%prefix-continuation-lines
             logical (block-node-continuation-prefix node) line-ending)))
-    (%perform-edit document (car range) (cdr range) replacement node range)))
+    (%perform-edit document (car range) (cdr range) replacement node range
+                       #'identity #'error)))
 
 (defun set-task-checked (document task-item checked-p)
   (check-type document document)
@@ -538,4 +582,5 @@
         (%perform-edit document
                        (car marker-range) (cdr marker-range)
                        (if checked-p "[x]" "[ ]")
-                       task-item target-range))))
+                       task-item target-range
+                       #'identity #'error))))

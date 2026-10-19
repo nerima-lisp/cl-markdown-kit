@@ -99,6 +99,7 @@
                (:file "html-writer")
                (:file "markdown-writer")
                (:file "edit")
+               (:file "edit-validation")
                (:file "resources"))
   :perform (test-op (operation component)
              (declare (ignore operation component))

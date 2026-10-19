@@ -16,6 +16,14 @@
   (span nil :type (or null cl-parser-kit:span))
   address)
 
+(defun %walk-query-nodes (root visit-node)
+  (walk-node-tree
+   root
+   (lambda (frame)
+     (when (eq (node-tree-frame-phase frame) :enter)
+       (funcall visit-node (node-tree-frame-node frame)))
+     :descend)))
+
 (define-node-dispatch (%write-inline-plain-text-node (node stream))
       :operation :query
       :family :inline
@@ -44,13 +52,11 @@
        :families '(:inline)))
     (verify-node-dispatches-at-compile-time :query (:inline)))
   (defun %write-inline-plain-text (node stream)
-    (walk-node-tree node
-     (lambda (frame)
-       (let ((node (node-tree-frame-node frame))
-             (phase (node-tree-frame-phase frame)))
-         (when (and (eq phase :enter) (inline-node-p node))
-           (%write-inline-plain-text-node node stream))
-         :descend))))
+  (%walk-query-nodes
+   node
+   (lambda (node)
+     (when (inline-node-p node)
+       (%write-inline-plain-text-node node stream)))))
 
 (defun %collapse-heading-whitespace (string)
   (let ((pending-space nil)
@@ -142,18 +148,16 @@
     (dolist (child (document-children document))
       (when (heading-p child)
         (setf (gethash child direct-headings) t)))
-    (walk-node-tree document
-     (lambda (frame)
-       (let ((node (node-tree-frame-node frame))
-             (phase (node-tree-frame-phase frame)))
-         (when (and (eq phase :enter) (heading-p node))
-           (push (make-heading-record
-                  :node node
-                  :level (heading-level node)
-                  :plain-text (%heading-plain-text node)
-                  :source-form (heading-style node))
-                 records))
-         :descend)))
+    (%walk-query-nodes
+     document
+     (lambda (node)
+       (when (heading-p node)
+         (push (make-heading-record
+                :node node
+                :level (heading-level node)
+                :plain-text (%heading-plain-text node)
+                :source-form (heading-style node))
+               records))))
     (setf records (nreverse records))
     (let ((section-headings
             (remove-if-not (lambda (record)
@@ -387,40 +391,44 @@
                                         (table-row-cells row)))
           :alignments (table-alignments table))))
 
+(defun %node-span-result (node span &rest properties)
+  (append (list :node node :span span) properties))
+
 (defun %extract-result (kind node heading-record include-source-slice)
   (let* ((span (node-span node))
          (values
            (case kind
              (:code-block
-              (list :node node :span span
-                    :body (code-block-body node)
-                    :info-string (code-block-info-string node)))
+              (%node-span-result node span
+                                 :body (code-block-body node)
+                                 :info-string (code-block-info-string node)))
              (:link
               (if (autolink-p node)
-                  (list :node node :span span
-                        :destination (autolink-destination node)
-                        :title nil
-                        :display-text (autolink-display-text node))
-                  (list :node node :span span
-                        :destination (link-destination node)
-                        :title (link-title node)
-                        :display-text (%plain-node-text node))))
+                  (%node-span-result node span
+                                     :destination (autolink-destination node)
+                                     :title nil
+                                     :display-text (autolink-display-text node))
+                  (%node-span-result node span
+                                     :destination (link-destination node)
+                                     :title (link-title node)
+                                     :display-text (%plain-node-text node))))
              (:image
-              (list :node node :span span
-                    :destination (image-destination node)
-                    :title (image-title node)
-                    :alt-text (%plain-node-text node)))
+              (%node-span-result node span
+                                 :destination (image-destination node)
+                                 :title (image-title node)
+                                 :alt-text (%plain-node-text node)))
              (:table
-              (append (list :node node :span span) (%table-values node)))
+              (append (%node-span-result node span) (%table-values node)))
              (:task-item
-              (list :node node :span span
-                    :checked-p (task-list-item-checked-p node)))
+              (%node-span-result node span
+                                 :checked-p (task-list-item-checked-p node)))
              (:heading
-              (list :node node :span span
-                    :level (heading-record-level heading-record)
-                    :plain-text (heading-record-plain-text heading-record)
-                    :source-form (heading-record-source-form heading-record)
-                    :section-span (heading-record-section-span heading-record)))
+              (%node-span-result node span
+                                 :level (heading-record-level heading-record)
+                                 :plain-text (heading-record-plain-text heading-record)
+                                 :source-form (heading-record-source-form heading-record)
+                                 :section-span
+                                 (heading-record-section-span heading-record)))
              (:front-matter
               (list :raw-text (front-matter-raw-text node) :span span)))))
     (when include-source-slice
@@ -454,27 +462,24 @@
                                 (setf (gethash (heading-record-node record) table)
                                       record)))))
          (results nil))
-    (walk-node-tree document
-     (lambda (frame)
-       (let ((node (node-tree-frame-node frame))
-             (phase (node-tree-frame-phase frame)))
-         (when (and (eq phase :enter)
-                    (%extract-node-p kind node)
-                    (%span-in-scope-p (node-span node) scope)
-                    (or (not (eq kind :code-block))
-                        (and (or (null info-string)
-                                 (equal info-string
-                                        (code-block-info-string node)))
-                             (or (null language)
-                                 (equal language
-                                        (%first-info-token
-                                         (code-block-info-string node))))))
-                    (or (not (eq kind :heading))
-                        (gethash node records-by-node)))
-           (push (%extract-result kind node
-                                  (and records-by-node
-                                       (gethash node records-by-node))
-                                  include-source-slice)
-                 results))
-         :descend)))
+    (%walk-query-nodes
+     document
+     (lambda (node)
+       (when (and (%extract-node-p kind node)
+                  (%span-in-scope-p (node-span node) scope)
+                  (or (not (eq kind :code-block))
+                      (and (or (null info-string)
+                               (equal info-string
+                                      (code-block-info-string node)))
+                           (or (null language)
+                               (equal language
+                                      (%first-info-token
+                                       (code-block-info-string node))))))
+                  (or (not (eq kind :heading))
+                      (gethash node records-by-node)))
+         (push (%extract-result kind node
+                                (and records-by-node
+                                     (gethash node records-by-node))
+                                include-source-slice)
+               results))))
     (nreverse results)))
