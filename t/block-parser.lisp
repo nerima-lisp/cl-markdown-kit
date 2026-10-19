@@ -573,28 +573,47 @@
                    (block-parser-test-span-is code 0 8))
               :to-be-truthy)))
 
-  (it "recognizes each CommonMark HTML block start condition"
-    (let ((examples
-            (list "<!-- comment -->"
-                  "<?xml version=\"1.0\"?>"
-                  "<script>run()</script>"
-                  "<!DOCTYPE html>"
-                  "<![CDATA[data]]>"
-                  "<div>block</div>"
-                  (format nil "<custom-element>~%block~%</custom-element>")))
-          (kinds nil))
-      (dolist (source examples)
-        (let* ((html (block-parser-test-only-child
-                      (block-parser-test-document
-                       (block-parser-test-result source)))))
-          (push (cl-markdown-kit:html-block-kind html) kinds)
-          (expect (and (typep html 'cl-markdown-kit:html-block)
-                       (cl-markdown-kit:html-block-kind html)
-                       (string= (cl-markdown-kit:html-block-body html) source)
-                       (block-parser-test-span-is html 0 (length source)))
-                  :to-be-truthy)))
-      (expect (= (length (remove-duplicates kinds :test #'equal)) 7)
-              :to-be-truthy)))
+  (progn
+    (cl-weave:it-each
+      (("<!-- comment -->" 2 nil)
+       ("<?xml version=\"1.0\"?>" 3 nil)
+       ("<script>run()</script>" 1 nil)
+       ("<!DOCTYPE html>" 4 nil)
+       ("<![CDATA[data]]>" 5 nil)
+       ("<div>block</div>" 6 nil)
+       ("<custom-element>" 7 "</custom-element>"))
+      "recognizes CommonMark HTML block ~A as type ~D with suffix ~A"
+      (source-start expected-kind closing-tag)
+      (let* ((source (if closing-tag
+                         (format nil "~A~%block~%~A" source-start closing-tag)
+                         source-start))
+             (html (block-parser-test-only-child
+                    (block-parser-test-document
+                     (block-parser-test-result source)))))
+        (expect (and (typep html (quote cl-markdown-kit:html-block))
+                     (cl-markdown-kit:html-block-kind html)
+                     (= (cl-markdown-kit:html-block-kind html) expected-kind)
+                     (string= (cl-markdown-kit:html-block-body html) source)
+                     (block-parser-test-span-is html 0 (length source)))
+                :to-be-truthy)))
+    (it "recognizes all seven distinct CommonMark HTML block types"
+      (let* ((examples
+               (list "<!-- comment -->"
+                     "<?xml version=\"1.0\"?>"
+                     "<script>run()</script>"
+                     "<!DOCTYPE html>"
+                     "<![CDATA[data]]>"
+                     "<div>block</div>"
+                     (format nil "<custom-element>~%block~%</custom-element>")))
+             (kinds
+               (loop for source in examples
+                     collect
+                     (cl-markdown-kit:html-block-kind
+                      (block-parser-test-only-child
+                       (block-parser-test-document
+                        (block-parser-test-result source)))))))
+        (expect (= (length (remove-duplicates kinds :test (function equal))) 7)
+                :to-be-truthy))))
 
   (it "requires complete HTML block start and end tags"
     (let* ((self-closing
@@ -1349,21 +1368,6 @@
            (closing "</x-tag>")
            (closing-name (multiple-value-list
                           (cl-markdown-kit::%bp-tag-name-at closing 0)))
-           (invalid-tags '("<x-tag 1bad=x>"
-                           "<x-tag attr"
-                           "<x-tag attr="
-                           "<x-tag attr=>"
-                           "<x-tag attr=\"unterminated>"
-                           "<x-tag /x>"))
-           (invalid-ends
-             (mapcar
-              (lambda (text)
-                (multiple-value-bind (name name-end)
-                    (cl-markdown-kit::%bp-tag-name-at text 0)
-                  (and name
-                       (cl-markdown-kit::%bp-html-type-seven-tag-end
-                        text 0 name-end))))
-              invalid-tags))
            (html-type
              (multiple-value-list
               (cl-markdown-kit::%bp-html-block-type
@@ -1381,7 +1385,6 @@
                      (= (cl-markdown-kit::%bp-html-type-seven-tag-end
                          valid 0 name-end)
                         (length valid))
-                     (equal invalid-ends (make-list (length invalid-tags)))
                      (string= (first closing-name) "x-tag")
                      (= (cl-markdown-kit::%bp-html-type-seven-tag-end
                          closing 0 (second closing-name))
@@ -1409,6 +1412,82 @@
                          (block-parser-test-line "</script ") "</script" 1))
                    (not (cl-markdown-kit::%bp-html-terminator-p
                          (block-parser-test-line "</script x>") "</script" 1)))
+              :to-be-truthy)))
+  (cl-weave:it-each
+    (("<x-tag 1bad=x>")
+     ("<x-tag attr")
+     ("<x-tag attr=")
+     ("<x-tag attr=>")
+     ("<x-tag attr=\"unterminated>")
+     ("<x-tag /x>"))
+    "rejects malformed HTML tag attributes ~A"
+    (malformed-tag)
+    (multiple-value-bind (name name-end)
+        (cl-markdown-kit::%bp-tag-name-at malformed-tag 0)
+      (expect (null (and name
+                         (cl-markdown-kit::%bp-html-type-seven-tag-end
+                          malformed-tag 0 name-end)))
+              :to-be-truthy)))
+  (it "routes a matching container line through its continuation"
+    (let* ((plain-line (block-parser-test-line "plain"))
+           (continuation (block-parser-test-line "  continuation"))
+           (root-frame (cl-markdown-kit::%bp-make-open-frame :kind :root))
+           (item-frame
+             (cl-markdown-kit::%bp-make-open-frame
+              :kind :item :content-indent 2 :has-content t
+              :end-line plain-line))
+           (match-count 0)
+           (fail-count 0))
+      (cl-weave:with-continuation-result (transformed on-match)
+        (cl-markdown-kit::%bp-container-transform-line
+         continuation (list item-frame root-frame)
+         (lambda (content)
+           (incf match-count)
+           (funcall (function on-match) content))
+         (lambda (content mismatch-frame)
+           (declare (ignore content mismatch-frame))
+           (incf fail-count))
+         t)
+        (expect (string= (cl-markdown-kit::%block-line-text transformed)
+                         "continuation")
+                :to-be-truthy))
+      (expect (and (= match-count 1)
+                   (zerop fail-count)
+                   (eq (cl-markdown-kit::%bp-open-frame-end-line item-frame)
+                       continuation))
+              :to-be-truthy)))
+  (it "routes a mismatching container line through its failure continuation"
+    (let* ((root-frame (cl-markdown-kit::%bp-make-open-frame :kind :root))
+           (blank-item
+             (cl-markdown-kit::%bp-make-open-frame
+              :kind :item :content-indent 2))
+           (blank-line (block-parser-test-line ""))
+           (continuation (block-parser-test-line "  continuation"))
+           (match-count 0)
+           (fail-count 0))
+      (cl-markdown-kit::%bp-container-transform-line
+       blank-line (list blank-item root-frame)
+       (lambda (content) (declare (ignore content)))
+       (lambda (content mismatch-frame)
+         (declare (ignore content mismatch-frame)))
+       t)
+      (cl-weave:with-continuation-result (failure on-fail)
+        (cl-markdown-kit::%bp-container-transform-line
+         continuation (list blank-item root-frame)
+         (lambda (content)
+           (declare (ignore content))
+           (incf match-count))
+         (lambda (content mismatch-frame)
+           (incf fail-count)
+           (funcall (function on-fail) (list content mismatch-frame)))
+         t)
+        (expect (and (string= (cl-markdown-kit::%block-line-text
+                               (first failure))
+                              "  continuation")
+                     (eq (second failure) blank-item))
+                :to-be-truthy))
+      (expect (and (= fail-count 1)
+                   (zerop match-count))
               :to-be-truthy)))
 
   (it "covers block-helper rejection paths and validates direct depth limits"
@@ -1561,40 +1640,58 @@
                    (= (length quoted-footnote) 1)
                    (= (length listed-footnote) 1))
               :to-be-truthy)
-      (multiple-value-bind (transformed mismatch)
-          (cl-markdown-kit::%bp-container-transform-line
-           continuation (list item-frame root-frame))
-        (expect (and (null mismatch)
-                     (string= (cl-markdown-kit::%block-line-text transformed)
-                              "continuation")
-                     (eq (cl-markdown-kit::%bp-open-frame-end-line item-frame)
-                         plain-line))
-                :to-be-truthy))
-      (multiple-value-bind (transformed mismatch)
-          (cl-markdown-kit::%bp-container-transform-line
-           continuation (list item-frame root-frame) t)
-        (expect (and (null mismatch)
-                     (string= (cl-markdown-kit::%block-line-text transformed)
-                              "continuation")
-                     (eq (cl-markdown-kit::%bp-open-frame-end-line item-frame)
-                         continuation))
-                :to-be-truthy))
       (cl-markdown-kit::%bp-container-transform-line
-       blank-line (list blank-item root-frame) t)
-      (multiple-value-bind (transformed mismatch)
-          (cl-markdown-kit::%bp-container-transform-line
-           continuation (list blank-item root-frame) t)
-        (declare (ignore transformed))
-        (expect (eq mismatch blank-item) :to-be-truthy))
-      (multiple-value-bind (transformed mismatch)
-          (cl-markdown-kit::%bp-container-transform-line
-           footnote-continuation (list footnote-frame root-frame) t)
-        (expect (and (null mismatch)
-                     (string= (cl-markdown-kit::%block-line-text transformed)
-                              "body")
-                     (eq (cl-markdown-kit::%bp-open-frame-end-line footnote-frame)
-                         footnote-continuation))
-                :to-be-truthy))
+       continuation (list item-frame root-frame)
+       (lambda (transformed)
+         (expect (and (string= (cl-markdown-kit::%block-line-text transformed)
+                               "continuation")
+                      (eq (cl-markdown-kit::%bp-open-frame-end-line item-frame)
+                          plain-line))
+                 :to-be-truthy))
+       (lambda (content mismatch-frame)
+         (declare (ignore content))
+         (error "Unexpected container mismatch: ~S" mismatch-frame)))
+      (cl-markdown-kit::%bp-container-transform-line
+       continuation (list item-frame root-frame)
+       (lambda (transformed)
+         (expect (and (string= (cl-markdown-kit::%block-line-text transformed)
+                               "continuation")
+                      (eq (cl-markdown-kit::%bp-open-frame-end-line item-frame)
+                          continuation))
+                 :to-be-truthy))
+       (lambda (content mismatch-frame)
+         (declare (ignore content))
+         (error "Unexpected container mismatch: ~S" mismatch-frame))
+       t)
+      (cl-markdown-kit::%bp-container-transform-line
+       blank-line (list blank-item root-frame)
+       (lambda (content) (declare (ignore content)))
+       (lambda (content mismatch-frame)
+         (declare (ignore content mismatch-frame)))
+       t)
+      (cl-markdown-kit::%bp-container-transform-line
+       continuation (list blank-item root-frame)
+       (lambda (transformed)
+         (error "Unexpected container match: ~A"
+                (cl-markdown-kit::%block-line-text transformed)))
+       (lambda (content mismatch-frame)
+         (expect (and (string= (cl-markdown-kit::%block-line-text content)
+                               "  continuation")
+                      (eq mismatch-frame blank-item))
+                 :to-be-truthy))
+       t)
+      (cl-markdown-kit::%bp-container-transform-line
+       footnote-continuation (list footnote-frame root-frame)
+       (lambda (transformed)
+         (expect (and (string= (cl-markdown-kit::%block-line-text transformed)
+                               "body")
+                      (eq (cl-markdown-kit::%bp-open-frame-end-line footnote-frame)
+                          footnote-continuation))
+                 :to-be-truthy))
+       (lambda (content mismatch-frame)
+         (declare (ignore content))
+         (error "Unexpected footnote mismatch: ~S" mismatch-frame))
+       t)
       (expect (eq (cl-markdown-kit::%bp-finish-frame source unknown-frame)
                   unknown-node)
               :to-be-truthy)))
