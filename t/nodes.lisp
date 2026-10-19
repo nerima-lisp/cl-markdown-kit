@@ -779,7 +779,15 @@
               '(:slot cl-markdown-kit::children
                 :accessor coverage-contract-inherited-node-children))))
   (it "validates node helper inputs and dispatch clauses"
-    (expect (cl-markdown-kit::%node-form-slot-name 'value) :to-equal 'value)
+    (progn
+      (expect (cl-markdown-kit::%node-form-slot-name 'value) :to-equal 'value)
+      (let ((condition
+              (handler-case
+                  (progn (cl-markdown-kit::%node-defstruct-name 42) nil)
+                (simple-error (condition) condition))))
+        (expect condition :to-be-truthy)
+        (expect (search "requires a DEFSTRUCT form" (format nil "~A" condition))
+                :to-be-truthy)))
     (expect (cl-markdown-kit::%node-form-slot-name '(value 0 :type integer))
             :to-equal 'value)
     (expect (cl-markdown-kit::%node-inherited-slot-p
