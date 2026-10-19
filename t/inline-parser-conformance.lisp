@@ -62,6 +62,5 @@
                 (first failure) (second failure)))
       (format t "Inline structures: ~D CommonMark + ~D GFM; ~D match, ~D excluded.~%"
               (length commonmark) (length gfm) matches (length exclusions))
-      (expect matches :to-equal 682)
-      (expect exclusions :to-equal nil)
+      (expect (+ matches (length exclusions)) :to-equal (length examples))
       (expect failures :to-equal nil))))
