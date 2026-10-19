@@ -1,6 +1,6 @@
 (in-package #:cl-markdown-kit)
 
-(defun %hw-render-block-document-stage (context phase) (when (eq phase :enter) :descend))
+(defun %hw-render-block-document-stage (phase) (when (eq phase :enter) :descend))
 
 (defun %hw-render-block-footnote-definition-stage (context) (if (null (%html-writer-context-tree-parent context))
          :descend
@@ -100,7 +100,7 @@
       :operation :html-renderer
       :family :block
     (document
-     (%hw-render-block-document-stage context phase))
+     (%hw-render-block-document-stage phase))
     (front-matter :skip)
     (link-reference-definition :skip)
     (footnote-definition
