@@ -231,11 +231,11 @@
            (when name
              (cond
                ((and (not (char= (char text (1+ indent)) #\/))
-                     (member name +bp-html-type-1-tags+ :test #'string=))
+                     (member name +html-block-type-1-tags+ :test #'string=))
                 (values 1 (concatenate 'string "</" name) name))
-               ((member name +bp-html-type-6-tags+ :test #'string=)
+               ((member name +html-block-type-6-tags+ :test #'string=)
                 (values 6 nil name))
-               ((and (not (member name +bp-html-type-1-tags+ :test #'string=))
+               ((and (not (member name +html-block-type-1-tags+ :test #'string=))
                      (let ((tag-end (%bp-html-type-seven-tag-end
                                      text indent name-end)))
                        (and tag-end
@@ -263,7 +263,7 @@
                                     (char-code (char text cursor))
                                     (char-code #\9)))
                      do (incf cursor))
-               (when (and (<= (- cursor indent) +bp-max-ordered-list-marker-digits+)
+               (when (and (<= (- cursor indent) +max-ordered-list-marker-digits+)
                           (< cursor length)
                           (find (char text cursor) +bp-ordered-list-delimiters+))
                  (setf kind :ordered
