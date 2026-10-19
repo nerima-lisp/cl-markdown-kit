@@ -802,8 +802,22 @@
 (defun xml-descendants (node)
   (cons node (mapcan #'xml-descendants (copy-list (xml-node-children node)))))
 
+;; Each override has (paragraphs footnotes) shape; paragraphs contain inline node signatures.
 (defun commonmark-inline-override (identifier)
   (cond
+    ((string= identifier "commonmark-0028")
+     (let ((paragraph
+            (list
+             (list (make-fixture-symbol :name ":text")
+                   "&nbsp &x; &#; &#x;")
+             (list (make-fixture-symbol :name ":soft-break"))
+             (list (make-fixture-symbol :name ":text") "&#87654321;")
+             (list (make-fixture-symbol :name ":soft-break"))
+             (list (make-fixture-symbol :name ":text") "&#abcdef0;")
+             (list (make-fixture-symbol :name ":soft-break"))
+             (list (make-fixture-symbol :name ":text")
+                   "&ThisIsNotDefined; &hi?;"))))
+       (list (list paragraph) nil)))
     ((string= identifier "commonmark-0196")
      (list
       (list
