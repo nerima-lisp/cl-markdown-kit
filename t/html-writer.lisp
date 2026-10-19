@@ -4,6 +4,11 @@
     (expect (cl-markdown-kit::%hw-verify-node-dispatches)
             :to-equal t)))
 
+(setf cl-weave:*snapshot-directory*
+      (asdf:system-relative-pathname
+       "cl-markdown-kit"
+       "__snapshots__/"))
+
 (defun html-writer-test-document (&rest children)
   (cl-markdown-kit:make-document :children children))
 
