@@ -208,6 +208,25 @@
                             (typep node 'cl-markdown-kit:link)))
                       nodes)
               :to-be-truthy)))
+(it "keeps a valid angle autolink as text when links are disallowed"
+    (let* ((text "<https://example.com>")
+           (buffer (cl-markdown-kit:make-source-buffer text))
+           (normalized (cl-markdown-kit:source-buffer-normalized-text buffer))
+           (boundary-map (cl-markdown-kit::source-buffer-boundary-map buffer))
+           (context
+             (cl-markdown-kit::%ip-make-context
+              normalized boundary-map (make-hash-table :test (function equal))
+              4096 nil nil nil nil nil nil
+              (cl-markdown-kit::%ip-build-html-closes normalized)))
+           (state
+             (cl-markdown-kit::%ip-make-range-state
+              context 0 (length normalized) nil 0)))
+      (cl-markdown-kit::%ip-range-scan-angle state (length normalized))
+      (expect (cl-markdown-kit::%ip-range-state-index state)
+              :to-equal (length normalized))
+      (expect (inline-parser-test-node-sequence-signature
+               (cl-markdown-kit::%ip-range-finalize state))
+              :to-equal (list (list :text text)))))
 
 (it "rejects invalid inline parser arguments"
     (let* ((buffer (cl-markdown-kit:make-source-buffer "x"))
