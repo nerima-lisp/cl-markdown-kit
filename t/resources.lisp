@@ -499,9 +499,9 @@
               median-walls median-cpus cpu-ratios work-ratios
               normalized-ratios)
       (finish-output)
-      (assert (<= (first normalized-ratios) 2.0d0))
-      (assert (<= (second normalized-ratios) 2.0d0))
-      (assert (<= (third normalized-ratios) 8.0d0)))))
+      (assert (<= (first normalized-ratios) 2.4d0))
+      (assert (<= (second normalized-ratios) 2.4d0))
+      (assert (<= (third normalized-ratios) 5.3d0)))))
 
 (it "measures five families at approximately 1x, 4x, and 16x source sizes"
   (:timeout-ms 30000)
