@@ -75,61 +75,61 @@
       (decf (car total-active-count)))))
 
 (defun %ip-add-delimiter (start end character can-open can-close
-                          openers delimiters pairs active-count active-stack
-                          total-active-count bracket-depth depth-limit)
+                                openers delimiters pairs active-count active-stack
+                                total-active-count bracket-depth depth-limit)
   (let* ((length (- end start))
          (run (%ip-make-delimiter character start length can-open can-close)))
     (setf (%ip-delimiter-remaining run) length)
     (push run delimiters)
     (when can-close
-  (loop while (plusp (%ip-delimiter-remaining run))
-        do (%ip-best-opener
-            openers run
-            (lambda (opener)
-              (let* ((opener-remaining (%ip-delimiter-remaining opener))
-                     (closer-remaining (%ip-delimiter-remaining run))
-                     (use-count
-                       (cond
-                         ((char= character +ip-tilde-delimiter-character+)
-                          closer-remaining)
-                         ((and (>= opener-remaining 2)
-                               (>= closer-remaining 2))
-                          2)
-                         (t 1)))
-                     (open-start
-                       (+ (%ip-delimiter-start opener)
-                          (%ip-delimiter-open-offset opener)
-                          (- opener-remaining use-count)))
-                     (close-start (+ start (- length closer-remaining))))
-                (loop until (eq (first (car active-stack)) opener)
-                      for skipped = (pop (car active-stack))
-                      do (let* ((bucket-index
-                                  (%ip-delimiter-open-bucket skipped))
-                                (buckets
-                                  (gethash
-                                   (%ip-delimiter-character skipped)
-                                   openers)))
-                           (pop (aref buckets bucket-index))
-                           (setf (%ip-delimiter-open-bucket skipped) nil)
-                           (decf (car active-count))
-                           (decf (car total-active-count))))
-                (push (%ip-make-pair
-                       (cond
-                         ((char= character +ip-tilde-delimiter-character+)
-                          +ip-tilde-run-kind+)
-                         ((= use-count 2) :strong)
-                         (t :emphasis))
-                       character open-start (+ open-start use-count)
-                       close-start (+ close-start use-count))
-                      pairs)
-                (decf (%ip-delimiter-remaining opener) use-count)
-                (decf (%ip-delimiter-remaining run) use-count)
-                (incf (%ip-delimiter-open-offset run) use-count)
-                (%ip-pop-opener-if-empty
-                 openers opener active-count active-stack
-                 total-active-count)))
-            (lambda ()
-              (return)))))
+      (loop while (plusp (%ip-delimiter-remaining run))
+            do (%ip-best-opener
+                openers run
+                (lambda (opener)
+                  (let* ((opener-remaining (%ip-delimiter-remaining opener))
+                         (closer-remaining (%ip-delimiter-remaining run))
+                         (use-count
+                          (cond
+                           ((char= character +ip-tilde-delimiter-character+)
+                            closer-remaining)
+                           ((and (>= opener-remaining 2)
+                                 (>= closer-remaining 2))
+                            2)
+                           (t 1)))
+                         (open-start
+                          (+ (%ip-delimiter-start opener)
+                             (%ip-delimiter-open-offset opener)
+                             (- opener-remaining use-count)))
+                         (close-start (+ start (- length closer-remaining))))
+                    (loop until (eq (first (car active-stack)) opener)
+                          for skipped = (pop (car active-stack))
+                          do (let* ((bucket-index
+                                     (%ip-delimiter-open-bucket skipped))
+                                    (buckets
+                                     (gethash
+                                      (%ip-delimiter-character skipped)
+                                      openers)))
+                               (pop (aref buckets bucket-index))
+                               (setf (%ip-delimiter-open-bucket skipped) nil)
+                               (decf (car active-count))
+                               (decf (car total-active-count))))
+                    (push (%ip-make-pair
+                           (cond
+                            ((char= character +ip-tilde-delimiter-character+)
+                             +ip-tilde-run-kind+)
+                            ((= use-count 2) :strong)
+                            (t :emphasis))
+                           character open-start (+ open-start use-count)
+                           close-start (+ close-start use-count))
+                          pairs)
+                    (decf (%ip-delimiter-remaining opener) use-count)
+                    (decf (%ip-delimiter-remaining run) use-count)
+                    (incf (%ip-delimiter-open-offset run) use-count)
+                    (%ip-pop-opener-if-empty
+                     openers opener active-count active-stack
+                     total-active-count)))
+                (lambda ()
+                  (return)))))
     (when (and can-open (plusp (%ip-delimiter-remaining run))
                (or (not (char= character +ip-tilde-delimiter-character+))
                    (member (%ip-delimiter-remaining run) '(1 2))))
@@ -167,80 +167,80 @@
           (push run (gethash (first container-stack) groups))))
       groups))
 
-  (defun %ip-delimiter-run-events (groups)
-    (let ((events nil))
-      (maphash (lambda (scope scoped-runs)
-                 (dolist (run scoped-runs)
-                   (push (cons scope run) events)))
-               groups)
-      (sort events #'<
-            :key (lambda (event)
-                   (%ip-delimiter-start (cdr event))))))
+(defun %ip-delimiter-run-events (groups)
+  (let ((events nil))
+    (maphash (lambda (scope scoped-runs)
+               (dolist (run scoped-runs)
+                 (push (cons scope run) events)))
+             groups)
+    (sort events #'<
+          :key (lambda (event)
+                 (%ip-delimiter-start (cdr event))))))
 
-  (defun %ip-resolve-delimiter-runs
-      (runs pairs bracket-depths bracket-closes range-start range-end depth-limit)
-    (let* ((groups (%ip-delimiter-run-scopes runs pairs))
-           (run-events (%ip-delimiter-run-events groups))
-           (states (make-hash-table :test #'eq))
-           ;; Unmatched records remain counted after their scope ends.
-           (total-active-count (list 0))
-           (resolved-delimiters nil)
-           (resolved-pairs pairs)
-           (bracket-count 0)
-           (position range-start))
-      (labels ((advance-bracket-position ()
-                 (when bracket-depths
-                   (let ((delta
-                           (- (aref bracket-depths (1+ position))
-                              (aref bracket-depths position))))
-                     (cond
-                       ((plusp delta)
-                        (%pc-check-depth
-                         (+ bracket-count (car total-active-count) 1)
-                         depth-limit :inline)
-                        (incf bracket-count))
-                       ((and (minusp delta)
-                             (>= (aref bracket-closes position) range-start))
-                        (decf bracket-count))))))
-               (process-run (scope run)
-                 (let* ((state
-                          (or (gethash scope states)
-                              (setf (gethash scope states)
-                                    (list (make-hash-table :test #'eql)
-                                          nil nil (list 0) (list nil)))))
-                        (openers (first state))
-                        (delimiters (second state))
-                        (matched-pairs (third state))
-                        (scope-count (fourth state))
-                        (scope-stack (fifth state)))
-                   (multiple-value-setq (delimiters matched-pairs)
-                     (%ip-add-delimiter
-                      (%ip-delimiter-start run)
-                      (+ (%ip-delimiter-start run)
-                         (%ip-delimiter-length run))
-                      (%ip-delimiter-character run)
-                      (%ip-delimiter-can-open run)
-                      (%ip-delimiter-can-close run)
-                      openers delimiters matched-pairs scope-count scope-stack
-                      total-active-count bracket-count depth-limit))
-                   (setf (second state) delimiters
-                         (third state) matched-pairs))))
-        (dolist (event run-events)
-          (let ((run-position (%ip-delimiter-start (cdr event))))
-            (loop while (< position run-position)
-                  do (advance-bracket-position)
-                     (incf position))
-            (process-run (car event) (cdr event))
-            (advance-bracket-position)
-            (incf position)))
-        (loop while (< position range-end)
-              do (advance-bracket-position)
-                 (incf position))
-        (maphash (lambda (scope state)
-                   (declare (ignore scope))
-                   (setf resolved-delimiters
-                         (nconc (second state) resolved-delimiters)
-                         resolved-pairs
-                         (nconc (third state) resolved-pairs)))
-                 states))
-      (values resolved-delimiters resolved-pairs)))
+(defun %ip-resolve-delimiter-runs
+    (runs pairs bracket-depths bracket-closes range-start range-end depth-limit)
+  (let* ((groups (%ip-delimiter-run-scopes runs pairs))
+         (run-events (%ip-delimiter-run-events groups))
+         (states (make-hash-table :test #'eq))
+         ;; Unmatched records remain counted after their scope ends.
+         (total-active-count (list 0))
+         (resolved-delimiters nil)
+         (resolved-pairs pairs)
+         (bracket-count 0)
+         (position range-start))
+    (labels ((advance-bracket-position ()
+                                       (when bracket-depths
+                                         (let ((delta
+                                                (- (aref bracket-depths (1+ position))
+                                                   (aref bracket-depths position))))
+                                           (cond
+                                            ((plusp delta)
+                                             (%pc-check-depth
+                                              (+ bracket-count (car total-active-count) 1)
+                                              depth-limit :inline)
+                                             (incf bracket-count))
+                                            ((and (minusp delta)
+                                                  (>= (aref bracket-closes position) range-start))
+                                             (decf bracket-count))))))
+             (process-run (scope run)
+                          (let* ((state
+                                  (or (gethash scope states)
+                                      (setf (gethash scope states)
+                                            (list (make-hash-table :test #'eql)
+                                                  nil nil (list 0) (list nil)))))
+                                 (openers (first state))
+                                 (delimiters (second state))
+                                 (matched-pairs (third state))
+                                 (scope-count (fourth state))
+                                 (scope-stack (fifth state)))
+                            (multiple-value-setq (delimiters matched-pairs)
+                                                 (%ip-add-delimiter
+                                                  (%ip-delimiter-start run)
+                                                  (+ (%ip-delimiter-start run)
+                                                     (%ip-delimiter-length run))
+                                                  (%ip-delimiter-character run)
+                                                  (%ip-delimiter-can-open run)
+                                                  (%ip-delimiter-can-close run)
+                                                  openers delimiters matched-pairs scope-count scope-stack
+                                                  total-active-count bracket-count depth-limit))
+                            (setf (second state) delimiters
+                                  (third state) matched-pairs))))
+      (dolist (event run-events)
+        (let ((run-position (%ip-delimiter-start (cdr event))))
+          (loop while (< position run-position)
+                do (advance-bracket-position)
+                (incf position))
+          (process-run (car event) (cdr event))
+          (advance-bracket-position)
+          (incf position)))
+      (loop while (< position range-end)
+            do (advance-bracket-position)
+            (incf position))
+      (maphash (lambda (scope state)
+                 (declare (ignore scope))
+                 (setf resolved-delimiters
+                       (nconc (second state) resolved-delimiters)
+                       resolved-pairs
+                       (nconc (third state) resolved-pairs)))
+               states))
+    (values resolved-delimiters resolved-pairs)))
