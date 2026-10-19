@@ -1,0 +1,27 @@
+(in-package #:cl-markdown-kit)
+(defparameter +bp-nesting-frame-kinds+ '(:quote :footnote :list :item))
+(defparameter +bp-html-comment-start+ "<!--")
+(defparameter +bp-html-processing-instruction-start+ "<?")
+(defparameter +bp-html-cdata-start+ "<![CDATA[")
+(defparameter +bp-html-declaration-start+ "<!")
+(defparameter +bp-html-type-1-tags+ +html-block-type-1-tags+)
+(defparameter +bp-html-type-6-tags+ +html-block-type-6-tags+)
+(defparameter +bp-setext-marker-characters+ '(#\= #\-))
+(defparameter +bp-thematic-break-marker-characters+ '(#\- #\_ #\*))
+(defparameter +bp-fence-marker-characters+ (list #\` #\~))
+(defparameter +bp-html-attribute-name-start-characters+ '(#\_ #\:))
+(defparameter +bp-html-attribute-name-characters+ '(#\_ #\: #\. #\-))
+(defparameter +bp-html-quoted-value-delimiters+ (list #\" #\'))
+(defparameter +bp-html-unquoted-value-excluded-characters+
+              (list #\" #\' #\= #\< #\> #\`))
+(defparameter +bp-unordered-list-marker-characters+ '(#\- #\+ #\*))
+(defparameter +bp-ordered-list-delimiters+ '(#\. #\)))
+(defparameter +bp-max-ordered-list-marker-digits+
+              +max-ordered-list-marker-digits+)
+(defparameter +bp-task-marker-states+ '(#\Space #\x #\X))
+(defparameter +bp-blockquote-marker+ #\>)
+(defparameter +bp-atx-heading-marker+ #\#)
+
+(defparameter +bp-fence-info-trim-characters+ '(#\Space #\Tab))
+
+(defparameter +bp-html-tag-end-characters+ '(#\> #\/))

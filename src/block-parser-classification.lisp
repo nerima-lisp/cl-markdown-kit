@@ -1,0 +1,457 @@
+(in-package #:cl-markdown-kit)
+
+(defun %bp-footnote-start (line)
+  (let* ((text (%block-line-text line))
+         (length (length text)))
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
+      (declare (ignore columns))
+      (when (and (%bp-prefix-p text "[^" indent))
+        (let ((label-start (+ indent 2))
+              (close nil)
+              (escaped nil))
+          (loop for index from label-start below length
+                for character = (char text index)
+                do (cond
+                     (escaped (setf escaped nil))
+                     ((char= character #\\) (setf escaped t))
+                     ((char= character #\])
+                      (setf close index)
+                      (return))))
+          (when (and close (> close label-start)
+                     (< (1+ close) length)
+                     (char= (char text (1+ close)) #\:))
+            (let* ((raw-label (subseq text label-start close))
+                   (normalized
+                     (normalize-link-label
+                      (%bp-decode-character-references
+                       (%pc-unescape raw-label))))
+                   (cursor (%bp-skip-whitespace text (+ close 2))))
+              (values raw-label normalized cursor
+                      indent))))))))
+
+(defun %bp-atx-heading (line)
+  (let* ((text (%block-line-text line))
+         (length (length text)))
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
+      (declare (ignore columns))
+      (when (and (< indent length) (char= (char text indent) +bp-atx-heading-marker+))
+        (let ((marker-end indent))
+          (loop while (and (< marker-end length)
+                           (char= (char text marker-end) +bp-atx-heading-marker+))
+                do (incf marker-end))
+          (let ((level (- marker-end indent)))
+            (when (and (<= level 6)
+                       (or (= marker-end length)
+                           (%pc-space-p (char text marker-end))))
+              (let* ((content-start (%bp-skip-whitespace text marker-end))
+                     (content-end length)
+                     (close-count 0))
+                (multiple-value-setq (content-start content-end)
+                  (%pc-trim-indices text content-start content-end))
+                (when (> content-end content-start)
+                  (let ((cursor content-end))
+                    (loop while (and (> cursor content-start)
+                                     (char= (char text (1- cursor)) +bp-atx-heading-marker+))
+                          do (decf cursor))
+                    (when (and (< cursor content-end)
+                               (plusp cursor)
+                               (%pc-space-p (char text (1- cursor))))
+                      (setf close-count (- content-end cursor)
+                            content-end cursor)
+                      (multiple-value-setq (content-start content-end)
+                        (%pc-trim-indices text content-start content-end)))))
+                (values level indent content-start content-end
+                        (- marker-end indent) close-count)))))))))
+
+(defun %bp-setext-level (line)
+  (let* ((text (%block-line-text line))
+         (length (length text)))
+    (multiple-value-bind (indent columns)
+        (%bp-line-leading-indent line most-positive-fixnum)
+      (when (<= columns 3)
+        (let* ((start indent)
+               (end length))
+        (multiple-value-setq (start end) (%pc-trim-indices text start end))
+        (when (< start end)
+          (let ((marker (char text start)))
+            (when (find marker +bp-setext-marker-characters+)
+              (loop for index from start below end
+                    always (char= (char text index) marker)
+                    finally (return-from %bp-setext-level
+                              (values (if (char= marker #\=) 1 2)
+                                      marker (- end start) indent)))))))))))
+
+(defun %bp-thematic-break (line)
+  (let* ((text (%block-line-text line))
+         (length (length text)))
+    (multiple-value-bind (indent columns)
+        (%bp-line-leading-indent line most-positive-fixnum)
+      (when (<= columns 3)
+        (let ((marker nil)
+              (count 0))
+        (loop for index from indent below length
+              for character = (char text index)
+              do (cond
+                   ((%pc-space-p character))
+                   ((find character +bp-thematic-break-marker-characters+)
+                    (if marker
+                        (unless (char= marker character)
+                          (return-from %bp-thematic-break nil))
+                        (setf marker character))
+                    (incf count))
+                   (t (return-from %bp-thematic-break nil)))
+              finally (return (when (and marker (>= count 3))
+                                (values marker count indent)))))))))
+
+(defun %bp-fence-start (line)
+  (let* ((text (%block-line-text line))
+         (length (length text)))
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
+      (when (and (< indent length)
+                 (find (char text indent) +bp-fence-marker-characters+))
+        (let* ((character (char text indent))
+               (end indent))
+          (loop while (and (< end length) (char= (char text end) character))
+                do (incf end))
+          (when (>= (- end indent) 3)
+            (let ((info (string-left-trim +bp-fence-info-trim-characters+
+                                          (subseq text end))))
+              (when (or (char/= character #\`)
+                        (not (find #\` info)))
+                (values character (- end indent) columns end info indent)))))))))
+
+(defun %bp-fence-close-p (line character minimum-length)
+  (let* ((text (%block-line-text line))
+         (length (length text)))
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
+      (declare (ignore columns))
+      (when (and (< indent length) (char= (char text indent) character))
+        (let ((end indent))
+          (loop while (and (< end length) (char= (char text end) character))
+                do (incf end))
+          (and (>= (- end indent) minimum-length)
+               (every #'%pc-space-p (subseq text end length))))))))
+
+(defun %bp-tag-name-at (text index)
+  (let ((length (length text))
+        (cursor index))
+    (when (and (< cursor length) (char= (char text cursor) #\<))
+      (incf cursor)
+      (when (and (< cursor length) (char= (char text cursor) #\/))
+        (incf cursor))
+      (when (and (< cursor length) (%pc-ascii-alpha-p (char text cursor)))
+        (let ((start cursor))
+          (loop while (and (< cursor length)
+                           (or (%pc-ascii-alphanumeric-p (char text cursor))
+                               (char= (char text cursor) #\-)))
+                do (incf cursor))
+          (let ((name (string-downcase (subseq text start cursor))))
+            (when (or (= cursor length)
+                      (%pc-space-p (char text cursor))
+                      (char= (char text cursor) #\>))
+              (values name cursor))))))))
+
+(defun %bp-html-attribute-name-start-p (character)
+  (or (%pc-ascii-alpha-p character)
+      (find character +bp-html-attribute-name-start-characters+)))
+
+(defun %bp-html-attribute-name-character-p (character)
+  (or (%pc-ascii-alphanumeric-p character)
+      (find character +bp-html-attribute-name-characters+)))
+
+(defun %bp-html-type-seven-tag-end (text index name-end)
+  (let* ((length (length text))
+         (closing-p (and (< (1+ index) length)
+                         (char= (char text (1+ index)) #\/)))
+         (cursor name-end))
+    (when closing-p
+      (setf cursor (%bp-skip-whitespace text cursor))
+      (return-from %bp-html-type-seven-tag-end
+        (and (< cursor length)
+             (char= (char text cursor) #\>)
+             (1+ cursor))))
+    (loop
+      (setf cursor (%bp-skip-whitespace text cursor))
+      (when (>= cursor length)
+        (return nil))
+      (when (char= (char text cursor) #\>)
+        (return (1+ cursor)))
+      (when (char= (char text cursor) #\/)
+        (incf cursor)
+        (return (and (< cursor length)
+                     (char= (char text cursor) #\>)
+                     (1+ cursor))))
+      (unless (%bp-html-attribute-name-start-p (char text cursor))
+        (return nil))
+      (incf cursor)
+      (loop while (and (< cursor length)
+                       (%bp-html-attribute-name-character-p
+                        (char text cursor)))
+            do (incf cursor))
+      (setf cursor (%bp-skip-whitespace text cursor))
+      (when (and (< cursor length) (char= (char text cursor) #\=))
+        (incf cursor)
+        (setf cursor (%bp-skip-whitespace text cursor))
+        (when (>= cursor length)
+          (return nil))
+        (let ((quote (char text cursor)))
+          (if (find quote +bp-html-quoted-value-delimiters+)
+              (let ((end (position quote text :start (1+ cursor))))
+                (unless end (return nil))
+                (setf cursor (1+ end)))
+              (let ((start cursor))
+                (loop while (and (< cursor length)
+                                 (not (%pc-space-p (char text cursor)))
+                                 (not (find (char text cursor) +bp-html-unquoted-value-excluded-characters+)))
+                      do (incf cursor))
+                (when (= start cursor)
+                  (return nil))))))
+      (when (and (< cursor length)
+                 (not (%pc-space-p (char text cursor)))
+                 (not (find (char text cursor) +bp-html-tag-end-characters+)))
+        (return nil)))))
+
+(defun %bp-html-block-type (line)
+  (let* ((text (%block-line-text line))
+         (length (length text)))
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
+      (declare (ignore columns))
+      (cond
+        ((%bp-prefix-p text +bp-html-comment-start+ indent) (values 2 "-->" nil))
+        ((%bp-prefix-p text +bp-html-processing-instruction-start+ indent) (values 3 "?>" nil))
+        ((%bp-prefix-p text +bp-html-cdata-start+ indent) (values 5 "]]>" nil))
+        ((and (< (+ indent 2) length)
+              (%bp-prefix-p text +bp-html-declaration-start+ indent)
+              (<= (char-code #\A)
+                  (char-code (char text (+ indent 2)))
+                  (char-code #\Z)))
+         (values 4 ">" nil))
+        (t
+         (multiple-value-bind (name name-end) (%bp-tag-name-at text indent)
+           (when name
+             (cond
+               ((and (not (char= (char text (1+ indent)) #\/))
+                     (member name +bp-html-type-1-tags+ :test #'string=))
+                (values 1 (concatenate 'string "</" name) name))
+               ((member name +bp-html-type-6-tags+ :test #'string=)
+                (values 6 nil name))
+               ((and (not (member name +bp-html-type-1-tags+ :test #'string=))
+                     (let ((tag-end (%bp-html-type-seven-tag-end
+                                     text indent name-end)))
+                       (and tag-end
+                            (every #'%pc-space-p (subseq text tag-end length)))))
+                (values 7 nil name))))))))))
+
+(defun %bp-list-marker (line)
+  (let* ((text (%block-line-text line))
+         (length (length text)))
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
+      (when (< indent length)
+        (let* ((marker-start indent)
+               (character (char text marker-start))
+               (kind nil)
+               (start-number 1)
+               (delimiter nil)
+               (marker-end nil))
+          (cond
+            ((find character +bp-unordered-list-marker-characters+)
+             (setf kind :unordered delimiter character marker-end (1+ indent)))
+            ((<= (char-code #\0) (char-code character) (char-code #\9))
+             (let ((cursor indent))
+               (loop while (and (< cursor length)
+                                (<= (char-code #\0)
+                                    (char-code (char text cursor))
+                                    (char-code #\9)))
+                     do (incf cursor))
+               (when (and (<= (- cursor indent) +bp-max-ordered-list-marker-digits+)
+                          (< cursor length)
+                          (find (char text cursor) +bp-ordered-list-delimiters+))
+                 (setf kind :ordered
+                       start-number (parse-integer text :start indent :end cursor)
+                       delimiter (char text cursor)
+                       marker-end (1+ cursor))))))
+          (when marker-end
+            (when (or (= marker-end length)
+                      (%pc-space-p (char text marker-end)))
+                     (let* ((marker-column
+                              (+ (%block-line-column-start line) columns
+                                 (- marker-end indent)))
+                     (marker-columns (+ columns (- marker-end indent)))
+                     (space-end (%bp-skip-whitespace text marker-end))
+                     (space-columns
+                       (if (= space-end marker-end)
+                           1
+                           (%bp-whitespace-width text marker-end space-end
+                                                 marker-column)))
+                     (padding (if (or (= space-end length)
+                                     (> space-columns 4))
+                                 1
+                                 space-columns))
+                     (content-end
+                       (if (= space-end marker-end)
+                           marker-end
+                           (if (> space-columns 4)
+                               (1+ marker-end)
+                               space-end)))
+                     (content-indent (+ marker-columns padding)))
+                (values kind start-number delimiter indent marker-end
+                        content-end content-indent
+                        (subseq text 0 content-end) columns)))))))))
+
+(defun %bp-list-interrupts-paragraph-p (line)
+  (multiple-value-bind (kind start-number delimiter indent marker-end content-end)
+      (%bp-list-marker line)
+    (declare (ignore delimiter indent marker-end))
+    (and kind
+         (< content-end (length (%block-line-text line)))
+         (or (eq kind :unordered) (= start-number 1)))))
+
+(defun %bp-interrupts-paragraph-p (line gfm)
+  (or (nth-value 0 (%bp-atx-heading line))
+      (nth-value 0 (%bp-thematic-break line))
+      (nth-value 0 (%bp-fence-start line))
+      (%bp-list-interrupts-paragraph-p line)
+      (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
+        (declare (ignore columns))
+        (%bp-prefix-p (%block-line-text line) (string +bp-blockquote-marker+) indent))
+      (multiple-value-bind (type) (%bp-html-block-type line)
+        (and type (<= type 6)))
+      (and gfm (nth-value 0 (%bp-footnote-start line)))))
+
+(defun %bp-html-terminator-p (line terminator kind)
+  (let ((text (%block-line-text line)))
+    (cond
+      ((= kind 1)
+       (let ((cursor 0))
+         (loop for found = (search terminator text :start2 cursor
+                                         :test #'char-equal)
+               while found
+               do (let ((end (+ found (length terminator))))
+                    (when (< end (length text))
+                      (let ((closing-end
+                              (if (%pc-space-p (char text end))
+                                  (%bp-skip-whitespace text end)
+                                  end)))
+                        (when (and (< closing-end (length text))
+                                   (char= (char text closing-end) #\>))
+                          (return-from %bp-html-terminator-p t))))
+                    (setf cursor (1+ found))))
+         nil))
+      ((= kind 5) (search "]]>" text))
+      (terminator (search terminator text))
+      (t nil))))
+
+(defun %bp-unescape-table-pipes (line)
+  (let* ((text (%block-line-text line))
+         (characters (make-array 0 :element-type 'character
+                                 :adjustable t :fill-pointer 0))
+         (boundaries (make-array 0 :adjustable t :fill-pointer 0)))
+    (vector-push-extend (%bp-line-boundary line 0) boundaries)
+    (loop with index = 0
+          while (< index (length text))
+          do (if (and (char= (char text index) #\\)
+                      (< (1+ index) (length text))
+                      (char= (char text (1+ index)) #\|))
+                 (progn
+                   (vector-push-extend #\| characters)
+                   (vector-push-extend (%bp-line-boundary line (+ index 2))
+                                       boundaries)
+                   (incf index 2))
+                 (progn
+                   (vector-push-extend (char text index) characters)
+                   (vector-push-extend (%bp-line-boundary line (1+ index))
+                                       boundaries)
+                   (incf index))))
+    (%make-block-line (coerce characters 'string) boundaries
+                      (%block-line-raw-start line)
+                      (%block-line-raw-end line)
+                      (%block-line-after line)
+                      (%block-line-column-start line))))
+
+(defun %bp-table-alignments (line)
+  (let ((cells (%pc-table-cells (%block-line-text line))))
+    (when cells
+      (let ((alignments nil))
+        (dolist (cell cells)
+          (let* ((part (%pc-trimmed-string (subseq (%block-line-text line) (car cell) (cdr cell))))
+                 (length (length part))
+                 (start (if (and (plusp length) (char= (char part 0) #\:)) 1 0))
+                 (end (if (and (> length start)
+                               (char= (char part (1- length)) #\:))
+                          (1- length)
+                          length)))
+            (unless (and (plusp (- end start))
+                         (loop for index from start below end
+                               always (char= (char part index) #\-)))
+              (return-from %bp-table-alignments nil))
+            (push (cond ((and (plusp start) (< end length)) :center)
+                        ((plusp start) :left)
+                        ((< end length) :right)
+                        (t nil))
+                  alignments)))
+        (nreverse alignments)))))
+
+(defun %bp-table-cell-node (source-buffer line range alignment context)
+  (multiple-value-bind (start end)
+      (%pc-trim-indices (%block-line-text line) (car range) (cdr range))
+    (let* ((cell-line
+             (%bp-unescape-table-pipes (%bp-line-slice line start end)))
+           (cell (make-table-cell
+                  :span (%bp-line-span source-buffer line start end)
+                  :continuation-prefix context
+                  :alignment alignment
+                  :children nil)))
+      (%bp-add-fragment source-buffer cell (list cell-line))
+      (values cell (%block-line-text cell-line)))))
+
+(defun %bp-table-row (source-buffer line alignments header-p context)
+  (let* ((ranges (coerce (%pc-table-cells (%block-line-text line)) 'vector))
+         (cells nil))
+    (loop for alignment in alignments
+          for index from 0
+          for range = (if (< index (length ranges))
+                          (aref ranges index)
+                          (cons (length (%block-line-text line))
+                                (length (%block-line-text line))))
+          do (push (nth-value 0
+                             (%bp-table-cell-node source-buffer line range
+                                                  alignment context))
+                   cells))
+    (make-table-row
+     :span (%bp-line-span source-buffer line
+                          (nth-value 0 (%bp-line-leading-indent line 3))
+                          (length (%block-line-text line)))
+     :continuation-prefix context
+     :header-row-p header-p
+     :cells (nreverse cells))))
+
+(defun %bp-make-thematic-break (source-buffer line context marker count start)
+  (make-thematic-break
+   :span (%bp-line-span source-buffer line start
+                        (length (%block-line-text line)))
+   :continuation-prefix context
+   :marker-character marker
+   :marker-count count))
+
+(defun %bp-list-marker-record (line)
+  (multiple-value-bind (kind start-number delimiter indent marker-end content-end
+                             content-indent prefix marker-columns)
+      (%bp-list-marker line)
+    (when kind
+      (list kind start-number delimiter indent marker-end content-end
+            content-indent prefix marker-columns))))
+
+(defun %bp-quote-content (line)
+  (let* ((text (%block-line-text line))
+         (length (length text)))
+    (multiple-value-bind (indent columns) (%bp-line-leading-indent line 3)
+      (when (and (< indent length) (char= (char text indent) +bp-blockquote-marker+))
+        (let* ((marker-end (1+ indent))
+               (prefix-end marker-end)
+               (content (%bp-line-slice line marker-end)))
+          (when (and (< marker-end length)
+                     (%pc-space-p (char text marker-end)))
+            (setf prefix-end (1+ marker-end)
+                  content (%bp-strip-columns
+                           (%bp-line-slice line marker-end) 1)))
+          (values indent content (subseq text 0 prefix-end) columns))))))
