@@ -48,7 +48,10 @@
           "cl-concurrent-kit",
           "cl-nix-forge"
         ],
-        "cl-prolog": "cl-prolog_3",
+        "cl-prolog": [
+          "cl-parser-kit",
+          "cl-prolog"
+        ],
         "cl-weave": [
           "cl-yaml-kit",
           "cl-regex-kit",
@@ -97,23 +100,6 @@
         "type": "github"
       }
     },
-    "cl-boundary-kit_5": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1785937199,
-        "narHash": "sha256-FAuQIpnySCV4KoPm2ugbq/9uMsBGBO5XzF0SE3o0MTI=",
-        "owner": "nerima-lisp",
-        "repo": "cl-boundary-kit",
-        "rev": "62e4a7df3e52061c38b7ff4f596436bdda985f71",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v2.3.0",
-        "repo": "cl-boundary-kit",
-        "type": "github"
-      }
-    },
     "cl-cli": {
       "inputs": {
         "cl-boundary-kit": "cl-boundary-kit_2",
@@ -121,7 +107,7 @@
         "cl-concurrent-kit": "cl-concurrent-kit_2",
         "cl-date-kit": "cl-date-kit_2",
         "cl-host-kit": "cl-host-kit_2",
-        "cl-json-kit": "cl-json-kit_3",
+        "cl-json-kit": "cl-json-kit_2",
         "cl-log-kit": "cl-log-kit_2",
         "cl-nix-forge": "cl-nix-forge_3",
         "cl-process-kit": "cl-process-kit_2",
@@ -156,7 +142,7 @@
       "inputs": {
         "cl-boundary-kit": "cl-boundary-kit_4",
         "cl-host-kit": "cl-host-kit_3",
-        "cl-json-kit": "cl-json-kit_4",
+        "cl-json-kit": "cl-json-kit_3",
         "cl-log-kit": "cl-log-kit_3",
         "cl-nix-forge": [
           "cl-yaml-kit",
@@ -165,7 +151,7 @@
           "cl-nix-forge"
         ],
         "cl-process-kit": "cl-process-kit_3",
-        "cl-prolog": "cl-prolog_4",
+        "cl-prolog": "cl-prolog_3",
         "cl-weave": "cl-weave_5",
         "nixpkgs": [
           "cl-yaml-kit",
@@ -298,23 +284,6 @@
         "type": "github"
       }
     },
-    "cl-codec-kit_5": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1785920269,
-        "narHash": "sha256-gdpeurD7tMtJdk5X87I9v/cDWHvkplaWHAeVUMCkyFU=",
-        "owner": "nerima-lisp",
-        "repo": "cl-codec-kit",
-        "rev": "e30be513f5f8e936e968ff8d7910f43ef986ba6f",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v0.5.0",
-        "repo": "cl-codec-kit",
-        "type": "github"
-      }
-    },
     "cl-concurrent-kit": {
       "flake": false,
       "locked": {
@@ -389,16 +358,31 @@
     },
     "cl-dataflow-kit": {
       "inputs": {
-        "cl-boundary-kit": "cl-boundary-kit_5",
-        "cl-codec-kit": "cl-codec-kit_5",
+        "cl-boundary-kit": [
+          "cl-process-kit",
+          "cl-boundary-kit"
+        ],
+        "cl-codec-kit": [
+          "cl-process-kit",
+          "cl-codec-kit"
+        ],
         "cl-concurrent-kit": [
           "cl-yaml-kit",
           "cl-regex-kit",
           "cl-concurrent-kit"
         ],
-        "cl-date-kit": "cl-date-kit_4",
-        "cl-host-kit": "cl-host-kit_5",
-        "cl-log-kit": "cl-log-kit_4",
+        "cl-date-kit": [
+          "cl-process-kit",
+          "cl-date-kit"
+        ],
+        "cl-host-kit": [
+          "cl-process-kit",
+          "cl-host-kit"
+        ],
+        "cl-log-kit": [
+          "cl-process-kit",
+          "cl-log-kit"
+        ],
         "cl-nix-forge": [
           "cl-weave",
           "cl-nix-forge"
@@ -479,7 +463,10 @@
           "cl-concurrent-kit",
           "cl-nix-forge"
         ],
-        "cl-weave": "cl-weave_6",
+        "cl-weave": [
+          "cl-process-kit",
+          "cl-weave"
+        ],
         "nixpkgs": [
           "cl-yaml-kit",
           "cl-regex-kit",
@@ -490,23 +477,6 @@
           "treefmt-nix"
         ]
       },
-      "locked": {
-        "lastModified": 1785928864,
-        "narHash": "sha256-gpIsXrCcDFYVOVGvbMYMf1Oed/n51zyP3ZKZLQtw/Y0=",
-        "owner": "nerima-lisp",
-        "repo": "cl-date-kit",
-        "rev": "5671c20eddb901ecbe9f5d66b59ea92ac97aa411",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v1.0.0",
-        "repo": "cl-date-kit",
-        "type": "github"
-      }
-    },
-    "cl-date-kit_4": {
-      "flake": false,
       "locked": {
         "lastModified": 1785928864,
         "narHash": "sha256-gpIsXrCcDFYVOVGvbMYMf1Oed/n51zyP3ZKZLQtw/Y0=",
@@ -612,23 +582,6 @@
         "type": "github"
       }
     },
-    "cl-host-kit_5": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1785923957,
-        "narHash": "sha256-pUR7Gi9Fdwg9WR1Mpjl+yBAb8FHAAieG8lTLYwfVJOc=",
-        "owner": "nerima-lisp",
-        "repo": "cl-host-kit",
-        "rev": "ec565470b634605e23b0d6eef0645eb15e8e3356",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v0.3.1",
-        "repo": "cl-host-kit",
-        "type": "github"
-      }
-    },
     "cl-json-kit": {
       "inputs": {
         "cl-nix-forge": [
@@ -662,39 +615,6 @@
       }
     },
     "cl-json-kit_2": {
-      "inputs": {
-        "cl-nix-forge": [
-          "cl-weave",
-          "cl-nix-forge"
-        ],
-        "cl-weave": [
-          "cl-codec-kit",
-          "cl-weave"
-        ],
-        "nixpkgs": [
-          "cl-yaml-kit",
-          "nixpkgs"
-        ],
-        "treefmt-nix": [
-          "treefmt-nix"
-        ]
-      },
-      "locked": {
-        "lastModified": 1785923850,
-        "narHash": "sha256-0TBp7mlj0VF2krHZ83tsBtMKoiI38kpm8n56B/Ie37k=",
-        "owner": "nerima-lisp",
-        "repo": "cl-json-kit",
-        "rev": "dace990f643d1dd07639ce57a2559c5143850cce",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v1.2.0",
-        "repo": "cl-json-kit",
-        "type": "github"
-      }
-    },
-    "cl-json-kit_3": {
       "flake": false,
       "locked": {
         "lastModified": 1785654907,
@@ -711,7 +631,7 @@
         "type": "github"
       }
     },
-    "cl-json-kit_4": {
+    "cl-json-kit_3": {
       "flake": false,
       "locked": {
         "lastModified": 1784983583,
@@ -775,23 +695,6 @@
       "original": {
         "owner": "nerima-lisp",
         "ref": "v1.0.0",
-        "repo": "cl-log-kit",
-        "type": "github"
-      }
-    },
-    "cl-log-kit_4": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1785930087,
-        "narHash": "sha256-zFbU9a8KLHThzQRn7jqSL0SoTj7ImeP3Q5lJmsOzBQM=",
-        "owner": "nerima-lisp",
-        "repo": "cl-log-kit",
-        "rev": "580ebe23e4106edb8dcc89c0d4732f585c17e3f9",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v2.2.0",
         "repo": "cl-log-kit",
         "type": "github"
       }
@@ -1056,7 +959,7 @@
           "cl-weave",
           "cl-nix-forge"
         ],
-        "cl-weave": "cl-weave_7",
+        "cl-weave": "cl-weave_6",
         "nixpkgs": [
           "cl-yaml-kit",
           "cl-regex-kit",
@@ -1105,52 +1008,6 @@
       }
     },
     "cl-prolog_3": {
-      "inputs": {
-        "cl-nix-forge": [
-          "cl-yaml-kit",
-          "cl-regex-kit",
-          "cl-concurrent-kit",
-          "cl-boundary-kit",
-          "cl-nix-forge"
-        ],
-        "cl-weave": [
-          "cl-yaml-kit",
-          "cl-regex-kit",
-          "cl-concurrent-kit",
-          "cl-boundary-kit",
-          "cl-weave"
-        ],
-        "nixpkgs": [
-          "cl-yaml-kit",
-          "cl-regex-kit",
-          "cl-concurrent-kit",
-          "cl-boundary-kit",
-          "nixpkgs"
-        ],
-        "paredit-cli": [
-          "cl-weave",
-          "paredit-cli"
-        ],
-        "treefmt-nix": [
-          "treefmt-nix"
-        ]
-      },
-      "locked": {
-        "lastModified": 1785918678,
-        "narHash": "sha256-Xr2Ga1qzz08MApO5N4v+bs/wmCC4FdJlYyjsC8TnXxU=",
-        "owner": "nerima-lisp",
-        "repo": "cl-prolog",
-        "rev": "7581f72c7d080afd4c863e1d44010ccb5d7258ad",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v1.4.3",
-        "repo": "cl-prolog",
-        "type": "github"
-      }
-    },
-    "cl-prolog_4": {
       "flake": false,
       "locked": {
         "lastModified": 1785003722,
@@ -1341,23 +1198,6 @@
       }
     },
     "cl-weave_6": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1785915502,
-        "narHash": "sha256-NhwWewIatjblEBVJcY5b6YRBGxiowBjRDlHXJ7crCuU=",
-        "owner": "nerima-lisp",
-        "repo": "cl-weave",
-        "rev": "29bba54f1d711b07cc6244990d0ceff0faeec832",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v1.3.0",
-        "repo": "cl-weave",
-        "type": "github"
-      }
-    },
-    "cl-weave_7": {
       "inputs": {
         "cl-nix-forge": [
           "cl-yaml-kit",
@@ -1401,7 +1241,9 @@
         "cl-codec-kit": [
           "cl-codec-kit"
         ],
-        "cl-json-kit": "cl-json-kit_2",
+        "cl-json-kit": [
+          "cl-json-kit"
+        ],
         "cl-nix-forge": [
           "cl-nix-forge"
         ],
@@ -1418,16 +1260,16 @@
         "yaml-test-suite": "yaml-test-suite"
       },
       "locked": {
-        "lastModified": 1790548989,
-        "narHash": "sha256-VqMiAdApc0t6FzCY7W3clg5hTR4lmf0RXU1n5thVMJU=",
+        "lastModified": 1792406792,
+        "narHash": "sha256-T/4U/6Wok3oEVfd/2gitbxkxGDodWkrqN8MHqS3IeUo=",
         "owner": "nerima-lisp",
         "repo": "cl-yaml-kit",
-        "rev": "8ceb8f2495695ad888f828c9c852147873d0d559",
+        "rev": "91ea1ea94de590eb6521e9c2d4ccd6b2619ba57e",
         "type": "github"
       },
       "original": {
         "owner": "nerima-lisp",
-        "ref": "v0.1.0",
+        "ref": "v0.2.1",
         "repo": "cl-yaml-kit",
         "type": "github"
       }
