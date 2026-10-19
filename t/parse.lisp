@@ -43,6 +43,26 @@
   (handler-case
       (progn (funcall function) nil)
     (serious-condition () t)))
+(defun parser-contract-call-entry-point (entry-point input option value)
+  (labels ((call-with-option (function argument)
+             (if (eq option :none)
+                 (funcall function argument)
+                 (funcall function argument option value))))
+    (ecase entry-point
+      (:parse-string
+       (call-with-option #'cl-markdown-kit:parse-string input))
+      (:parse-stream
+       (with-input-from-string (stream input)
+         (call-with-option #'cl-markdown-kit:parse-stream stream)))
+      (:parse-octets
+       (call-with-option #'cl-markdown-kit:parse-octets input))
+      (:dispatch-string
+       (call-with-option #'cl-markdown-kit:parse input))
+      (:dispatch-stream
+       (with-input-from-string (stream input)
+         (call-with-option #'cl-markdown-kit:parse stream)))
+      (:dispatch-octets
+       (call-with-option #'cl-markdown-kit:parse input)))))
 
 (describe "Parser API contract"
   (it "attaches source metadata and inline children to the parsed document"
@@ -166,81 +186,90 @@
                      (cl-markdown-kit:make-front-matter) nil)))
                  :to-be-truthy)))))
 
-  (it "uses the documented default limits in every public entry point"
-    (let ((*parser-contract-block-result* nil)
-          (*parser-contract-block-calls* nil)
-          (*parser-contract-inline-calls* nil))
-      (let ((documents
-              (call-with-parser-contract-stubs
-               (lambda ()
-                 (list (cl-markdown-kit:parse-string "string")
-                       (with-input-from-string (stream "stream")
-                         (cl-markdown-kit:parse-stream stream))
-                       (cl-markdown-kit:parse-octets
-                        (make-array 1 :element-type '(unsigned-byte 8)
-                                      :initial-contents '(111)))
-                       (cl-markdown-kit:parse "dispatch"))))))
-        (expect (mapcar #'cl-markdown-kit:document-max-nesting-depth documents)
-                :to-equal '(256 256 256 256))
-        (expect
-         (mapcar #'cl-markdown-kit:document-max-inline-delimiter-depth documents)
-         :to-equal '(4096 4096 4096 4096))
-        (expect (mapcar #'second *parser-contract-block-calls*)
-                :to-equal '(256 256 256 256))
-        (expect (mapcar #'third *parser-contract-block-calls*)
-                :to-equal '(t t t t))
-        (expect (mapcar #'fourth *parser-contract-block-calls*)
-                :to-equal '(t t t t)))))
+  (cl-weave:it-each ((:parse-string "string")
+      (:parse-stream "stream")
+      (:parse-octets
+      (make-array 1 :element-type '(unsigned-byte 8) :initial-contents '(111)))
+      (:dispatch-string "dispatch")
+      (:dispatch-stream "dispatch stream")
+      (:dispatch-octets
+       (make-array 1 :element-type (quote (unsigned-byte 8)) :initial-contents (quote (111)))))
+    "entry point ~A: uses the documented default limits in every public entry point"
+    (entry-point input)
+    (let ((input (eval input)))
+      (let ((*parser-contract-block-result* nil)
+            (*parser-contract-block-calls* nil)
+            (*parser-contract-inline-calls* nil))
+        (let ((document
+                (call-with-parser-contract-stubs
+                 (lambda ()
+                   (parser-contract-call-entry-point
+                    entry-point input :none nil)))))
+          (expect (cl-markdown-kit:document-max-nesting-depth document)
+                  :to-equal 256)
+          (expect
+           (cl-markdown-kit:document-max-inline-delimiter-depth document)
+           :to-equal 4096)
+          (expect (second (first *parser-contract-block-calls*))
+                  :to-equal 256)
+          (expect (third (first *parser-contract-block-calls*))
+                  :to-equal t)
+          (expect (fourth (first *parser-contract-block-calls*))
+                  :to-equal t)))))
 
-  (it "forwards the front-matter option through every public input entry point"
-    (let ((*parser-contract-block-result* nil)
-          (*parser-contract-block-calls* nil)
-          (*parser-contract-inline-calls* nil)
-          (octets (make-array 1 :element-type '(unsigned-byte 8)
-                                :initial-contents '(120))))
-      (call-with-parser-contract-stubs
-       (lambda ()
-         (cl-markdown-kit:parse-string "string" :front-matter nil)
-         (with-input-from-string (stream "stream")
-           (cl-markdown-kit:parse-stream stream :front-matter nil))
-         (cl-markdown-kit:parse-octets octets :front-matter nil)
-         (cl-markdown-kit:parse "dispatch string" :front-matter nil)
-         (with-input-from-string (stream "dispatch stream")
-           (cl-markdown-kit:parse stream :front-matter nil))
-         (cl-markdown-kit:parse octets :front-matter nil)))
-      (expect (mapcar #'third *parser-contract-block-calls*)
-              :to-equal '(nil nil nil nil nil nil))))
+  (cl-weave:it-each ((:parse-string "string")
+     (:parse-stream "stream")
+     (:parse-octets
+      (make-array 1 :element-type '(unsigned-byte 8) :initial-contents '(120)))
+     (:dispatch-string "dispatch string")
+     (:dispatch-stream "dispatch stream")
+     (:dispatch-octets
+      (make-array 1 :element-type '(unsigned-byte 8) :initial-contents '(120))))
+    "entry point ~A: forwards the front-matter option through every public input entry point"
+    (entry-point input)
+    (let ((input (eval input)))
+      (let ((*parser-contract-block-result* nil)
+            (*parser-contract-block-calls* nil)
+            (*parser-contract-inline-calls* nil))
+        (call-with-parser-contract-stubs
+         (lambda ()
+           (parser-contract-call-entry-point
+            entry-point input :front-matter nil)))
+        (expect (third (first *parser-contract-block-calls*))
+                :to-equal nil))))
 
-  (it "forwards the GFM option through every public input entry point"
-    (let* ((source-buffer (cl-markdown-kit:make-source-buffer "x"))
-           (*parser-contract-block-result*
-             (cl-markdown-kit::make-block-parse-result
-              :document (cl-markdown-kit:make-document)
-              :inline-fragments
-              (list (cl-markdown-kit::make-inline-fragment
-                     :node (cl-markdown-kit:make-paragraph)
-                     :text "x"
-                     :boundary-map
-                     (cl-markdown-kit::source-buffer-boundary-map
-                      source-buffer)))))
-           (*parser-contract-block-calls* nil)
-           (*parser-contract-inline-calls* nil)
-           (octets (make-array 1 :element-type '(unsigned-byte 8)
-                                :initial-contents '(120))))
-      (call-with-parser-contract-stubs
-       (lambda ()
-         (cl-markdown-kit:parse-string "string" :gfm nil)
-         (with-input-from-string (stream "stream")
-           (cl-markdown-kit:parse-stream stream :gfm nil))
-         (cl-markdown-kit:parse-octets octets :gfm nil)
-         (cl-markdown-kit:parse "dispatch string" :gfm nil)
-         (with-input-from-string (stream "dispatch stream")
-           (cl-markdown-kit:parse stream :gfm nil))
-         (cl-markdown-kit:parse octets :gfm nil)))
-      (expect (mapcar #'fourth *parser-contract-block-calls*)
-              :to-equal '(nil nil nil nil nil nil))
-      (expect (mapcar #'third *parser-contract-inline-calls*)
-              :to-equal '(nil nil nil nil nil nil))))
+  (cl-weave:it-each ((:parse-string "string")
+     (:parse-stream "stream")
+     (:parse-octets
+      (make-array 1 :element-type '(unsigned-byte 8) :initial-contents '(120)))
+     (:dispatch-string "dispatch string")
+     (:dispatch-stream "dispatch stream")
+     (:dispatch-octets
+      (make-array 1 :element-type '(unsigned-byte 8) :initial-contents '(120))))
+    "entry point ~A: forwards the GFM option through every public input entry point"
+    (entry-point input)
+    (let ((input (eval input)))
+      (let* ((source-buffer (cl-markdown-kit:make-source-buffer "x"))
+             (*parser-contract-block-result*
+               (cl-markdown-kit::make-block-parse-result
+                :document (cl-markdown-kit:make-document)
+                :inline-fragments
+                (list (cl-markdown-kit::make-inline-fragment
+                       :node (cl-markdown-kit:make-paragraph)
+                       :text "x"
+                       :boundary-map
+                       (cl-markdown-kit::source-buffer-boundary-map
+                        source-buffer)))))
+             (*parser-contract-block-calls* nil)
+             (*parser-contract-inline-calls* nil))
+        (call-with-parser-contract-stubs
+         (lambda ()
+           (parser-contract-call-entry-point
+            entry-point input :gfm nil)))
+        (expect (fourth (first *parser-contract-block-calls*))
+                :to-equal nil)
+        (expect (third (first *parser-contract-inline-calls*))
+                :to-equal nil))))
 
   (it "recognizes leading front matter by default and can disable it"
     (let* ((source (format nil "---~%title: sample~%---~%# body~%"))

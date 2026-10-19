@@ -1,118 +1,5 @@
 (in-package #:cl-markdown-kit)
 
-(defconstant +default-max-nesting-depth+ 256)
-
-(defconstant +default-max-inline-delimiter-depth+ 4096)
-
-(defconstant +max-ordered-list-marker-digits+ 9)
-
-(sb-ext:defglobal +html-block-type-1-tags+ '("script" "pre" "style" "textarea"))
-
-(sb-ext:defglobal +html-block-type-6-tags+ '("address" "article"
-              "aside"
-              "base"
-              "basefont"
-              "blockquote"
-              "body"
-              "caption"
-              "center"
-              "col"
-              "colgroup"
-              "dd"
-              "details"
-              "dialog"
-              "dir"
-              "div"
-              "dl"
-              "dt"
-              "fieldset"
-              "figcaption"
-              "figure"
-              "footer"
-              "form"
-              "frame"
-              "frameset"
-              "h1"
-              "h2"
-              "h3"
-              "h4"
-              "h5"
-              "h6"
-              "head"
-              "header"
-              "hr"
-              "html"
-              "iframe"
-              "legend"
-              "li"
-              "link"
-              "main"
-              "menu"
-              "menuitem"
-              "nav"
-              "noframes"
-              "ol"
-              "optgroup"
-              "option"
-              "p"
-              "param"
-              "search"
-              "section"
-              "summary"
-              "table"
-              "tbody"
-              "td"
-              "tfoot"
-              "th"
-              "thead"
-              "title"
-              "tr"
-              "track"
-              "ul"))
-
-(sb-ext:defglobal +gfm-tagfilter-tags+ '("title" "textarea"
-            "style"
-            "xmp"
-            "iframe"
-            "noembed"
-            "noframes"
-            "script"
-            "plaintext"))
-
-(sb-ext:defglobal +html-attribute-start-characters+ "_:")
-
-(sb-ext:defglobal +html-attribute-name-extra-characters+ ":._-")
-
-(sb-ext:defglobal +html-unquoted-attribute-excluded-characters+ "\"'=<>\`")
-
-(sb-ext:defglobal +autolink-angle-excluded-characters+ "<>")
-
-(sb-ext:defglobal +uri-scheme-extra-characters+ "+.-")
-
-(sb-ext:defglobal +angle-email-local-part-characters+ "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.!#$%&'*+/=?^_`{|}~-")
-
-(sb-ext:defglobal +email-local-part-extra-characters+ ".-_+")
-
-(sb-ext:defglobal +gfm-domain-extra-characters+ "_-")
-
-(sb-ext:defglobal +bare-url-trailing-punctuation-characters+ "?!.,:*_~")
-
-(sb-ext:defglobal +common-quote-characters+ '(#\" #\'))
-
-(sb-ext:defglobal +link-label-unescape-characters+ '(#\\ #\[ #\]))
-
-(sb-ext:defglobal +reference-label-space-characters+ '(#\Space #\Tab #\Newline))
-
-(sb-ext:defglobal +inline-delimiter-characters+ '(#\* #\_ #\~))
-
-(sb-ext:defglobal +inline-text-special-characters+ '(#\\ #\` #\& #\< #\Newline #\Space #\Tab #\! #\[ #\] #\* #\_ #\~))
-
-(sb-ext:defglobal +numeric-reference-hex-prefix-characters+ "xX")
-
-(sb-ext:defglobal +ascii-hexadecimal-letter-characters+ "abcdefABCDEF")
-
-(sb-ext:defglobal +bare-url-preceding-excluded-characters+ ":/@<")
-
 (defun %pc-trim-indices (text start end)
   (loop while (and (< start end) (%pc-space-p (char text start)))
         do (incf start))
@@ -169,8 +56,6 @@
                  (setf escaped nil)
                  (incf index))))
     matches))
-
-(sb-ext:defglobal +link-title-delimiters+ '(#\" #\' #\( ))
 
 (defun %pc-check-depth (depth limit kind)
   (when (> depth limit)

@@ -21,6 +21,8 @@
                (:file "conditions")
                (:file "html-entities-data")
                (:file "character-data")
+               (:file "character-logic")
+               (:file "parser-common-data")
                (:file "parser-common")
                (:file "html-escaping")
                (:file "parser-common-links")

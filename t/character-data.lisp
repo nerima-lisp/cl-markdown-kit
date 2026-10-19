@@ -7,95 +7,59 @@
 (defun character-data-codepoint-string (codepoint)
   (string (character-data-codepoint codepoint)))
 
-(defmacro character-data-probe (label function arguments expected)
-  `(it ,label
-     (expect (funcall #',function ,@arguments) :to-equal ,expected)))
-
 (describe "character data"
-  (character-data-probe "probe 01: entity amp;"
-      cl-markdown-kit::lookup-html5-entity ("amp;") "&")
-  (character-data-probe "probe 02: entity AElig;"
-      cl-markdown-kit::lookup-html5-entity ("AElig;")
-      (character-data-codepoint-string #x00C6))
-  (character-data-probe "probe 03: entity Dcaron;"
-      cl-markdown-kit::lookup-html5-entity ("Dcaron;")
-      (character-data-codepoint-string #x010E))
-  (character-data-probe "probe 04: multi-codepoint entity ngE;"
-      cl-markdown-kit::lookup-html5-entity ("ngE;")
-      (concatenate 'string (character-data-codepoint-string #x2267)
-                   (character-data-codepoint-string #x0338)))
-  (character-data-probe "probe 05: entity without semicolon"
-      cl-markdown-kit::lookup-html5-entity ("copy") nil)
-  (character-data-probe "probe 06: unknown entity"
-      cl-markdown-kit::lookup-html5-entity ("MadeUpEntity;") nil)
-  (character-data-probe "probe 07: non-string entity name"
-      cl-markdown-kit::lookup-html5-entity (nil) nil)
-  (character-data-probe "probe 08: decimal 35"
-      cl-markdown-kit::decode-numeric-character-reference ("35" 10) "#")
-  (character-data-probe "probe 09: decimal 1234"
-      cl-markdown-kit::decode-numeric-character-reference ("1234" 10)
-      (character-data-codepoint-string #x04D2))
-  (character-data-probe "probe 10: decimal 992"
-      cl-markdown-kit::decode-numeric-character-reference ("992" 10)
-      (character-data-codepoint-string #x03E0))
-  (character-data-probe "probe 11: decimal zero"
-      cl-markdown-kit::decode-numeric-character-reference ("0" 10)
-      (character-data-codepoint-string #xFFFD))
-  (character-data-probe "probe 12: hexadecimal quote"
-      cl-markdown-kit::decode-numeric-character-reference ("22" 16) "\"")
-  (character-data-probe "probe 13: hexadecimal uppercase digits"
-      cl-markdown-kit::decode-numeric-character-reference ("D06" 16)
-      (character-data-codepoint-string #x0D06))
-  (character-data-probe "probe 14: hexadecimal lowercase digits"
-      cl-markdown-kit::decode-numeric-character-reference ("cab" 16)
-      (character-data-codepoint-string #x0CAB))
-  (character-data-probe "probe 15: decimal control value"
-      cl-markdown-kit::decode-numeric-character-reference ("1" 10)
-      (character-data-codepoint-string #x0001))
-  (character-data-probe "probe 16: decimal above Unicode maximum"
-      cl-markdown-kit::decode-numeric-character-reference ("1114112" 10)
-      (character-data-codepoint-string #xFFFD))
-  (character-data-probe "probe 17: decimal surrogate"
-      cl-markdown-kit::decode-numeric-character-reference ("55296" 10)
-      (character-data-codepoint-string #xFFFD))
-  (character-data-probe "probe 18: hexadecimal above Unicode maximum"
-      cl-markdown-kit::decode-numeric-character-reference ("110000" 16)
-      (character-data-codepoint-string #xFFFD))
-  (character-data-probe "probe 19: empty numeric reference"
-      cl-markdown-kit::decode-numeric-character-reference ("" 10) nil)
-  (character-data-probe "probe 20: overlong decimal reference"
-      cl-markdown-kit::decode-numeric-character-reference ("12345678" 10) nil)
-  (character-data-probe "probe 21: overlong hexadecimal reference"
-      cl-markdown-kit::decode-numeric-character-reference ("1234567" 16) nil)
-  (character-data-probe "probe 22: letter in decimal reference"
-      cl-markdown-kit::decode-numeric-character-reference ("A" 10) nil)
-  (character-data-probe "probe 23: non-hex digit in hexadecimal reference"
-      cl-markdown-kit::decode-numeric-character-reference ("G" 16) nil)
-  (character-data-probe "probe 24: unsupported radix"
-      cl-markdown-kit::decode-numeric-character-reference ("1" 8) nil)
-  (character-data-probe "probe 25: non-string numeric digits"
-      cl-markdown-kit::decode-numeric-character-reference (nil 10) nil)
-  (character-data-probe "probe 26: tab is Unicode whitespace"
-      cl-markdown-kit::unicode-whitespace-p
-      ((character-data-codepoint #x0009)) t)
-  (character-data-probe "probe 27: line feed is Unicode whitespace"
-      cl-markdown-kit::unicode-whitespace-p
-      ((character-data-codepoint #x000A)) t)
-  (character-data-probe "probe 28: form feed is Unicode whitespace"
-      cl-markdown-kit::unicode-whitespace-p
-      ((character-data-codepoint #x000C)) t)
-  (character-data-probe "probe 29: carriage return is Unicode whitespace"
-      cl-markdown-kit::unicode-whitespace-p
-      ((character-data-codepoint #x000D)) t)
-  (character-data-probe "probe 30: no-break space is Unicode whitespace"
-      cl-markdown-kit::unicode-whitespace-p
-      ((character-data-codepoint #x00A0)) t)
-  (character-data-probe "probe 31: em space is Unicode whitespace"
-      cl-markdown-kit::unicode-whitespace-p
-      ((character-data-codepoint #x2003)) t)
-  (character-data-probe "probe 32: letter is not Unicode whitespace"
-      cl-markdown-kit::unicode-whitespace-p (#\A) nil)
-
+  (it-each
+    (("probe 01: entity amp;" cl-markdown-kit::lookup-html5-entity ("amp;") "&")
+     ("probe 02: entity AElig;" cl-markdown-kit::lookup-html5-entity ("AElig;") #x00C6)
+     ("probe 03: entity Dcaron;" cl-markdown-kit::lookup-html5-entity ("Dcaron;") #x010E)
+     ("probe 04: multi-codepoint entity ngE;" cl-markdown-kit::lookup-html5-entity ("ngE;") (#x2267 #x0338))
+     ("probe 05: entity without semicolon" cl-markdown-kit::lookup-html5-entity ("copy") nil)
+     ("probe 06: unknown entity" cl-markdown-kit::lookup-html5-entity ("MadeUpEntity;") nil)
+     ("probe 07: non-string entity name" cl-markdown-kit::lookup-html5-entity (nil) nil)
+     ("probe 08: decimal 35" cl-markdown-kit::decode-numeric-character-reference ("35" 10) "#")
+     ("probe 09: decimal 1234" cl-markdown-kit::decode-numeric-character-reference ("1234" 10) #x04D2)
+     ("probe 10: decimal 992" cl-markdown-kit::decode-numeric-character-reference ("992" 10) #x03E0)
+     ("probe 11: decimal zero" cl-markdown-kit::decode-numeric-character-reference ("0" 10) #xFFFD)
+     ("probe 12: hexadecimal quote" cl-markdown-kit::decode-numeric-character-reference ("22" 16) #x0022)
+     ("probe 13: hexadecimal uppercase digits" cl-markdown-kit::decode-numeric-character-reference ("D06" 16) #x0D06)
+     ("probe 14: hexadecimal lowercase digits" cl-markdown-kit::decode-numeric-character-reference ("cab" 16) #x0CAB)
+     ("probe 15: decimal control value" cl-markdown-kit::decode-numeric-character-reference ("1" 10) #x0001)
+     ("probe 16: decimal above Unicode maximum" cl-markdown-kit::decode-numeric-character-reference ("1114112" 10) #xFFFD)
+     ("probe 17: decimal surrogate" cl-markdown-kit::decode-numeric-character-reference ("55296" 10) #xFFFD)
+     ("probe 18: hexadecimal above Unicode maximum" cl-markdown-kit::decode-numeric-character-reference ("110000" 16) #xFFFD)
+     ("probe 19: empty numeric reference" cl-markdown-kit::decode-numeric-character-reference ("" 10) nil)
+     ("probe 20: overlong decimal reference" cl-markdown-kit::decode-numeric-character-reference ("12345678" 10) nil)
+     ("probe 21: overlong hexadecimal reference" cl-markdown-kit::decode-numeric-character-reference ("1234567" 16) nil)
+     ("probe 22: letter in decimal reference" cl-markdown-kit::decode-numeric-character-reference ("A" 10) nil)
+     ("probe 23: non-hex digit in hexadecimal reference" cl-markdown-kit::decode-numeric-character-reference ("G" 16) nil)
+     ("probe 24: unsupported radix" cl-markdown-kit::decode-numeric-character-reference ("1" 8) nil)
+     ("probe 25: non-string numeric digits" cl-markdown-kit::decode-numeric-character-reference (nil 10) nil)
+     ("probe 26: tab is Unicode whitespace" cl-markdown-kit::unicode-whitespace-p ((:codepoint #x0009)) t)
+     ("probe 27: line feed is Unicode whitespace" cl-markdown-kit::unicode-whitespace-p ((:codepoint #x000A)) t)
+     ("probe 28: form feed is Unicode whitespace" cl-markdown-kit::unicode-whitespace-p ((:codepoint #x000C)) t)
+     ("probe 29: carriage return is Unicode whitespace" cl-markdown-kit::unicode-whitespace-p ((:codepoint #x000D)) t)
+     ("probe 30: no-break space is Unicode whitespace" cl-markdown-kit::unicode-whitespace-p ((:codepoint #x00A0)) t)
+     ("probe 31: em space is Unicode whitespace" cl-markdown-kit::unicode-whitespace-p ((:codepoint #x2003)) t)
+     ("probe 32: letter is not Unicode whitespace" cl-markdown-kit::unicode-whitespace-p (#\A) nil))
+    "~A"
+    (label function arguments expected)
+    (let* ((call-arguments
+             (mapcar (lambda (argument)
+                       (if (and (consp argument)
+                                (eq (first argument) :codepoint))
+                           (character-data-codepoint (second argument))
+                           argument))
+                     arguments))
+           (expected-value
+             (cond
+               ((integerp expected)
+                (character-data-codepoint-string expected))
+               ((and (consp expected) (every #'integerp expected))
+                (format nil "~{~A~}"
+                        (mapcar #'character-data-codepoint-string expected)))
+               (t expected))))
+      (expect (apply (symbol-function function) call-arguments)
+              :to-equal expected-value)))
   (it "rejects non-CommonMark Unicode whitespace separators"
     (expect (mapcar #'cl-markdown-kit::unicode-whitespace-p
                     (mapcar #'character-data-codepoint
