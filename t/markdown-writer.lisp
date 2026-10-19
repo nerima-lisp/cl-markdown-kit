@@ -868,6 +868,9 @@
        (markdown-writer-render-node (cl-markdown-kit:make-table :rows nil))
        :to-equal "")))
   (it "escapes a dash-only alignment marker in a one-cell paragraph"
+    (expect (cl-markdown-kit::%mw-table-alignment-breaker-position
+             (format nil "|a|~%---"))
+            :to-equal 4)
     (expect
      (cl-markdown-kit:write-markdown
       (cl-markdown-kit:make-document
