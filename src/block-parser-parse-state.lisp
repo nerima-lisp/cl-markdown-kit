@@ -22,6 +22,11 @@
   gfm
   root
   stack
+  (quote-frame-count 0)
+  (footnote-frame-count 0)
+  (list-frame-count 0)
+  (item-frame-count 0)
+  (content-frames nil)
   leaf
   (cursor 0))
 
@@ -40,21 +45,32 @@
   (%bp-frame-context (%bp-state-current-frame state)))
 
 (defun %bp-state-mark-container-content (state)
-  (dolist (frame (%bp-parser-state-stack state))
-    (when (member (%bp-open-frame-kind frame) '(:item :footnote))
-      (setf (%bp-open-frame-has-content frame) t))))
+  (dolist (frame (%bp-parser-state-content-frames state))
+    (setf (%bp-open-frame-has-content frame) t)))
 
 (defun %bp-state-append-node (state node)
   (%bp-frame-add-node (%bp-state-current-frame state) node))
 
 (defun %bp-state-push-frame (state frame)
   (push frame (%bp-parser-state-stack state))
+  (case (%bp-open-frame-kind frame)
+    (:quote
+     (incf (%bp-parser-state-quote-frame-count state)))
+    (:footnote
+     (incf (%bp-parser-state-footnote-frame-count state))
+     (push frame (%bp-parser-state-content-frames state)))
+    (:list
+     (incf (%bp-parser-state-list-frame-count state)))
+    (:item
+     (incf (%bp-parser-state-item-frame-count state))
+     (push frame (%bp-parser-state-content-frames state))))
   frame)
 
 (defun %bp-state-nesting-level (state)
-  (count-if (lambda (frame)
-              (member (%bp-open-frame-kind frame) +bp-nesting-frame-kinds+))
-            (%bp-parser-state-stack state)))
+  (+ (%bp-parser-state-quote-frame-count state)
+     (%bp-parser-state-footnote-frame-count state)
+     (%bp-parser-state-list-frame-count state)
+     (%bp-parser-state-item-frame-count state)))
 
 (defun %bp-state-close-leaf (state)
   (let ((leaf (%bp-parser-state-leaf state)))
@@ -131,6 +147,19 @@
          (end-line (%bp-open-frame-end-line frame))
          (node (%bp-finish-frame
                 (%bp-parser-state-source-buffer state) frame)))
+    (case (%bp-open-frame-kind frame)
+      (:quote
+       (decf (%bp-parser-state-quote-frame-count state)))
+      (:footnote
+       (decf (%bp-parser-state-footnote-frame-count state))
+       (assert (eq frame (car (%bp-parser-state-content-frames state))))
+       (pop (%bp-parser-state-content-frames state)))
+      (:list
+       (decf (%bp-parser-state-list-frame-count state)))
+      (:item
+       (decf (%bp-parser-state-item-frame-count state))
+       (assert (eq frame (car (%bp-parser-state-content-frames state))))
+       (pop (%bp-parser-state-content-frames state))))
     (%bp-frame-add-node parent node)
     (setf (%bp-open-frame-end-line parent) end-line)
     node))
