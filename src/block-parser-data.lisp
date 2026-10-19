@@ -25,3 +25,14 @@
 (defparameter +bp-fence-info-trim-characters+ '(#\Space #\Tab))
 
 (defparameter +bp-html-tag-end-characters+ '(#\> #\/))
+
+(defstruct (%bp-open-frame
+             (:constructor %bp-make-open-frame
+                 (&key kind node context child-context start-line start-position
+                       end-line marker-kind marker-delimiter marker-columns
+                       content-indent children items blank-seen has-content)))
+  kind node context child-context start-line start-position end-line
+  marker-kind marker-delimiter marker-columns content-indent
+  (children nil) (items nil) (blank-seen nil) (has-content nil))
+
+(declaim (special *block-inline-fragments* *block-reference-index*))

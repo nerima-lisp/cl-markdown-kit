@@ -1,7 +1,6 @@
 ;;;; src/block-parser.lisp
 (in-package #:cl-markdown-kit)
 
-(declaim (special *block-inline-fragments* *block-reference-index*))
 (declaim (ftype function %bp-parse-lines %pc-check-depth
                 make-inline-fragment make-block-parse-result))
 (declaim (ftype function parse-inline))

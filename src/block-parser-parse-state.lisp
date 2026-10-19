@@ -1,14 +1,5 @@
 (in-package #:cl-markdown-kit)
 
-(defstruct (%bp-open-frame
-             (:constructor %bp-make-open-frame
-                 (&key kind node context child-context start-line start-position
-                       end-line marker-kind marker-delimiter marker-columns
-                       content-indent children items blank-seen has-content)))
-  kind node context child-context start-line start-position end-line
-  marker-kind marker-delimiter marker-columns content-indent
-  (children nil) (items nil) (blank-seen nil) (has-content nil))
-
 (defstruct (%bp-open-leaf
              (:constructor %bp-make-open-leaf
                  (&key kind context start-line start-position lines end-line
