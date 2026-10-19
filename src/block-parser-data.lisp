@@ -1,5 +1,4 @@
 (in-package #:cl-markdown-kit)
-(sb-ext:defglobal +bp-nesting-frame-kinds+ '(:quote :footnote :list :item))
 (sb-ext:defglobal +bp-html-comment-start+ "<!--")
 (sb-ext:defglobal +bp-html-processing-instruction-start+ "<?")
 (sb-ext:defglobal +bp-html-cdata-start+ "<![CDATA[")
