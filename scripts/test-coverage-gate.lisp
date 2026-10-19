@@ -122,3 +122,79 @@
           (search "| excluded.lisp | 0.0% | n/a | 1,3-6,8 |" report)
         (error "The no-branch summary row was not reported:~%~A" report))
       (format t "coverage gate regression passed: uncovered branch rejected, compile-time lines excluded, no-branch summary reported.~%"))))
+
+(let* ((script
+        (or *load-truename*
+            *compile-file-truename*
+            (error "Unable to determine the coverage gate test location")))
+       (root
+        (uiop:pathname-parent-directory-pathname
+         (uiop:pathname-directory-pathname script))))
+  (uiop:chdir root)
+  (let* ((temporary-directory
+          (merge-pathnames
+           (format nil
+                   "cl-markdown-kit-defstruct-coverage-~D/"
+                   (get-internal-real-time))
+           (uiop:ensure-directory-pathname (uiop:temporary-directory))))
+         (source-directory (merge-pathnames "source/" temporary-directory))
+         (direct-file (merge-pathnames "direct.lisp" source-directory))
+         (wrapped-file (merge-pathnames "wrapped.lisp" source-directory))
+         (summary-file (merge-pathnames "per-file.tsv" temporary-directory))
+         (exclusions-file
+          (merge-pathnames "scripts/coverage-exclusions.sexp" root)))
+    (ensure-directories-exist direct-file)
+    (flet ((write-fixture (path lines)
+             (with-open-file
+                 (stream path
+                         :direction :output
+                         :if-exists :supersede
+                         :if-does-not-exist :create
+                         :external-format :utf-8)
+               (dolist (line lines)
+                 (write-line line stream)))))
+      (write-fixture direct-file
+                     (list "(defstruct point"
+                           "  (value 0 :type (integer 0 *)))"))
+      (write-fixture wrapped-file
+                     (list "(define-node"
+                           "  (defstruct point"
+                           "    (value 0 :type (integer 0 *)))"
+                           "  :kind :point)"))
+      (with-open-file
+          (stream summary-file
+                  :direction :output
+                  :if-exists :supersede
+                  :if-does-not-exist :create
+                  :external-format :utf-8)
+        (format stream
+                "file~Cline-covered~Cline-total~Cbranch-covered~Cbranch-total~Cuncovered-lines~Cbranch-locations~%"
+                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
+        (format stream "direct.lisp~C1~C1~C0~C2~C-~C2:0/2~%"
+                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
+        (format stream "wrapped.lisp~C1~C1~C0~C2~C-~C3:0/2~%"
+                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab))
+      (let* ((status nil)
+             (report
+               (with-output-to-string (output)
+                 (setf status
+                       (uiop:symbol-call :coverage-gate
+                                         :run
+                                         (list "--input"
+                                               (namestring summary-file)
+                                               "--source-root"
+                                               (namestring source-directory)
+                                               "--exclusions"
+                                               (namestring exclusions-file))
+                                         :output
+                                         output)))))
+        (unless (zerop status)
+          (error "Expected typed slot branches in both defstruct forms to be excluded, got status ~D:~%~A"
+                 status
+                 report))
+        (unless (and (search "| direct.lisp | 100.0% | n/a | -" report)
+                     (search "| wrapped.lisp | 100.0% | n/a | -" report)
+                     (search "coverage gate: PASS (all 2 files at or above threshold)"
+                             report))
+          (error "The defstruct slot branch rows were not excluded:~%~A" report))
+        (format t "coverage gate regression passed: typed slot branches excluded in top-level and define-node-wrapped defstruct forms.~%")))))

@@ -647,7 +647,9 @@
                (multiple-value-bind (head name form-open)
                    (first-form-head-and-name clean)
                  (when head
-                   (let ((rule (matching-rule rules head name)))
+                   (let ((rule (or (matching-rule rules head name)
+                                   (and (string= head "define-node")
+                                        (matching-rule rules "defstruct" nil)))))
                      (when rule
                        (let ((start (1+ index)))
                          (if (string= (getf rule :kind) "defun-header")
