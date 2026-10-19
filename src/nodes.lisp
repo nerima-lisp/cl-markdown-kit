@@ -35,12 +35,12 @@
       (%node-symbol name slot))
 
     (defun %node-inherited-slot-p (parent slot)
-  (loop for definition = (find parent *node-definitions*
-                               :key (lambda (item) (getf item :name)))
-        then (find (getf definition :parent) *node-definitions*
-                   :key (lambda (item) (getf item :name)))
-        while definition
-        thereis (member slot (getf definition :slots) :test #'eq)))
+      (loop for definition = (find parent *node-definitions*
+                                   :key (lambda (item) (getf item :name)))
+            then (find (getf definition :parent) *node-definitions*
+                       :key (lambda (item) (getf item :name)))
+            while definition
+            thereis (member slot (getf definition :slots) :test #'eq)))
 
     (defun %node-attribute-slot (attribute) (unless (keywordp attribute) (error "Node semantic attributes must be keywords, got ~S." attribute)) (intern (string-upcase (symbol-name attribute)) (find-package "CL-MARKDOWN-KIT")))
 
@@ -63,7 +63,7 @@
       (defun %node-definition-check-metadata (name metadata)
         (let ((allowed '(:abstract :kind :family :children :attributes :edit-attributes :edit-text))
               (keys (loop for key in metadata by #'cddr collect key)))
-          (unless (and (listp metadata) (evenp (length metadata)))
+          (unless (evenp (length metadata))
             (error "DEFINE-NODE metadata must be a property list, got ~S." metadata))
           (unless (= (length keys) (length (remove-duplicates keys :test #'eq)))
             (error "DEFINE-NODE metadata contains duplicate keys for ~S." name))
@@ -147,14 +147,17 @@
                 :parent parent :slots slots))))
 
     (defun %register-node-definition (definition)
-      (let* ((name (getf definition :name))
-             (previous (find name *node-definitions* :key (lambda (item)
-                                                           (getf item :name)))))
-        (cond
-          ((null previous) (push definition *node-definitions*))
-          ((equal previous definition) nil)
-          (t (error "Conflicting DEFINE-NODE declarations for ~S." name)))
-      definition))
+      (let ((name (getf definition :name)))
+        (when (eq name 'node)
+          (%reset-node-registries))
+        (let ((previous (find name *node-definitions*
+                              :key (lambda (item)
+                                     (getf item :name)))))
+          (cond
+           ((null previous) (push definition *node-definitions*))
+           ((equal previous definition) nil)
+           (t (error "Conflicting DEFINE-NODE declarations for ~S." name)))
+          definition)))
 
     (defun %node-definitions-for-family (family)
       (remove-if-not (lambda (definition)
@@ -245,10 +248,9 @@
                          (projection (getf definition :edit-text)))
                     `(,name
                       ,(cond
-                         ((eq projection :empty) "")
-                         ((eq projection :container) nil)
-                         ((eq (first projection) :slot)
-                          `(,(%node-accessor name (second projection)) node))))))
+                        ((eq projection :empty) "")
+                        ((eq projection :container) nil)
+                        (t `(,(%node-accessor name (second projection)) node))))))
                 definitions))
       (defun %node-registry-expansion (definitions)
         (let ((children-clauses (%node-registry-children-clauses definitions))
@@ -321,7 +323,8 @@
        ',function-name)))
 
     (progn
-      (defun verify-node-dispatches (&key operation (families '(:block :inline)))
+      (defun verify-node-dispatches (&key operation
+                                          (families '(:block :inline)))
         (dolist (family families)
           (let* ((key (list operation family))
                  (record (assoc key *node-dispatch-registrations* :test #'equal)))
@@ -329,12 +332,12 @@
               (error "Missing dispatch coverage for ~S / ~S." operation family))
             (%node-ensure-exact-coverage operation family (third record))))
         t)
+      (defmacro verify-node-dispatches-at-compile-time (operation families)
+        (verify-node-dispatches :operation operation :families families)
+        nil)
       (defun %reset-node-registries ()
         (setf *node-definitions* nil
               *node-dispatch-registrations* nil))))
-
-  (eval-when (:compile-toplevel :load-toplevel :execute)
-    (%reset-node-registries))
 
   (define-node (defstruct (node (:constructor make-node)) span)
     :abstract t :kind nil :family :abstract :children nil :attributes ()

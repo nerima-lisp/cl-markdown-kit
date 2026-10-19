@@ -617,7 +617,7 @@
       (verify-node-dispatches
        :operation :html-renderer
        :families '(:block :inline)))
-    (%hw-verify-node-dispatches))
+    (verify-node-dispatches-at-compile-time :html-renderer (:block :inline)))
   (defun %hw-render-node-tree (context root)
     (walk-node-tree root
      (lambda (frame)

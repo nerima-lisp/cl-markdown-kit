@@ -20,3 +20,7 @@
 (defun make-source-format (&key
                              (newline-style :none))
   newline-style)
+(defun %pc-parse-title (text index end &key
+                          (backslash-mode :punctuation))
+  (declare (ignore text index end))
+  backslash-mode)

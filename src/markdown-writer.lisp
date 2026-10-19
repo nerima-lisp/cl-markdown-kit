@@ -1216,7 +1216,7 @@
       (verify-node-dispatches
        :operation :markdown-renderer
        :families '(:block :inline)))
-    (%mw-verify-node-dispatches))
+    (verify-node-dispatches-at-compile-time :markdown-renderer (:block :inline)))
 
 (defun %mw-substring-count (string substring)
   (loop with start = 0

@@ -42,7 +42,7 @@
       (verify-node-dispatches
        :operation :query
        :families '(:inline)))
-    (%query-verify-node-dispatches))
+    (verify-node-dispatches-at-compile-time :query (:inline)))
   (defun %write-inline-plain-text (node stream)
     (walk-node-tree node
      (lambda (frame)

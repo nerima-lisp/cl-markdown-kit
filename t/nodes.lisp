@@ -613,7 +613,62 @@
         (node-contract-extra-dispatch (context node phase))
         :operation :html-renderer :family :inline
         (cl-markdown-kit:paragraph nil))
-      "Extra node type clause"))
+      "Extra node type clause")
+     (:non-list-edit-attributes
+      (cl-markdown-kit::define-node
+        (defstruct node-contract-non-list-edit-attributes cl-markdown-kit::value)
+        :kind :contract :family :inline :children nil
+        :attributes (:value) :edit-text :empty :edit-attributes 42)
+      "edit attributes must map declared attribute slots")
+     (:non-keyword-edit-attribute-name
+      (cl-markdown-kit::define-node
+        (defstruct node-contract-non-keyword-edit-attribute cl-markdown-kit::value)
+        :kind :contract :family :inline :children nil :attributes (:value)
+        :edit-text :empty :edit-attributes ((value :before)))
+      "edit attributes must map declared attribute slots")
+     (:non-keyword-edit-difference-key
+      (cl-markdown-kit::define-node
+        (defstruct node-contract-non-keyword-edit-key cl-markdown-kit::value)
+        :kind :contract :family :inline :children nil :attributes (:value)
+        :edit-text :empty :edit-attributes ((:value before)))
+      "edit attributes must map declared attribute slots")
+     (:extra-edit-attribute-elements
+      (cl-markdown-kit::define-node
+        (defstruct node-contract-extra-edit-attribute-elements cl-markdown-kit::value)
+        :kind :contract :family :inline :children nil :attributes (:value)
+        :edit-text :empty :edit-attributes ((:value :before :extra)))
+      "edit attributes must map declared attribute slots")
+     (:child-with-non-symbol-accessor
+      (cl-markdown-kit::define-node
+        (defstruct node-contract-child-invalid-accessor value)
+        :kind :contract :family :inline
+        :children (:slot value :accessor 42)
+        :attributes nil :edit-text :empty :edit-attributes ())
+      "child slot")
+     (:edit-text-with-invalid-head
+      (cl-markdown-kit::define-node
+        (defstruct node-contract-edit-text-invalid-head value)
+        :kind :contract :family :inline :children nil :attributes nil
+        :edit-text (:other value) :edit-attributes ())
+      "invalid or missing edit text projection")
+     (:edit-text-with-non-symbol-slot
+      (cl-markdown-kit::define-node
+        (defstruct node-contract-edit-text-non-symbol-slot value)
+        :kind :contract :family :inline :children nil :attributes nil
+        :edit-text (:slot 42) :edit-attributes ())
+      "invalid or missing edit text projection")
+     (:child-with-non-symbol-slot
+      (cl-markdown-kit::define-node
+        (defstruct node-contract-child-non-symbol-slot)
+        :kind :contract :family :inline :children (:slot 42)
+        :attributes nil :edit-text :empty :edit-attributes ())
+      "Invalid DEFINE-NODE :CHILDREN value")
+     (:non-list-child-spec
+      (cl-markdown-kit::define-node
+        (defstruct node-contract-non-list-child-spec)
+        :kind :contract :family :inline :children 42
+        :attributes nil :edit-text :empty :edit-attributes ())
+      "Invalid DEFINE-NODE :CHILDREN value"))
     "rejects invalid node and dispatch declarations during macro expansion: ~A"
     (failure form expected-message)
     (let ((condition
@@ -699,6 +754,67 @@
                     :to-equal before-conflict))))
       (expect cl-markdown-kit::*node-definitions*
               :to-equal definitions-before)))
+  (it "normalizes typed and inherited child slots"
+    (let* ((node-expansion
+             (macroexpand-1
+              '(cl-markdown-kit::define-node
+                 (defstruct (coverage-contract-inherited-node
+                             (:include cl-markdown-kit:list-item))
+                   (local-value nil :type list))
+                 :kind :coverage-contract-inherited
+                 :family :block
+                 :children (:slot cl-markdown-kit::children)
+                 :attributes ()
+                 :edit-text :container
+                 :edit-attributes ())))
+           (registration-call (third (third node-expansion)))
+           (definition (second (second registration-call))))
+      (expect (first node-expansion) :to-equal 'progn)
+      (expect (getf definition :slots) :to-equal '(local-value))
+      (expect (getf definition :parent) :to-equal 'cl-markdown-kit:list-item)
+      (expect (getf definition :children)
+              :to-equal
+              '(:slot cl-markdown-kit::children
+                :accessor coverage-contract-inherited-node-children))))
+  (it "rejects malformed helper inputs"
+    (let ((condition
+            (handler-case
+                (progn
+                  (macroexpand-1
+                   '(cl-markdown-kit::define-node
+                      (not-a-defstruct)
+                      :kind :coverage-contract-invalid
+                      :family :inline
+                      :children nil
+                      :attributes ()
+                      :edit-text :empty
+                      :edit-attributes ()))
+                  nil)
+              (simple-error (condition) condition))))
+      (expect condition :to-be-truthy)
+      (expect (search "requires a DEFSTRUCT form" (format nil "~A" condition))
+              :to-be-truthy))
+    (let ((condition
+            (handler-case
+                (progn
+                  (cl-markdown-kit::%node-attribute-slot 'not-a-keyword)
+                  nil)
+              (simple-error (condition) condition))))
+      (expect condition :to-be-truthy)
+      (expect (search "must be keywords" (format nil "~A" condition))
+              :to-be-truthy))
+    (let ((condition
+            (handler-case
+                (progn
+                  (cl-markdown-kit::%node-normalize-children
+                   'coverage-contract-invalid-children
+                   '(not-a-slot-form))
+                  nil)
+              (simple-error (condition) condition))))
+      (expect condition :to-be-truthy)
+      (expect (search "Invalid DEFINE-NODE :CHILDREN value"
+                      (format nil "~A" condition))
+              :to-be-truthy)))
   (it "expands dispatch declarations and validates registration state"
     (let* ((types (cl-markdown-kit::%node-family-types :inline))
            (clauses
@@ -767,11 +883,17 @@
            'coverage-contract-dispatch types)
           (expect cl-markdown-kit::*node-dispatch-registrations*
                   :to-equal (list expected-record))
-          (expect
-           (cl-markdown-kit::verify-node-dispatches
-            :operation :coverage-contract
-            :families '(:inline))
-           :to-equal t)
+          (progn
+  (expect
+   (cl-markdown-kit::verify-node-dispatches
+    :operation :coverage-contract
+    :families (quote (:inline)))
+   :to-equal t)
+  (expect
+   (macroexpand-1
+    (quote (cl-markdown-kit::verify-node-dispatches-at-compile-time
+            :coverage-contract (:inline))))
+   :to-equal nil))
           (let ((before-conflict
                   (copy-tree
                    cl-markdown-kit::*node-dispatch-registrations*))
@@ -853,6 +975,38 @@
       (expect cl-markdown-kit::*node-definitions* :to-equal definitions-before)
       (expect cl-markdown-kit::*node-dispatch-registrations*
               :to-equal registrations-before)))
+  (it "resets registries for the root node declaration"
+    (let* ((node-expansion
+             (macroexpand-1
+              '(cl-markdown-kit::define-node
+                 (defstruct (cl-markdown-kit:node
+                             (:constructor cl-markdown-kit:make-node))
+                   cl-markdown-kit::span)
+                 :abstract t
+                 :kind nil
+                 :family :abstract
+                 :children nil
+                 :attributes ()
+                 :edit-text :empty
+                 :edit-attributes ())))
+           (registration-call (third (third node-expansion)))
+           (definition (second (second registration-call)))
+           (stale-definition
+             '(:name stale-node :abstract nil :kind :stale :family :inline
+               :children nil :attributes nil :edit-attributes nil
+               :edit-text :empty :parent nil :slots nil))
+           (stale-registration '((:stale :inline) stale-dispatch nil)))
+      (expect (first node-expansion) :to-equal 'progn)
+      (expect (getf definition :name) :to-equal 'cl-markdown-kit:node)
+      (let ((cl-markdown-kit::*node-definitions* (list stale-definition))
+            (cl-markdown-kit::*node-dispatch-registrations*
+              (list stale-registration)))
+        (expect (cl-markdown-kit::%register-node-definition definition)
+                :to-equal definition)
+        (expect cl-markdown-kit::*node-definitions*
+                :to-equal (list definition))
+        (expect cl-markdown-kit::*node-dispatch-registrations*
+                :to-equal nil))))
   (it "returns child callback results in sibling order"
     (let* ((first (cl-markdown-kit:make-paragraph))
            (second (cl-markdown-kit:make-code-block :body "second"))

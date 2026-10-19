@@ -154,13 +154,11 @@
                (dolist (line lines)
                  (write-line line stream)))))
       (write-fixture direct-file
-                     (list "(defstruct point"
-                           "  (value 0 :type (integer 0 *)))"))
+                     (list
+  "(defstruct (point (:constructor make-point (value))) (value 0 :type (integer 0 *)))"))
       (write-fixture wrapped-file
-                     (list "(define-node"
-                           "  (defstruct point"
-                           "    (value 0 :type (integer 0 *)))"
-                           "  :kind :point)"))
+                     (list
+  "(define-node (defstruct (point (:constructor make-point (value))) (value 0 :type (integer 0 *))) :kind :point)"))
       (with-open-file
           (stream summary-file
                   :direction :output
@@ -170,10 +168,10 @@
         (format stream
                 "file~Cline-covered~Cline-total~Cbranch-covered~Cbranch-total~Cuncovered-lines~Cbranch-locations~%"
                 #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
-        (format stream "direct.lisp~C1~C1~C0~C2~C-~C2:0/2~%"
-                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
-        (format stream "wrapped.lisp~C1~C1~C0~C2~C-~C3:0/2~%"
-                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab))
+        (format stream "direct.lisp~C0~C1~C0~C2~C1~C1:0/2~%"
+        #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
+        (format stream "wrapped.lisp~C0~C1~C0~C2~C1~C1:0/2~%"
+        #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab))
       (let* ((status nil)
              (report
                (with-output-to-string (output)
@@ -188,13 +186,121 @@
                                                (namestring exclusions-file))
                                          :output
                                          output)))))
-        (unless (zerop status)
-          (error "Expected typed slot branches in both defstruct forms to be excluded, got status ~D:~%~A"
+        (unless (= status 0)
+          (error "Expected typed slot declarations to be excluded in both struct forms, got status ~D:~%~A"
                  status
                  report))
-        (unless (and (search "| direct.lisp | 100.0% | n/a | -" report)
-                     (search "| wrapped.lisp | 100.0% | n/a | -" report)
-                     (search "coverage gate: PASS (all 2 files at or above threshold)"
-                             report))
-          (error "The defstruct slot branch rows were not excluded:~%~A" report))
-        (format t "coverage gate regression passed: typed slot branches excluded in top-level and define-node-wrapped defstruct forms.~%")))))
+        (unless (and (search "| direct.lisp | 0.0% | n/a | 1 |" report) (search "| wrapped.lisp | 0.0% | n/a | 1 |" report) (search "coverage gate: PASS (all 2 files at or above threshold)" report))
+          (error "Typed slot exclusions were not reported as expected:~%~A" report))
+        (format t "coverage gate regression passed: typed slots are excluded in direct and wrapped struct forms.~%")))))
+(let* ((script
+        (or *load-truename*
+            *compile-file-truename*
+            (error "Unable to determine the coverage gate test location")))
+       (root
+        (uiop:pathname-parent-directory-pathname
+         (uiop:pathname-directory-pathname script))))
+  (uiop:chdir root)
+  (let* ((temporary-directory
+          (merge-pathnames
+           (format nil
+                   "cl-markdown-kit-nested-coverage-~D/"
+                   (get-internal-real-time))
+           (uiop:ensure-directory-pathname (uiop:temporary-directory))))
+         (source-directory (merge-pathnames "source/" temporary-directory))
+         (source-file (merge-pathnames "mixed.lisp" source-directory))
+         (summary-file (merge-pathnames "per-file.tsv" temporary-directory))
+         (exclusions-file
+          (merge-pathnames "scripts/coverage-exclusions.sexp" root)))
+    (ensure-directories-exist source-file)
+    (flet ((write-fixture (path lines)
+             (with-open-file
+                 (stream path
+                         :direction :output
+                         :if-exists :supersede
+                         :if-does-not-exist :create
+                         :external-format :utf-8)
+               (dolist (line lines)
+                 (write-line line stream)))))
+      (write-fixture
+       source-file
+       (list
+        "(defconstant +default-max-nesting-depth+ 256)"
+        "(sb-ext:defglobal +html-attribute-start-characters+ \"_:\")"
+        "(eval-when (:compile-toplevel :load-toplevel :execute)"
+        "  (defvar *node-definitions* nil)"
+        "  (progn"
+        "    (defun verify-node-dispatches (&key operation (families (quote (:block :inline))))"
+        "      (if operation :covered :uncovered))"
+        "    (define-node"
+        "      (defstruct (wrapped-point (:constructor make-wrapped-point (value)))"
+        "        (value 0 :type (integer 0 *)))"
+        "      :kind :wrapped-point))"
+        "  (if flag :covered :uncovered)"
+        "  (verify-node-dispatches-at-compile-time :query (:inline)))"
+        "(defun %pc-parse-title (text index end &key"
+        "                         (backslash-mode :punctuation))"
+        "  (if flag :covered :uncovered))"))
+      (progn
+        (write-fixture
+         (merge-pathnames "compile-time.lisp" source-directory)
+         (list
+          "(progn (verify-node-dispatches-at-compile-time :query (:inline)))"))
+        (write-fixture
+         (merge-pathnames "executable-initializers.lisp" source-directory)
+         (list
+          "(defconstant +computed-coverage-fixture+ (if flag :covered :uncovered))"
+          "(sb-ext:defglobal *computed-coverage-fixture* (if flag :covered :uncovered))"
+          "(eval-when (:compile-toplevel :load-toplevel :execute)"
+          "  (defvar *computed-coverage-fixture* (if flag :covered :uncovered)))")))
+      (with-open-file
+          (stream summary-file
+                  :direction :output
+                  :if-exists :supersede
+                  :if-does-not-exist :create
+                  :external-format :utf-8)
+        (format stream
+                "file~Cline-covered~Cline-total~Cbranch-covered~Cbranch-total~Cuncovered-lines~Cbranch-locations~%"
+                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
+        (format stream
+                "mixed.lisp~C15~C16~C3~C20~C13~C1:0/2,2:0/2,4:0/2,6:0/2,7:1/2,10:0/2,12:1/2,13:0/2,15:0/2,16:1/2~%"
+                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
+        (progn
+        (format stream
+                "compile-time.lisp~C0~C1~C0~C2~C1~C1:0/2~%"
+                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
+        (format stream
+                "executable-initializers.lisp~C0~C4~C0~C6~C1-4~C1:0/2,2:0/2,4:0/2~%"
+                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)))
+      (let* ((status nil)
+             (report
+               (with-output-to-string (output)
+                 (setf status
+                       (uiop:symbol-call :coverage-gate
+                                         :run
+                                         (list "--input"
+                                               (namestring summary-file)
+                                               "--source-root"
+                                               (namestring source-directory)
+                                               "--exclusions"
+                                               (namestring exclusions-file))
+                                         :output
+                                         output)))))
+        (unless (= status 1)
+          (error "Expected executable initializer branches to remain, got status ~D:~%~A"
+                 status
+                 report))
+        (unless (and
+                 (search "| mixed.lisp | 93.8% | 50.0% | 13 |" report)
+                 (search "| compile-time.lisp | 0.0% | n/a | 1 |" report)
+                 (not (search "  compile-time.lisp: " report))
+                 (search "| executable-initializers.lisp | 0.0% | 0.0% | 1-4 |" report)
+                 (search "executable-initializers.lisp line 1: 0/2 branches covered" report)
+                 (search "executable-initializers.lisp line 2: 0/2 branches covered" report)
+                 (search "executable-initializers.lisp line 4: 0/2 branches covered" report)
+                 (search "mixed.lisp line 7: 1/2 branches covered" report)
+                 (search "mixed.lisp line 12: 1/2 branches covered" report)
+                 (search "mixed.lisp line 16: 1/2 branches covered" report)
+                 (search "coverage gate: FAIL (2 of 3 files below threshold)" report))
+          (error "Executable initializers or runtime branches were hidden:~%~A" report))
+        (format t "coverage gate regression passed: nested declaration exclusions preserve executable initializer and branch coverage.~%")))))
