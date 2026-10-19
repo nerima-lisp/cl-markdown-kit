@@ -82,55 +82,54 @@
     (setf (%ip-delimiter-remaining run) length)
     (push run delimiters)
     (when can-close
-      (loop while (plusp (%ip-delimiter-remaining run))
-            do (let ((opener nil))
-                 (%ip-best-opener
-                  openers run
-                  (lambda (candidate) (setf opener candidate))
-                  (lambda () nil))
-                 (unless opener (return))
-                 (let* ((opener-remaining (%ip-delimiter-remaining opener))
-                        (closer-remaining (%ip-delimiter-remaining run))
-                        (use-count
-                          (cond
-                            ((char= character +ip-tilde-delimiter-character+)
-                             closer-remaining)
-                            ((and (>= opener-remaining 2)
-                                  (>= closer-remaining 2))
-                             2)
-                            (t 1)))
-                        (open-start
-                          (+ (%ip-delimiter-start opener)
-                             (%ip-delimiter-open-offset opener)
-                             (- opener-remaining use-count)))
-                        (close-start (+ start (- length closer-remaining))))
-                   (loop until (eq (first (car active-stack)) opener)
-                         for skipped = (pop (car active-stack))
-                         do (let* ((bucket-index
-                                     (%ip-delimiter-open-bucket skipped))
-                                   (buckets
-                                     (gethash
-                                      (%ip-delimiter-character skipped)
-                                      openers)))
-                              (pop (aref buckets bucket-index))
-                              (setf (%ip-delimiter-open-bucket skipped) nil)
-                              (decf (car active-count))
-                              (decf (car total-active-count))))
-                   (push (%ip-make-pair
-                          (cond
-                            ((char= character +ip-tilde-delimiter-character+)
-                             +ip-tilde-run-kind+)
-                            ((= use-count 2) :strong)
-                            (t :emphasis))
-                          character open-start (+ open-start use-count)
-                          close-start (+ close-start use-count))
-                         pairs)
-                   (decf (%ip-delimiter-remaining opener) use-count)
-                   (decf (%ip-delimiter-remaining run) use-count)
-                   (incf (%ip-delimiter-open-offset run) use-count)
-                   (%ip-pop-opener-if-empty
-                    openers opener active-count active-stack
-                    total-active-count)))))
+  (loop while (plusp (%ip-delimiter-remaining run))
+        do (%ip-best-opener
+            openers run
+            (lambda (opener)
+              (let* ((opener-remaining (%ip-delimiter-remaining opener))
+                     (closer-remaining (%ip-delimiter-remaining run))
+                     (use-count
+                       (cond
+                         ((char= character +ip-tilde-delimiter-character+)
+                          closer-remaining)
+                         ((and (>= opener-remaining 2)
+                               (>= closer-remaining 2))
+                          2)
+                         (t 1)))
+                     (open-start
+                       (+ (%ip-delimiter-start opener)
+                          (%ip-delimiter-open-offset opener)
+                          (- opener-remaining use-count)))
+                     (close-start (+ start (- length closer-remaining))))
+                (loop until (eq (first (car active-stack)) opener)
+                      for skipped = (pop (car active-stack))
+                      do (let* ((bucket-index
+                                  (%ip-delimiter-open-bucket skipped))
+                                (buckets
+                                  (gethash
+                                   (%ip-delimiter-character skipped)
+                                   openers)))
+                           (pop (aref buckets bucket-index))
+                           (setf (%ip-delimiter-open-bucket skipped) nil)
+                           (decf (car active-count))
+                           (decf (car total-active-count))))
+                (push (%ip-make-pair
+                       (cond
+                         ((char= character +ip-tilde-delimiter-character+)
+                          +ip-tilde-run-kind+)
+                         ((= use-count 2) :strong)
+                         (t :emphasis))
+                       character open-start (+ open-start use-count)
+                       close-start (+ close-start use-count))
+                      pairs)
+                (decf (%ip-delimiter-remaining opener) use-count)
+                (decf (%ip-delimiter-remaining run) use-count)
+                (incf (%ip-delimiter-open-offset run) use-count)
+                (%ip-pop-opener-if-empty
+                 openers opener active-count active-stack
+                 total-active-count)))
+            (lambda ()
+              (return)))))
     (when (and can-open (plusp (%ip-delimiter-remaining run))
                (or (not (char= character +ip-tilde-delimiter-character+))
                    (member (%ip-delimiter-remaining run) '(1 2))))
