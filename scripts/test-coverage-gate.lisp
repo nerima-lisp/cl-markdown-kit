@@ -107,7 +107,8 @@
                (unless (= status 1)
                  (error "Expected the uncovered branch to return 1, got ~D."
                         status))))))
-      (unless (search "branch 50.0%, required 100.0%" report)
+      (unless (and (search "branch 50.0%, required 100.0%" report)
+                   (search "branch.lisp line 2: 1/2 branches covered" report))
         (error "The report did not identify the uncovered branch:~%~A" report))
       (unless (search "| branch.lisp | 100.0% | 50.0% |" report)
         (error "The report did not include the per-file coverage:~%~A" report))

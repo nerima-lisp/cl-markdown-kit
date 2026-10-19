@@ -834,6 +834,15 @@
                   "  ~A: ~{~A~^; ~}~%"
                   (getf failure :file)
                   (getf failure :reasons)))
+        (dolist (row rows)
+          (dolist (location (getf row :branch-locations))
+            (unless (= (second location) (third location))
+              (format output
+                      "  ~A line ~D: ~D/~D branches covered~%"
+                      (getf row :file)
+                      (first location)
+                      (second location)
+                      (third location)))))
         (format output
                 "coverage gate: FAIL (~D of ~D files below threshold)~%"
                 (length failures)
