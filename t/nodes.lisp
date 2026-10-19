@@ -807,6 +807,29 @@
                nil)
            (simple-error () t))
          :to-be-truthy))))
+  (it "rejects unknown node families and missing dispatch registrations"
+    (let ((condition
+            (handler-case
+                (progn
+                  (cl-markdown-kit::%node-family-types :unknown)
+                  nil)
+              (simple-error (condition) condition))))
+      (expect (and condition
+                   (search "Unknown node family" (format nil "~A" condition)))
+              :to-be-truthy))
+    (let ((cl-markdown-kit::*node-dispatch-registrations* nil))
+      (let ((condition
+              (handler-case
+                  (progn
+                    (cl-markdown-kit::verify-node-dispatches
+                     :operation :missing
+                     :families (list :inline))
+                    nil)
+                (simple-error (condition) condition))))
+        (expect (and condition
+                     (search "Missing dispatch coverage"
+                             (format nil "~A" condition)))
+                :to-be-truthy))))
   (it "returns child callback results in sibling order"
     (let* ((first (cl-markdown-kit:make-paragraph))
            (second (cl-markdown-kit:make-code-block :body "second"))
