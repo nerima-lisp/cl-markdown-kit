@@ -238,21 +238,25 @@
                   (%bp-state-close-top-frame state))
                 0))))))
 
-(defun %bp-state-parse-current-line (state physical-line)
+(defun %bp-state-parse-current-line (state physical-line on-match on-fail)
   (%bp-container-transform-line
-   physical-line (%bp-parser-state-stack state)
-   (lambda (content)
-     (if (%bp-parser-state-leaf state)
-         (%bp-state-process-leaf-line state physical-line content)
-         (%bp-state-open-new-block state physical-line content)))
-   (lambda (content mismatch)
-     (%bp-state-handle-mismatch state physical-line content mismatch))
-   t))
+   physical-line (%bp-parser-state-stack state) on-match on-fail t))
 
 (defun %bp-state-run (state)
-  (let ((lines (%bp-parser-state-lines state)))
-    (loop while (< (%bp-parser-state-cursor state) (length lines))
-          for physical-line =
-            (aref lines (%bp-parser-state-cursor state))
-          do (incf (%bp-parser-state-cursor state)
-                   (%bp-state-parse-current-line state physical-line)))))
+  (let ((lines (%bp-parser-state-lines state))
+        (physical-line nil))
+    (let ((on-match
+            (lambda (content)
+              (if (%bp-parser-state-leaf state)
+                  (%bp-state-process-leaf-line state physical-line content)
+                  (%bp-state-open-new-block state physical-line content))))
+          (on-fail
+            (lambda (content mismatch)
+              (%bp-state-handle-mismatch
+               state physical-line content mismatch))))
+      (loop while (< (%bp-parser-state-cursor state) (length lines))
+            do (setf physical-line
+                     (aref lines (%bp-parser-state-cursor state)))
+               (incf (%bp-parser-state-cursor state)
+                     (%bp-state-parse-current-line
+                      state physical-line on-match on-fail))))))
