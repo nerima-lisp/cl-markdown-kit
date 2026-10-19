@@ -2,6 +2,17 @@
   (require :asdf))
 
 (let* ((script
+         (or *load-truename*
+             *compile-file-truename*
+             (error "Unable to determine the coverage gate test location")))
+       (root
+         (uiop:pathname-parent-directory-pathname
+          (uiop:pathname-directory-pathname script))))
+  (asdf:load-asd (merge-pathnames "cl-markdown-kit.asd" root))
+  (asdf:load-system "cl-weave")
+  (asdf:load-system "cl-process-kit"))
+
+(let* ((script
         (or *load-truename*
             *compile-file-truename*
             (error "Unable to determine the coverage gate test location")))
@@ -110,6 +121,55 @@
       (unless (and (search "branch 50.0%, required 100.0%" report)
                    (search "branch.lisp line 2: 1/2 branches covered" report))
         (error "The report did not identify the uncovered branch:~%~A" report))
+      (progn
+        (cl-weave:describe
+         "Coverage gate"
+         (cl-weave:it-each
+          (("line and branch summary" "branch 50.0%, required 100.0%")
+           ("per-file row" "| branch.lisp | 100.0% | 50.0% |")
+           ("failed gate" "coverage gate: FAIL (1 of 2 files below threshold)")
+           ("no-branch row" "| excluded.lisp | 0.0% | n/a | 1,3-6,8 |"))
+          "reports ~A: ~A"
+          (report-detail expected-substring)
+          (cl-weave:expect (search expected-substring report) :to-be-truthy))
+         (cl-weave:it
+          "exits nonzero when a checked subprocess times out"
+          (let* ((timeout-script
+                  (merge-pathnames "timeout.lisp" temporary-directory)))
+            (with-open-file
+                (stream timeout-script
+                        :direction :output
+                        :if-exists :supersede
+                        :if-does-not-exist :create
+                        :external-format :utf-8)
+              (write-line "(eval-when (:compile-toplevel :load-toplevel :execute)" stream)
+              (write-line "  (require :asdf))" stream)
+              (write-line (format nil "(asdf:load-system ~S)" "cl-process-kit") stream)
+              (write-line
+               (format nil "(process-kit:run/checked ~S (list ~S) :search t :timeout 0.1)"
+                       "sleep"
+                       "10")
+               stream))
+            (let* ((result
+                    (process-kit:run
+                     "sbcl"
+                     (list "--no-sysinit"
+                           "--no-userinit"
+                           "--disable-debugger"
+                           "--script"
+                           (namestring timeout-script))
+                     :search t
+                     :timeout 30))
+                   (exit-code (process-kit:process-result-exit-code result))
+                   (stderr (process-kit:process-result-stderr result)))
+              (cl-weave:expect (not (process-kit:process-success-p result))
+                               :to-be-truthy)
+              (cl-weave:expect (and (integerp exit-code) (plusp exit-code))
+                               :to-be-truthy)
+              (cl-weave:expect (search "PROCESS-TIMEOUT-ERROR" (string-upcase stderr))
+                               :to-be-truthy)))))
+        (unless (cl-weave:run-all :reporter :spec :pass-with-no-tests nil)
+          (uiop:quit 1)))
       (unless (search "| branch.lisp | 100.0% | 50.0% |" report)
         (error "The report did not include the per-file coverage:~%~A" report))
       (unless
