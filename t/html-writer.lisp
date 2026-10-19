@@ -4,10 +4,13 @@
     (expect (cl-markdown-kit::%hw-verify-node-dispatches)
             :to-equal t)))
 
-(setf cl-weave:*snapshot-directory*
-      (asdf:system-relative-pathname
-       "cl-markdown-kit"
-       "__snapshots__/"))
+(defmacro html-writer-it (name &body body)
+  `(cl-weave:it ,name
+     (let ((cl-weave:*snapshot-directory*
+            (asdf:system-relative-pathname
+             "cl-markdown-kit"
+             "t/snapshots/")))
+       ,@body)))
 
 (defun html-writer-test-document (&rest children)
   (cl-markdown-kit:make-document :children children))
@@ -47,7 +50,7 @@
                 hrefs))))
 
 (describe "HTML writer"
-  (it "renders escaped text in a paragraph"
+  (html-writer-it "renders escaped text in a paragraph"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-paragraph
@@ -55,7 +58,7 @@
                               :value "A & <B>")))))
      :to-match-snapshot "html/escaped-paragraph"))
 
-  (it "renders links and image alt text with escaped attributes"
+  (html-writer-it "renders links and image alt text with escaped attributes"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-paragraph
@@ -72,7 +75,7 @@
      :to-match-snapshot
      "html/link-image-attributes"))
 
-  (it "renders code blocks with an escaped language class and body"
+  (html-writer-it "renders code blocks with an escaped language class and body"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-code-block
@@ -81,7 +84,7 @@
      :to-match-snapshot
      "html/escaped-code-block"))
 
-  (it "omits paragraph wrappers in tight list items"
+  (html-writer-it "omits paragraph wrappers in tight list items"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-list-node
@@ -100,7 +103,7 @@
      :to-match-snapshot
      "html/tight-list-items"))
 
-  (it "renders aligned table headers and body cells"
+  (html-writer-it "renders aligned table headers and body cells"
     (let ((output
             (html-writer-test-render
              (list (cl-markdown-kit:make-table
@@ -131,7 +134,7 @@
       (expect output :to-match-snapshot
               "html/aligned-table")))
 
-  (it "renders checked task items with disabled checkbox inputs"
+  (html-writer-it "renders checked task items with disabled checkbox inputs"
     (let ((output
             (html-writer-test-render
              (list (cl-markdown-kit:make-list-node
@@ -148,7 +151,7 @@
       (expect (search "checked=\"\"" output) :to-be-truthy)
       (expect (search "done</li>" output) :to-be-truthy)))
 
-  (it "renders strikethrough content as del text"
+  (html-writer-it "renders strikethrough content as del text"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-paragraph
@@ -158,7 +161,7 @@
                                      :value "removed")))))))
      :to-match-snapshot "html/strikethrough"))
 
-  (it "renders footnote references, definitions, and backreferences"
+  (html-writer-it "renders footnote references, definitions, and backreferences"
     (let ((output
             (html-writer-test-render
              (list (cl-markdown-kit:make-paragraph
@@ -186,7 +189,7 @@
       (expect (search "data-footnote-backref data-footnote-backref-idx" output)
               :to-be-truthy)))
 
-  (it "keeps footnote IDs unique when a repeated reference meets a suffix label"
+  (html-writer-it "keeps footnote IDs unique when a repeated reference meets a suffix label"
     (let ((output
             (cl-markdown-kit:write-html
              (cl-markdown-kit:parse-string
@@ -216,7 +219,7 @@
        :to-equal
        '("fnref-a-2" "fnref-a-2-3" "fnref-a-2-4" "fnref-a-2-2"))))
 
-  (it "keeps footnote IDs unique when labels percent-encode to the same ID"
+  (html-writer-it "keeps footnote IDs unique when labels percent-encode to the same ID"
     (let ((output
             (cl-markdown-kit:write-html
              (cl-markdown-kit:parse-string
@@ -238,7 +241,7 @@
                       output)
               :to-be-truthy)))
 
-  (it "omits raw script blocks by default"
+  (html-writer-it "omits raw script blocks by default"
     (let ((output
             (html-writer-test-render
              (list (cl-markdown-kit:make-html-block
@@ -248,7 +251,7 @@
       (expect (search "<!-- raw HTML omitted -->" output)
               :to-be-truthy)))
 
-  (it "filters dangerous link and image schemes by default"
+  (html-writer-it "filters dangerous link and image schemes by default"
     (let ((output
             (html-writer-test-render
              (list (cl-markdown-kit:make-paragraph
@@ -273,7 +276,7 @@
       (expect (search "javascript:" output) :to-equal nil)
       (expect (search "data:text/html" output) :to-equal nil)))
 
-  (it "escapes raw HTML when the escape mode is selected"
+  (html-writer-it "escapes raw HTML when the escape mode is selected"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-paragraph
@@ -283,7 +286,7 @@
      :to-match-snapshot
      "html/escaped-raw-inline-html"))
 
-  (it "passes ordinary tags through and applies the GFM tagfilter"
+  (html-writer-it "passes ordinary tags through and applies the GFM tagfilter"
     (let ((output
             (html-writer-test-render
              (list (cl-markdown-kit:make-paragraph
@@ -295,7 +298,7 @@
       (expect (search "&lt;/script>" output) :to-be-truthy)
       (expect (search "<script>" output) :to-equal nil)))
 
-  (it "escapes quotes in title attributes to prevent attribute injection"
+  (html-writer-it "escapes quotes in title attributes to prevent attribute injection"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-paragraph
@@ -308,7 +311,7 @@
      :to-match-snapshot
      "html/escaped-title-attribute"))
 
-  (it "makes string and stream output equivalent"
+  (html-writer-it "makes string and stream output equivalent"
     (let* ((document
              (html-writer-test-document
               (cl-markdown-kit:make-paragraph
@@ -321,7 +324,7 @@
       (expect stream-output :to-equal string-output))))
 
 (describe "HTML writer boundary coverage"
-  (it "renders empty documents and omits non-rendered block nodes"
+  (html-writer-it "renders empty documents and omits non-rendered block nodes"
     (expect (cl-markdown-kit:write-html (html-writer-test-document))
             :to-match-snapshot "html/empty-document")
     (expect
@@ -333,7 +336,7 @@
             (cl-markdown-kit:make-footnote-definition
              :raw-label "unused" :normalized-label "unused")))
      :to-match-snapshot "html/non-rendered-block-nodes"))
-  (it "rejects unsupported node values in documents"
+  (html-writer-it "rejects unsupported node values in documents"
     (expect
      (handler-case
          (progn
@@ -344,7 +347,7 @@
        (error () t))
      :to-be-truthy))
 
-  (it "renders raw block HTML in escape mode and filters every tagfilter boundary"
+  (html-writer-it "renders raw block HTML in escape mode and filters every tagfilter boundary"
     (let ((escaped
             (html-writer-test-render
              (list (cl-markdown-kit:make-html-block
@@ -363,7 +366,7 @@
               :to-match-snapshot
               "html/gfm-tagfilter-boundaries")))
 
-  (it "omits inline HTML and filters pass-through text without tag openers"
+  (html-writer-it "omits inline HTML and filters pass-through text without tag openers"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-paragraph
@@ -376,7 +379,7 @@
       :raw-html :pass-through)
      :to-match-snapshot "html/passthrough-inline-html"))
 
-  (it "passes raw CommonMark HTML through without the GFM tagfilter"
+  (html-writer-it "passes raw CommonMark HTML through without the GFM tagfilter"
     (let* ((inline-body
              "<script>x</script><style>y</style><textarea>z</textarea><pre>w</pre>")
            (block-body
@@ -403,7 +406,7 @@
                block-document :raw-html :pass-through :gfm nil)
               :to-match-snapshot "html/passthrough-commonmark-block")))
 
-  (it "keeps the GFM tagfilter enabled for inline and block HTML"
+  (html-writer-it "keeps the GFM tagfilter enabled for inline and block HTML"
     (let ((inline-output
             (html-writer-test-render
              (list (cl-markdown-kit:make-paragraph
@@ -420,7 +423,7 @@
       (expect block-output :to-match-snapshot
               "html/gfm-block-tagfilter")))
 
-  (it "renders code spans, breaks, emphasis, strong, and autolinks"
+  (html-writer-it "renders code spans, breaks, emphasis, strong, and autolinks"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-paragraph
@@ -440,7 +443,7 @@
      :to-match-snapshot
      "html/inline-rendering"))
 
-  (it "renders block quotes, headings, and thematic breaks"
+  (html-writer-it "renders block quotes, headings, and thematic breaks"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-block-quote
@@ -455,7 +458,7 @@
      :to-match-snapshot
      "html/block-rendering"))
 
-  (it "allows dangerous URL schemes only when unsafe URLs are enabled"
+  (html-writer-it "allows dangerous URL schemes only when unsafe URLs are enabled"
     (let ((output
             (html-writer-test-render
              (list (cl-markdown-kit:make-paragraph
@@ -467,7 +470,7 @@
              :unsafe-urls t)))
       (expect (search "href=\"javascript:alert(1)\"" output) :to-be-truthy)))
 
-  (it "renders loose and ordered lists, unchecked tasks, and empty items"
+  (html-writer-it "renders loose and ordered lists, unchecked tasks, and empty items"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-list-node
@@ -491,7 +494,7 @@
                     :kind :ordered :start-number 4 :tight-p t :items nil)))
             :to-match-snapshot "html/ordered-list-start-number"))
 
-  (it "renders missing code info as plain code and uses only the first info token"
+  (html-writer-it "renders missing code info as plain code and uses only the first info token"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-code-block :body (format nil "plain~%"))
@@ -502,7 +505,7 @@
      :to-match-snapshot
      "html/code-info-tokens"))
 
-  (it "renders all plain inline forms in image alt text"
+  (html-writer-it "renders all plain inline forms in image alt text"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-paragraph
@@ -536,7 +539,7 @@
      :to-match-snapshot
      "html/image-alt-text"))
 
-  (it "numbers repeated footnote references and handles definitions without paragraph endings"
+  (html-writer-it "numbers repeated footnote references and handles definitions without paragraph endings"
     (let ((output
             (html-writer-test-render
              (list (cl-markdown-kit:make-paragraph
@@ -556,7 +559,7 @@
       (expect (search "aria-label=\"Back to reference 1-2\"" output)
               :to-be-truthy)))
 
-  (it "keeps unresolved footnote references and renders header-only tables"
+  (html-writer-it "keeps unresolved footnote references and renders header-only tables"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-paragraph
@@ -574,7 +577,7 @@
      :to-match-snapshot
      "html/unresolved-footnote-header-table"))
 
-  (it "rejects unsupported nodes, invalid options, and non-output streams"
+  (html-writer-it "rejects unsupported nodes, invalid options, and non-output streams"
     (expect
      (handler-case
          (progn (cl-markdown-kit:write-html :not-a-document) nil)
@@ -634,7 +637,7 @@
                 nil)
        (type-error () t))
      :to-be-truthy))
-  (it "writes deeply nested block and inline trees"
+  (html-writer-it "writes deeply nested block and inline trees"
     (let ((inline (cl-markdown-kit:make-text :value "deep")))
       (dotimes (depth 4096)
         (setf inline
