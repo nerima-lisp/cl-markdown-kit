@@ -6,10 +6,7 @@
     (and (< next-index (length lines))
          (multiple-value-bind (next-content mismatch)
              (%bp-container-transform-line
-              (aref lines next-index) (%bp-parser-state-stack state)
-              (lambda (next-content) (values next-content nil))
-              (lambda (next-content mismatch)
-                (values next-content mismatch)))
+              (aref lines next-index) (%bp-parser-state-stack state))
            (let ((alignments (%bp-table-alignments next-content)))
              (and (not mismatch)
                   alignments
@@ -239,8 +236,12 @@
                 0))))))
 
 (defun %bp-state-parse-current-line (state physical-line on-match on-fail)
-  (%bp-container-transform-line
-   physical-line (%bp-parser-state-stack state) on-match on-fail t))
+  (multiple-value-bind (content mismatch)
+      (%bp-container-transform-line
+       physical-line (%bp-parser-state-stack state) t)
+    (if mismatch
+        (funcall on-fail content mismatch)
+        (funcall on-match content))))
 
 (defun %bp-state-run (state)
   (let ((lines (%bp-parser-state-lines state))
