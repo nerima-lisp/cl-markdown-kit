@@ -264,6 +264,13 @@
         "    table))"
         "(defparameter +ip-html-close-patterns+ #(1 2))"
         "(defparameter +ip-html-opener-markers+ #(3 4))"))
+      (write-fixture
+       (merge-pathnames "markdown-writer-escape-data.lisp" source-directory)
+       (list
+        "(defparameter +mw-escape-bracket-characters+"
+        "  (quote (#\\[ #\\])))"
+        "(defparameter +mw-escape-punctuation-characters+"
+        "  (quote (#\\` #\\* #\\_ #\\< #\\~)))"))
       (with-open-file
           (stream summary-file
                   :direction :output
@@ -281,6 +288,9 @@
                   file #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab))
         (format stream
                 "html-entities-data.lisp~C0~C7~C0~C2~C1-7~C1:0/2~%"
+                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
+        (format stream "~A~C0~C2~C0~C2~C1,3~C1:0/1,3:0/1~%"
+                "markdown-writer-escape-data.lisp"
                 #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)))
       (let* ((status nil)
              (report
@@ -306,9 +316,10 @@
                      (search "| render-frame.lisp | 0.0% | n/a | 1 |" report)
                      (search "| block-parse-result.lisp | 0.0% | n/a | 1 |" report)
                      (search "| html-entities-data.lisp | 0.0% | n/a | 1-7 |" report)
-                     (search "coverage gate: PASS (all 6 files at or above threshold)" report))
+                     (search "| markdown-writer-escape-data.lisp | 0.0% | n/a | 1,3 |" report)
+                     (search "coverage gate: PASS (all 7 files at or above threshold)" report))
           (error "Declaration exclusions were not reported as expected:~%~A" report))
-        (format t "coverage gate regression passed: declaration forms, generated entity data, and literal inline parser data are excluded.~%")))))
+        (format t "coverage gate regression passed: declaration forms, generated entity data, and literal inline parser and writer character data are excluded.~%")))))
 (let* ((script
         (or *load-truename*
             *compile-file-truename*
