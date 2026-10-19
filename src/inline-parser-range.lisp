@@ -262,17 +262,16 @@
                             text index scan-end
                             (%ip-context-html-closes context)))))
         (cond
-         ((and autolink-end (%ip-range-state-link-allowed state))
-          (%ip-range-add-node
-           state (%ip-make-autolink context destination display kind
-                                    index autolink-end)
-           index autolink-end)
-          (setf (%ip-range-state-link-opener-barrier state) index
-                (%ip-range-state-index state) autolink-end))
-         ((and autolink-end
-               (not (%ip-range-state-link-allowed state)))
-          (%ip-range-add-text state (subseq text index autolink-end)
-                              index autolink-end)
+         (autolink-end
+          (if (%ip-range-state-link-allowed state)
+              (progn
+                (%ip-range-add-node
+                 state (%ip-make-autolink context destination display kind
+                                          index autolink-end)
+                 index autolink-end)
+                (setf (%ip-range-state-link-opener-barrier state) index))
+              (%ip-range-add-text state (subseq text index autolink-end)
+                                  index autolink-end))
           (setf (%ip-range-state-index state) autolink-end))
          (html-end
           (%ip-range-add-node
