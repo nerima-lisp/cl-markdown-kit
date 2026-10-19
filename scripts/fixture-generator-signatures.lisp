@@ -351,7 +351,7 @@
           for index from 0
           append (append
                   (when (plusp index)
-                    (list (make-fixture-symbol :name ":soft-break")))
+                    (list (list (make-fixture-symbol :name ":soft-break"))))
                   (list (list (make-fixture-symbol :name ":text") text)))))
    nil))
 
