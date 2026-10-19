@@ -1174,9 +1174,7 @@
         (:leave
          (setf (gethash node (%mw-render-session-results context))
                (%mw-render-block-result context node frame kind))
-         nil)
-        (otherwise
-         (error "Unsupported Markdown renderer phase ~S." phase))))) (define-node-dispatch (%mw-render-block-event (context node phase))
+         nil)))) (define-node-dispatch (%mw-render-block-event (context node phase))
       :operation :markdown-renderer
       :family :block
     (document
