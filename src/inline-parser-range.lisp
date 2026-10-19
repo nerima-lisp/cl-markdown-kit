@@ -24,8 +24,13 @@
     (let* ((context (%ip-range-state-context state))
            (text-start (%ip-range-state-pending-text-start state))
            (text-end (%ip-range-state-pending-text-end state))
-           (value (get-output-stream-string
-                   (%ip-range-state-pending-text state))))
+           (parts (nreverse (%ip-range-state-pending-text state)))
+           (value (make-string
+                   (loop for part in parts sum (length part))))
+           (offset 0))
+      (dolist (part parts)
+        (replace value part :start1 offset)
+        (incf offset (length part)))
       (setf (%ip-range-state-atoms state)
             (%ip-register-atom
              (%ip-range-state-atoms state)
@@ -45,9 +50,8 @@
              (/= (%ip-range-state-pending-text-end state) start))
     (%ip-range-flush-text state))
   (unless (%ip-range-state-pending-text state)
-    (setf (%ip-range-state-pending-text state) (make-string-output-stream)
-          (%ip-range-state-pending-text-start state) start))
-  (write-string value (%ip-range-state-pending-text state))
+    (setf (%ip-range-state-pending-text-start state) start))
+  (push value (%ip-range-state-pending-text state))
   (setf (%ip-range-state-pending-text-end state) end))
 
 (defun %ip-range-current-end (state)
@@ -455,19 +459,23 @@
     (setf atoms (%ip-range-state-atoms state))
     (if (and (null (%ip-range-state-delimiter-runs state))
              (null pairs))
-        (%ip-build-range context start end (nreverse atoms) nil base-depth)
-      (multiple-value-bind (delimiters resolved-pairs)
-          (%ip-resolve-delimiter-runs
-           (%ip-range-state-delimiter-runs state)
-           pairs (%ip-context-bracket-depths context)
-           (%ip-context-bracket-closes context) start end
-           (%ip-context-limit context))
-        (let* ((literal-atoms
-                (%ip-delimiter-text-atoms context delimiters resolved-pairs))
-               (all-atoms (nconc (nreverse atoms) literal-atoms)))
-          (%ip-build-range context start end all-atoms resolved-pairs
-                           base-depth)))))
-  )
+        (if (and (consp atoms)
+                 (null (cdr atoms))
+                 (= (%ip-atom-start (car atoms)) start)
+                 (= (%ip-atom-end (car atoms)) end))
+            (list (%ip-atom-node (car atoms)))
+            (%ip-build-range context start end (nreverse atoms) nil base-depth))
+        (multiple-value-bind (delimiters resolved-pairs)
+            (%ip-resolve-delimiter-runs
+             (%ip-range-state-delimiter-runs state)
+             pairs (%ip-context-bracket-depths context)
+             (%ip-context-bracket-closes context) start end
+             (%ip-context-limit context))
+          (let* ((literal-atoms
+                  (%ip-delimiter-text-atoms context delimiters resolved-pairs))
+                 (all-atoms (nconc (nreverse atoms) literal-atoms)))
+            (%ip-build-range context start end all-atoms resolved-pairs
+                             base-depth))))))
 (defun %ip-parse-range (context start end link-allowed base-depth)
   (let ((state (%ip-make-range-state
                 context start end link-allowed base-depth)))
