@@ -52,7 +52,7 @@
        node)
       (otherwise node))))
 
-(defun %bp-container-transform-line (line stack on-match on-fail &optional record-p)
+(defun %bp-container-transform-line (line stack &optional record-p)
   (let ((content line)
         (mismatch nil))
     (dolist (frame (reverse (butlast stack)))
@@ -86,9 +86,7 @@
                 (setf (%bp-open-frame-end-line frame) line)))
              (t
               (setf mismatch frame)))))))
-    (if mismatch
-        (funcall on-fail content mismatch)
-        (funcall on-match content))))
+    (values content mismatch)))
 
 (defun %bp-line-gap-p (left right)
   (> (- (cl-parser-kit:span-start-line (node-span right))

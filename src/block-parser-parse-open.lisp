@@ -110,10 +110,7 @@
     (loop while (and (< source-index (length lines)) (not stopped))
           do (multiple-value-bind (next-content mismatch)
                  (%bp-container-transform-line
-                  (aref lines source-index) stack
-                  (lambda (next-content) (values next-content nil))
-                  (lambda (next-content mismatch)
-                    (values next-content mismatch)))
+                  (aref lines source-index) stack)
                (if (or mismatch (%bp-blank-line-p next-content))
                    (setf stopped t)
                    (push next-content candidate-lines)))
@@ -179,12 +176,7 @@
     (%bp-state-append-node state node)
     (loop for offset from 1 below next
           do (%bp-container-transform-line
-              (aref lines (+ cursor offset)) stack
-              (lambda (content) content)
-              (lambda (content mismatch)
-                (declare (ignore mismatch))
-                content)
-              t))
+              (aref lines (+ cursor offset)) stack t))
     next))
 
 (defun %bp-state-open-container (state physical-line content)
