@@ -799,7 +799,13 @@
               (consp (second form))
               (named-p (first (second form)) "DEFSTRUCT"))))
       ((string= head "defparameter")
-       (string-equal name "*html5-entities*"))
+       (or (string-equal name "*html5-entities*")
+           (let* ((form (read-form))
+                  (initializer (and (consp form) (third form))))
+             (and (consp form)
+                  (symbolp (second form))
+                  initializer
+                  (literal-p initializer)))))
       (t
        (let* ((form (read-form))
               (initializer (and (consp form) (third form))))
