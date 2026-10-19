@@ -320,18 +320,21 @@
          (%register-node-dispatch ',operation ',family ',function-name ',expected))
        ',function-name)))
 
-    (defun verify-node-dispatches (&key operation (families '(:block :inline)))
-      (dolist (family families)
-        (let* ((key (list operation family))
-               (record (assoc key *node-dispatch-registrations* :test #'equal)))
-          (unless record
-            (error "Missing dispatch coverage for ~S / ~S." operation family))
-          (%node-ensure-exact-coverage operation family (third record))))
-      t))
+    (progn
+      (defun verify-node-dispatches (&key operation (families '(:block :inline)))
+        (dolist (family families)
+          (let* ((key (list operation family))
+                 (record (assoc key *node-dispatch-registrations* :test #'equal)))
+            (unless record
+              (error "Missing dispatch coverage for ~S / ~S." operation family))
+            (%node-ensure-exact-coverage operation family (third record))))
+        t)
+      (defun %reset-node-registries ()
+        (setf *node-definitions* nil
+              *node-dispatch-registrations* nil))))
 
   (eval-when (:compile-toplevel :load-toplevel :execute)
-    (setf *node-definitions* nil
-          *node-dispatch-registrations* nil))
+    (%reset-node-registries))
 
   (define-node (defstruct (node (:constructor make-node)) span)
     :abstract t :kind nil :family :abstract :children nil :attributes ()

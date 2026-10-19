@@ -1,4 +1,8 @@
 (in-package #:cl-markdown-kit/test)
+(describe "Dispatch verification"
+  (it "verifies HTML node dispatches"
+    (expect (cl-markdown-kit::%hw-verify-node-dispatches)
+            :to-equal t)))
 
 (defun html-writer-test-document (&rest children)
   (cl-markdown-kit:make-document :children children))

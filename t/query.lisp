@@ -1,4 +1,8 @@
 (in-package #:cl-markdown-kit/test)
+(describe "Dispatch verification"
+  (it "verifies query node dispatches"
+    (expect (cl-markdown-kit::%query-verify-node-dispatches)
+            :to-equal t)))
 
 (defun query-source (&rest lines)
   (format nil "~{~A~%~}" lines))

@@ -37,7 +37,12 @@
      (write-string (autolink-display-text node) stream))
     (footnote-reference
      (write-string (footnote-reference-raw-label node) stream)))
-  (verify-node-dispatches :operation :query :families '(:inline))
+  (progn
+    (defun %query-verify-node-dispatches ()
+      (verify-node-dispatches
+       :operation :query
+       :families '(:inline)))
+    (%query-verify-node-dispatches))
   (defun %write-inline-plain-text (node stream)
     (walk-node-tree node
      (lambda (frame)

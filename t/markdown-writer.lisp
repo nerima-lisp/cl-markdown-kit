@@ -1,4 +1,8 @@
 (in-package #:cl-markdown-kit/test)
+(describe "Dispatch verification"
+  (it "verifies Markdown node dispatches"
+    (expect (cl-markdown-kit::%mw-verify-node-dispatches)
+            :to-equal t)))
 
 (defmacro with-mw-writer-state (&body body)
   `(let ((cl-markdown-kit::*mw-line-start-p* t)

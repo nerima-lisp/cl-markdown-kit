@@ -807,7 +807,16 @@
                nil)
            (simple-error () t))
          :to-be-truthy))))
-  (it "rejects unknown node families and missing dispatch registrations"
+  (it "validates default dispatch families and missing registrations"
+    (let ((registrations-before
+            (copy-tree
+             cl-markdown-kit::*node-dispatch-registrations*)))
+      (expect
+       (cl-markdown-kit::verify-node-dispatches
+        :operation :markdown-renderer)
+       :to-equal t)
+      (expect cl-markdown-kit::*node-dispatch-registrations*
+              :to-equal registrations-before))
     (let ((condition
             (handler-case
                 (progn
@@ -830,6 +839,20 @@
                      (search "Missing dispatch coverage"
                              (format nil "~A" condition)))
                 :to-be-truthy))))
+  (it "resets the registries and restores global state"
+    (let ((definitions-before
+            (copy-tree cl-markdown-kit::*node-definitions*))
+          (registrations-before
+            (copy-tree cl-markdown-kit::*node-dispatch-registrations*)))
+      (let ((cl-markdown-kit::*node-definitions* '(:temporary))
+            (cl-markdown-kit::*node-dispatch-registrations* '(:temporary)))
+        (cl-markdown-kit::%reset-node-registries)
+        (expect cl-markdown-kit::*node-definitions* :to-equal nil)
+        (expect cl-markdown-kit::*node-dispatch-registrations*
+                :to-equal nil))
+      (expect cl-markdown-kit::*node-definitions* :to-equal definitions-before)
+      (expect cl-markdown-kit::*node-dispatch-registrations*
+              :to-equal registrations-before)))
   (it "returns child callback results in sibling order"
     (let* ((first (cl-markdown-kit:make-paragraph))
            (second (cl-markdown-kit:make-code-block :body "second"))

@@ -612,7 +612,12 @@
         :descend)
        (:leave
         (%hw-write-table-cell-close context)))))
-  (verify-node-dispatches :operation :html-renderer :families '(:block :inline))
+  (progn
+    (defun %hw-verify-node-dispatches ()
+      (verify-node-dispatches
+       :operation :html-renderer
+       :families '(:block :inline)))
+    (%hw-verify-node-dispatches))
   (defun %hw-render-node-tree (context root)
     (walk-node-tree root
      (lambda (frame)

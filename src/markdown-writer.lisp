@@ -1210,9 +1210,13 @@
      (%mw-render-block-dispatch-event context node phase :table-cell))
     (footnote-definition
      (%mw-render-block-dispatch-event
-      context node phase :footnote-definition))) (verify-node-dispatches
-   :operation :markdown-renderer
-   :families '(:block :inline))
+      context node phase :footnote-definition)))
+  (progn
+    (defun %mw-verify-node-dispatches ()
+      (verify-node-dispatches
+       :operation :markdown-renderer
+       :families '(:block :inline)))
+    (%mw-verify-node-dispatches))
 
 (defun %mw-substring-count (string substring)
   (loop with start = 0
