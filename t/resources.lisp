@@ -67,6 +67,31 @@
                           "aaa" (string #\Return) "bbb" (string #\Newline)
                           "-" (string (code-char 11)) (string #\Newline))))
     (resource-repeat-string row 30000)))
+(defun resource-input-composite (kind)
+  (ecase kind
+    (:nested-strong-emphasis
+     (concatenate 'string
+                  (resource-repeat-string "*a **a " 65000)
+                  "b"
+                  (resource-repeat-string " a** a*" 65000)))
+    (:delimiter-multiple-of-three
+     (concatenate 'string "a**b" (resource-repeat-string "c* " 50000)))
+    (:nested-link-brackets
+     (concatenate 'string
+                  (make-string 50000 :initial-element #\[)
+                  "a"
+                  (make-string 50000 :initial-element #\])))
+    (:nested-block-quotes
+     (concatenate 'string (resource-repeat-string "> " 50000) "a"))
+    (:nul-input
+     (concatenate 'string "abc" (string (code-char 0)) "de"
+                  (string (code-char 0))))
+    (:unclosed-html-comment
+     (concatenate 'string "</" (resource-repeat-string "<!--" 300000)))))
+(defun resource-materialize-input (input-form)
+  (if (consp input-form)
+      (apply (first input-form) (rest input-form))
+      input-form))
 
 (defun resource-input-utf8-byte-length (input)
   (loop for character across input
@@ -143,10 +168,7 @@
 (describe "cmark-gfm pathological inputs: emphasis and delimiters (7 cases)"
   (cl-weave:describe-each (("parses nested strong emphasis delimiters"
       "nested strong emph"
-      (concatenate 'string
-                   (resource-repeat-string "*a **a " 65000)
-                   "b"
-                   (resource-repeat-string " a** a*" 65000))
+      (resource-input-composite :nested-strong-emphasis)
       910001 :resource-limit :inline-delimiter-depth 4096 4097)
      ("scans unmatched emphasis closers"
       "many emph closers with no openers"
@@ -162,7 +184,7 @@
       200000 :resource-limit :inline-delimiter-depth 4096 4097)
      ("handles delimiter counts that are multiples of three"
       "openers and closers multiple of 3"
-      (concatenate 'string "a**b" (resource-repeat-string "c* " 50000))
+      (resource-input-composite :delimiter-multiple-of-three)
       150004 :document nil nil nil)
      ("scans emphasis closers after link openers"
       "link openers and emph closers"
@@ -178,7 +200,7 @@
     (it "checks the expected parser result and resource report"
       (:timeout-ms 15000)
       (resource-report-pathological-case
-       name (eval input-form) expected-length expected-result
+       name (resource-materialize-input input-form) expected-length expected-result
        expected-limit-name expected-limit expected-actual))))
 
 (describe "cmark-gfm pathological inputs: links and brackets (7 cases)"
@@ -200,10 +222,7 @@
       960000 :resource-limit :inline-delimiter-depth 4096 4097)
      ("handles nested link brackets"
       "nested brackets"
-      (concatenate 'string
-                   (make-string 50000 :initial-element #\[)
-                   "a"
-                   (make-string 50000 :initial-element #\]))
+      (resource-input-composite :nested-link-brackets)
       100001 :resource-limit :inline-delimiter-depth 4096 4097)
      ("handles the first unclosed link destination shape"
       "unclosed links A"
@@ -219,13 +238,13 @@
     (it "checks the expected parser result and resource report"
       (:timeout-ms 15000)
       (resource-report-pathological-case
-       name (eval input-form) expected-length expected-result
+       name (resource-materialize-input input-form) expected-length expected-result
        expected-limit-name expected-limit expected-actual))))
 
 (describe "cmark-gfm pathological inputs: block nesting (2 cases)"
   (cl-weave:describe-each (("handles deeply nested block quotes"
       "nested block quotes"
-      (concatenate 'string (resource-repeat-string "> " 50000) "a")
+      (resource-input-composite :nested-block-quotes)
       100001 :resource-limit :nesting-depth 256 257)
      ("handles deeply nested lists"
       "deeply nested lists"
@@ -237,14 +256,13 @@
     (it "checks the expected parser result and resource report"
       (:timeout-ms 15000)
       (resource-report-pathological-case
-       name (eval input-form) expected-length expected-result
+       name (resource-materialize-input input-form) expected-length expected-result
        expected-limit-name expected-limit expected-actual))))
 
 (describe "cmark-gfm pathological inputs: other scanning cases (3 cases)"
   (cl-weave:describe-each (("handles U+0000 in the input"
       "U+0000 in input"
-      (concatenate 'string "abc" (string (code-char 0)) "de"
-                   (string (code-char 0)))
+      (resource-input-composite :nul-input)
       7 :document nil nil nil)
      ("scans increasing runs of backticks"
       "backticks"
@@ -252,7 +270,7 @@
       12502499 :document nil nil nil)
      ("scans an unclosed HTML comment opener sequence"
       "unclosed <!--"
-      (concatenate 'string "</" (resource-repeat-string "<!--" 300000))
+      (resource-input-composite :unclosed-html-comment)
       1200002 :document nil nil nil))
     "~A"
     (case-title name input-form expected-length expected-result
@@ -260,7 +278,7 @@
     (it "checks the expected parser result and resource report"
       (:timeout-ms 15000)
       (resource-report-pathological-case
-       name (eval input-form) expected-length expected-result
+       name (resource-materialize-input input-form) expected-length expected-result
        expected-limit-name expected-limit expected-actual))))
 
 (describe "cmark-gfm pathological inputs: GFM table (1 case)"
@@ -274,7 +292,7 @@
     (it "checks the expected parser result and resource report"
       (:timeout-ms 15000)
       (resource-report-pathological-case
-       name (eval input-form) expected-length expected-result
+       name (resource-materialize-input input-form) expected-length expected-result
        expected-limit-name expected-limit expected-actual))))
 
 (describe "cmark-gfm pathological inputs: reference hash collision (1 case)"
@@ -288,7 +306,7 @@
     (it "checks the expected parser result and resource report"
       (:timeout-ms 15000)
       (resource-report-pathological-case
-       name (eval input-form) expected-length expected-result
+       name (resource-materialize-input input-form) expected-length expected-result
        expected-limit-name expected-limit expected-actual))))
 
 (defparameter *resource-pathological-category-counts*

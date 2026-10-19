@@ -189,14 +189,14 @@
   (cl-weave:it-each ((:parse-string "string")
       (:parse-stream "stream")
       (:parse-octets
-      (make-array 1 :element-type '(unsigned-byte 8) :initial-contents '(111)))
+      (make-array 1 :element-type (unsigned-byte 8) :initial-contents (111)))
       (:dispatch-string "dispatch")
       (:dispatch-stream "dispatch stream")
       (:dispatch-octets
-       (make-array 1 :element-type (quote (unsigned-byte 8)) :initial-contents (quote (111)))))
+       (make-array 1 :element-type (unsigned-byte 8) :initial-contents (111))))
     "entry point ~A: uses the documented default limits in every public entry point"
     (entry-point input)
-    (let ((input (eval input)))
+    (let ((input (if (consp input) (apply (first input) (rest input)) input)))
       (let ((*parser-contract-block-result* nil)
             (*parser-contract-block-calls* nil)
             (*parser-contract-inline-calls* nil))
@@ -220,14 +220,14 @@
   (cl-weave:it-each ((:parse-string "string")
      (:parse-stream "stream")
      (:parse-octets
-      (make-array 1 :element-type '(unsigned-byte 8) :initial-contents '(120)))
+      (make-array 1 :element-type (unsigned-byte 8) :initial-contents (120)))
      (:dispatch-string "dispatch string")
      (:dispatch-stream "dispatch stream")
      (:dispatch-octets
-      (make-array 1 :element-type '(unsigned-byte 8) :initial-contents '(120))))
+      (make-array 1 :element-type (unsigned-byte 8) :initial-contents (120))))
     "entry point ~A: forwards the front-matter option through every public input entry point"
     (entry-point input)
-    (let ((input (eval input)))
+    (let ((input (if (consp input) (apply (first input) (rest input)) input)))
       (let ((*parser-contract-block-result* nil)
             (*parser-contract-block-calls* nil)
             (*parser-contract-inline-calls* nil))
@@ -241,14 +241,14 @@
   (cl-weave:it-each ((:parse-string "string")
      (:parse-stream "stream")
      (:parse-octets
-      (make-array 1 :element-type '(unsigned-byte 8) :initial-contents '(120)))
+      (make-array 1 :element-type (unsigned-byte 8) :initial-contents (120)))
      (:dispatch-string "dispatch string")
      (:dispatch-stream "dispatch stream")
      (:dispatch-octets
-      (make-array 1 :element-type '(unsigned-byte 8) :initial-contents '(120))))
+      (make-array 1 :element-type (unsigned-byte 8) :initial-contents (120))))
     "entry point ~A: forwards the GFM option through every public input entry point"
     (entry-point input)
-    (let ((input (eval input)))
+    (let ((input (if (consp input) (apply (first input) (rest input)) input)))
       (let* ((source-buffer (cl-markdown-kit:make-source-buffer "x"))
              (*parser-contract-block-result*
                (cl-markdown-kit::make-block-parse-result
