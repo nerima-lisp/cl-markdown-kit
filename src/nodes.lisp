@@ -302,7 +302,7 @@
          (node-variable (find 'node lambda-list :test #'eq)))
     (unless (and node-variable (symbolp node-variable))
       (error "DEFINE-NODE-DISPATCH lambda list has no node argument."))
-    (unless (every (lambda (clause) (and (consp clause) (cdr clause))) clauses)
+    (unless (every #'consp clauses)
       (error "DEFINE-NODE-DISPATCH clauses must contain a type and body."))
     (let* ((types (mapcar #'first clauses))
            (expected (%node-ensure-exact-coverage operation family types))
@@ -310,6 +310,8 @@
              (mapcar (lambda (type)
                        (cons type (cdr (assoc type clauses :test #'eq))))
                      expected)))
+      (unless (every (lambda (clause) (cdr clause)) clauses)
+        (error "DEFINE-NODE-DISPATCH clauses must contain a type and body."))
       `(progn
          (defun ,function-name ,lambda-list
            (check-type ,node-variable node)
@@ -319,7 +321,8 @@
               (error "No ~S dispatch clause for node type ~S."
                      ',operation (type-of ,node-variable)))))
          (eval-when (:compile-toplevel :load-toplevel :execute)
-           (%register-node-dispatch ',operation ',family ',function-name ',expected))
+           (%register-node-dispatch ',operation ',family
+                                    ',function-name ',expected))
          ',function-name))))
 
 
