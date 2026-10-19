@@ -675,8 +675,10 @@
             (handler-case (progn (macroexpand-1 form) nil)
               (simple-error (condition) condition))))
       (expect condition :to-be-truthy)
-      (expect (search expected-message (format nil "~A" condition))
-              :to-be-truthy)))
+      (let ((condition-message (format nil "~A" condition)))
+        (unless (search expected-message condition-message)
+          (error "Expected condition message containing ~S, got ~S."
+                 expected-message condition-message)))))
   (it "expands node declarations, projects the registry, and registers idempotently"
     (let* ((node-form
              '(cl-markdown-kit::define-node
