@@ -8,13 +8,10 @@
   `(let ((cl-markdown-kit::*mw-line-start-p* t)
          (cl-markdown-kit::*mw-line-indent* 0)
          (cl-markdown-kit::*mw-table-cell-p* nil)
-         (cl-markdown-kit::*mw-escape-table-pipes-p* nil)
          (cl-markdown-kit::*mw-text-autolink-breakpoints* nil)
          (cl-markdown-kit::*mw-heading-p* nil)
          (cl-markdown-kit::*mw-autolink-label-p* nil)
          (cl-markdown-kit::*mw-escape-trailing-bang-p* nil)
-         (cl-markdown-kit::*mw-list-boundary-token* nil)
-         (cl-markdown-kit::*mw-list-boundary-count* 0)
          (cl-markdown-kit::*mw-following-block-p* nil)
          (cl-markdown-kit::*mw-minimize-inline-escapes-p* nil)
          (cl-markdown-kit::*mw-heading-closing-hash-allowed-p* nil))
@@ -159,6 +156,41 @@
             (format nil
                     "---~%title: Example~%---~%~%# Heading *emphasis*~%~%A [link][ref] and ![image](<image.png> \"caption\").~%~%[ref]: <docs/page.md> \"reference\"~%~%2. first~%3. second~%~%> quoted~%>~%> - nested~%~%```lisp~%```` closes later~%```~%~%| Name | Note |~%| :--- | ---: |~%| pipe | `x|y` |~%~%- [x] done~%- [ ] pending~%~%[^note]: a footnote~%~%Here[^note].~%")))
       (expect (markdown-writer-roundtrips-p source) :to-be-truthy)))
+  (cl-weave:it-property "preserves ASTs across generated adjacent-list block combinations"
+  ((source
+    (cl-weave:gen-member
+     (loop for (first-marker second-marker) in
+             (append
+              (loop for first-marker in '("-" "*" "+")
+                    append
+                    (loop for second-marker in '("-" "*" "+")
+                          unless (string= first-marker second-marker)
+                            collect (list first-marker second-marker)))
+              '(("1." "3)") ("3)" "1."))
+              (loop for bullet in '("-" "*" "+")
+                    append
+                    (list (list bullet "1.")
+                          (list bullet "3)")
+                          (list "1." bullet)
+                          (list "3)" bullet))))
+           append
+           (loop for layout in '(:lists :before :after :both)
+                 collect
+                 (format nil "~A~A one~%~%~A two~A"
+                         (if (member layout '(:before :both))
+                             (format nil "before~%~%")
+                             "")
+                         first-marker
+                         second-marker
+                         (if (member layout '(:after :both))
+                             (format nil "~%~%after")
+                             "")))))))
+   (let* ((document (cl-markdown-kit:parse-string source))
+          (markdown (cl-markdown-kit:write-markdown document))
+          (roundtrip (cl-markdown-kit:parse-string markdown)))
+     (expect (markdown-writer-document-signature roundtrip)
+             :to-equal (markdown-writer-document-signature document))))
+
 
   (it "escapes text that would become blocks, tables, or bare autolinks"
     (let* ((source
@@ -1155,23 +1187,6 @@
              (list-item
                (cl-markdown-kit:make-list-item
                 :children (list (paragraph (list (text "item"))))))
-             (separator-label "cl-markdown-kit-writer-list-separator-0")
-             (list-boundary-collision
-               (render-nodes
-                (list (paragraph (list (text separator-label)))
-                      (cl-markdown-kit:make-list-node
-                       :kind :unordered :tight-p t :items (list list-item))
-                      (cl-markdown-kit:make-list-node
-                       :kind :unordered :tight-p t :items (list list-item)))))
-             (token-collision
-               (format nil "~Cmarkdown-writer-list-boundary~C" #\Null #\Null))
-             (list-token-collision
-               (render-nodes
-                (list (cl-markdown-kit:make-list-node
-                       :kind :unordered :tight-p t :items (list list-item))
-                      (cl-markdown-kit:make-list-node
-                       :kind :unordered :tight-p t :items (list list-item))
-                      (paragraph (list (text token-collision))))))
              (heading-soft-break
                (render-block
                 (cl-markdown-kit:make-heading
@@ -1245,10 +1260,6 @@
         (expect (search (format nil "- [x]~%  ```~%  x") block-task)
                 :to-be-truthy)
         (expect empty-list :to-equal "")
-        (expect (search "[cl-markdown-kit-writer-list-separator-1]: <>"
-                        list-boundary-collision)
-                :to-be-truthy)
-        (expect (search token-collision list-token-collision) :to-be-truthy)
         (expect heading-soft-break :to-equal "## first&#10;second")
         (expect (signals-error-p
                  (lambda ()

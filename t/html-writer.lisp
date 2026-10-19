@@ -48,7 +48,7 @@
       (list (cl-markdown-kit:make-paragraph
              :children (list (cl-markdown-kit:make-text
                               :value "A & <B>")))))
-     :to-equal (format nil "<p>A &amp; &lt;B&gt;</p>~%")))
+     :to-match-snapshot "html/escaped-paragraph"))
 
   (it "renders links and image alt text with escaped attributes"
     (expect
@@ -64,9 +64,8 @@
                     :destination "/image" :title "photo"
                     :children (list (cl-markdown-kit:make-text
                                      :value "A & <B>")))))))
-     :to-equal
-     (format nil
-             "<p><a href=\"/target\" title=\"tip\">link</a> <img src=\"/image\" alt=\"A &amp; &lt;B&gt;\" title=\"photo\" /></p>~%")))
+     :to-match-snapshot
+     "html/link-image-attributes"))
 
   (it "renders code blocks with an escaped language class and body"
     (expect
@@ -74,8 +73,8 @@
       (list (cl-markdown-kit:make-code-block
              :style :fenced :body (format nil "<tag>~%")
              :info-string "lisp")))
-     :to-equal
-     (format nil "<pre><code class=\"language-lisp\">&lt;tag&gt;~%</code></pre>~%")))
+     :to-match-snapshot
+     "html/escaped-code-block"))
 
   (it "omits paragraph wrappers in tight list items"
     (expect
@@ -93,8 +92,8 @@
                     (list (cl-markdown-kit:make-paragraph
                            :children (list (cl-markdown-kit:make-text
                                             :value "second")))))))))
-     :to-equal
-     (format nil "<ul>~%<li>first</li>~%<li>second</li>~%</ul>~%")))
+     :to-match-snapshot
+     "html/tight-list-items"))
 
   (it "renders aligned table headers and body cells"
     (let ((output
@@ -124,9 +123,8 @@
                                   :alignment :right
                                   :children (list (cl-markdown-kit:make-text
                                                    :value "1")))))))))))
-      (expect output :to-equal
-              (format nil
-                      "<table>~%<thead>~%<tr>~%<th align=\"left\">Name</th>~%<th align=\"right\">Value</th>~%</tr>~%</thead>~%<tbody>~%<tr>~%<td align=\"left\">x</td>~%<td align=\"right\">1</td>~%</tr>~%</tbody>~%</table>~%"))))
+      (expect output :to-match-snapshot
+              "html/aligned-table")))
 
   (it "renders checked task items with disabled checkbox inputs"
     (let ((output
@@ -153,7 +151,7 @@
              (list (cl-markdown-kit:make-strikethrough
                     :children (list (cl-markdown-kit:make-text
                                      :value "removed")))))))
-     :to-equal (format nil "<p><del>removed</del></p>~%")))
+     :to-match-snapshot "html/strikethrough"))
 
   (it "renders footnote references, definitions, and backreferences"
     (let ((output
@@ -277,9 +275,8 @@
              :children (list (cl-markdown-kit:make-html-inline
                               :body "<em>safe</em><script>x</script>"))))
       :raw-html :escape)
-     :to-equal
-     (format nil
-             "<p>&lt;em&gt;safe&lt;/em&gt;&lt;script&gt;x&lt;/script&gt;</p>~%")))
+     :to-match-snapshot
+     "html/escaped-raw-inline-html"))
 
   (it "passes ordinary tags through and applies the GFM tagfilter"
     (let ((output
@@ -303,9 +300,8 @@
                     :title "safe\" onmouseover=\"alert(1)"
                     :children (list (cl-markdown-kit:make-text
                                      :value "link")))))))
-     :to-equal
-     (format nil
-             "<p><a href=\"/safe\" title=\"safe&quot; onmouseover=&quot;alert(1)\">link</a></p>~%")))
+     :to-match-snapshot
+     "html/escaped-title-attribute"))
 
   (it "makes string and stream output equivalent"
     (let* ((document
@@ -322,7 +318,7 @@
 (describe "HTML writer boundary coverage"
   (it "renders empty documents and omits non-rendered block nodes"
     (expect (cl-markdown-kit:write-html (html-writer-test-document))
-            :to-equal "")
+            :to-match-snapshot "html/empty-document")
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-front-matter :raw-text "title: test")
@@ -331,7 +327,7 @@
              :destination "/ref" :eligible-p t)
             (cl-markdown-kit:make-footnote-definition
              :raw-label "unused" :normalized-label "unused")))
-     :to-equal ""))
+     :to-match-snapshot "html/non-rendered-block-nodes"))
   (it "rejects unsupported node values in documents"
     (expect
      (handler-case
@@ -357,24 +353,23 @@
                            "<script>x</script> <scriptx>safe</scriptx> "
                            "<script/> <style type=\"text/css\">x</style> plain<")))
              :raw-html :pass-through :gfm t)))
-      (expect escaped :to-equal (format nil "&lt;b&gt;raw&lt;/b&gt;~%"))
+      (expect escaped :to-match-snapshot "html/escaped-raw-block-html")
       (expect filtered
-              :to-equal
-              (format nil
-                      "&lt;script>x&lt;/script> <scriptx>safe</scriptx> &lt;script/> &lt;style type=\"text/css\">x&lt;/style> plain<~%"))))
+              :to-match-snapshot
+              "html/gfm-tagfilter-boundaries")))
 
   (it "omits inline HTML and filters pass-through text without tag openers"
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-paragraph
              :children (list (cl-markdown-kit:make-html-inline :body "<i>raw</i>")))))
-     :to-equal (format nil "<p><!-- raw HTML omitted --></p>~%"))
+     :to-match-snapshot "html/omitted-inline-html")
     (expect
      (html-writer-test-render
       (list (cl-markdown-kit:make-paragraph
              :children (list (cl-markdown-kit:make-html-inline :body "plain text"))))
       :raw-html :pass-through)
-     :to-equal (format nil "<p>plain text</p>~%")))
+     :to-match-snapshot "html/passthrough-inline-html"))
 
   (it "passes raw CommonMark HTML through without the GFM tagfilter"
     (let* ((inline-body
@@ -396,12 +391,12 @@
                 inline-document stream :raw-html :pass-through :gfm nil))))
       (expect (cl-markdown-kit:write-html
                inline-document :raw-html :pass-through :gfm nil)
-              :to-equal (format nil "<p>~A</p>~%" inline-body))
-      (expect stream-output :to-equal
-              (format nil "<p>~A</p>~%" inline-body))
+              :to-match-snapshot "html/passthrough-commonmark-inline")
+      (expect stream-output :to-match-snapshot
+              "html/passthrough-commonmark-inline-stream")
       (expect (cl-markdown-kit:write-html
                block-document :raw-html :pass-through :gfm nil)
-              :to-equal block-body)))
+              :to-match-snapshot "html/passthrough-commonmark-block")))
 
   (it "keeps the GFM tagfilter enabled for inline and block HTML"
     (let ((inline-output
@@ -415,10 +410,10 @@
              (list (cl-markdown-kit:make-html-block
                     :body "<textarea>x</textarea>"))
              :raw-html :pass-through :gfm t)))
-      (expect inline-output :to-equal
-              (format nil "<p>&lt;textarea>x&lt;/textarea></p>~%"))
-      (expect block-output :to-equal
-              (format nil "&lt;textarea>x&lt;/textarea>~%"))))
+      (expect inline-output :to-match-snapshot
+              "html/gfm-inline-tagfilter")
+      (expect block-output :to-match-snapshot
+              "html/gfm-block-tagfilter")))
 
   (it "renders code spans, breaks, emphasis, strong, and autolinks"
     (expect
@@ -437,9 +432,8 @@
                    (cl-markdown-kit:make-autolink
                     :destination "https://example.test/?a=\"x"
                     :display-text "<https://example.test>")))))
-     :to-equal
-     (format nil
-             "<p><code>&lt;code&gt;</code>~%<br />~%<em>em</em> <strong>strong</strong> <a href=\"https://example.test/?a=%22x\">&lt;https://example.test&gt;</a></p>~%")))
+     :to-match-snapshot
+     "html/inline-rendering"))
 
   (it "renders block quotes, headings, and thematic breaks"
     (expect
@@ -453,9 +447,8 @@
              :children (list (cl-markdown-kit:make-text :value "Heading")))
             (cl-markdown-kit:make-thematic-break)
             (cl-markdown-kit:make-block-quote :children nil)))
-     :to-equal
-     (format nil
-             "<blockquote>~%<p>quoted</p>~%</blockquote>~%<h2>Heading</h2>~%<hr />~%<blockquote>~%</blockquote>~%")))
+     :to-match-snapshot
+     "html/block-rendering"))
 
   (it "allows dangerous URL schemes only when unsafe URLs are enabled"
     (let ((output
@@ -482,17 +475,16 @@
                            :children (list (cl-markdown-kit:make-text
                                             :value "todo")))))
                    (cl-markdown-kit:make-list-item :children nil)))))
-     :to-equal
-     (format nil
-             "<ol start=\"3\">~%<li><input type=\"checkbox\" disabled=\"\" /> ~%<p>todo</p>~%</li>~%<li></li>~%</ol>~%"))
+     :to-match-snapshot
+     "html/ordered-task-list")
     (expect (html-writer-test-render
              (list (cl-markdown-kit:make-list-node
                     :kind :ordered :start-number 1 :tight-p t :items nil)))
-            :to-equal (format nil "<ol>~%</ol>~%"))
+            :to-match-snapshot "html/empty-ordered-list")
     (expect (html-writer-test-render
              (list (cl-markdown-kit:make-list-node
                     :kind :ordered :start-number 4 :tight-p t :items nil)))
-            :to-equal (format nil "<ol start=\"4\">~%</ol>~%")))
+            :to-match-snapshot "html/ordered-list-start-number"))
 
   (it "renders missing code info as plain code and uses only the first info token"
     (expect
@@ -502,9 +494,8 @@
                                              :info-string (format nil " ~C " #\Tab))
             (cl-markdown-kit:make-code-block :body (format nil "marked~%")
                                              :info-string " lisp extra")))
-     :to-equal
-     (format nil
-             "<pre><code>plain~%</code></pre>~%<pre><code>blank~%</code></pre>~%<pre><code class=\"language-lisp\">marked~%</code></pre>~%")))
+     :to-match-snapshot
+     "html/code-info-tokens"))
 
   (it "renders all plain inline forms in image alt text"
     (expect
@@ -537,9 +528,8 @@
                            :children
                            (list (cl-markdown-kit:make-text
                                   :value " nested & image")))))))))
-     :to-equal
-     (format nil
-             "<p><img src=\"/alt\" alt=\"text &lt;code&gt; &lt;raw&gt;  auto nested strong struck nested &amp; image\" /></p>~%")))
+     :to-match-snapshot
+     "html/image-alt-text"))
 
   (it "numbers repeated footnote references and handles definitions without paragraph endings"
     (let ((output
@@ -576,8 +566,8 @@
                     (list (cl-markdown-kit:make-table-cell
                            :children (list (cl-markdown-kit:make-text
                                             :value "Header")))))))))
-     :to-equal
-     (format nil "<p></p>~%<table>~%<thead>~%<tr>~%<th>Header</th>~%</tr>~%</thead>~%</table>~%")))
+     :to-match-snapshot
+     "html/unresolved-footnote-header-table"))
 
   (it "rejects unsupported nodes, invalid options, and non-output streams"
     (expect
