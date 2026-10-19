@@ -79,154 +79,217 @@
 (defun resource-seconds (ticks)
   (/ (float ticks 1d0) internal-time-units-per-second))
 
-(defun resource-report-pathological-case (name input expected-length)
+(defun resource-report-pathological-case (name input expected-length expected-result
+                                          expected-limit-name expected-limit
+                                          expected-actual)
   (let ((characters (length input))
         (bytes (resource-input-utf8-byte-length input)))
     (assert (plusp characters))
     (when expected-length
       (assert (= characters expected-length)))
     (sb-ext:gc :full t)
-    (let ((wall-start (get-internal-real-time))
-          (cpu-start (get-internal-run-time)))
-      (handler-case
-          (let ((document (cl-markdown-kit:parse-string input)))
-            (unless (typep document 'cl-markdown-kit:document)
-              (error "Pathological case ~A returned a non-document." name))
-            (format t "T-007 resource case=~A chars=~D bytes=~D wall=~,6Fs cpu=~,6Fs result=DOCUMENT~%"
-                    name characters bytes
-                    (resource-seconds (- (get-internal-real-time) wall-start))
-                    (resource-seconds (- (get-internal-run-time) cpu-start)))
-            document)
-        (cl-markdown-kit:markdown-resource-limit-error (condition)
-          (format t "T-007 resource case=~A chars=~D bytes=~D wall=~,6Fs cpu=~,6Fs result=RESOURCE-LIMIT name=~A limit=~S actual=~S~%"
-                  name characters bytes
-                  (resource-seconds (- (get-internal-real-time) wall-start))
-                  (resource-seconds (- (get-internal-run-time) cpu-start))
-                  (cl-markdown-kit:markdown-resource-limit-error-limit-name condition)
-                  (cl-markdown-kit:markdown-resource-limit-error-limit condition)
-                  (cl-markdown-kit:markdown-resource-limit-error-actual condition))
-          condition)))))
+    (let* ((wall-start (get-internal-real-time))
+           (cpu-start (get-internal-run-time))
+           (result nil)
+           (report
+             (with-output-to-string (stream)
+               (let ((*standard-output* stream))
+                 (setf result
+                       (handler-case
+                           (let ((document (cl-markdown-kit:parse-string input)))
+                             (unless (typep document 'cl-markdown-kit:document)
+                               (error "Pathological case ~A returned a non-document."
+                                      name))
+                             (format t "T-007 resource case=~A chars=~D bytes=~D wall=~,6Fs cpu=~,6Fs result=DOCUMENT~%"
+                                     name characters bytes
+                                     (resource-seconds
+                                      (- (get-internal-real-time) wall-start))
+                                     (resource-seconds
+                                      (- (get-internal-run-time) cpu-start)))
+                             document)
+                         (cl-markdown-kit:markdown-resource-limit-error (condition)
+                           (format t "T-007 resource case=~A chars=~D bytes=~D wall=~,6Fs cpu=~,6Fs result=RESOURCE-LIMIT name=~A limit=~S actual=~S~%"
+                                   name characters bytes
+                                   (resource-seconds
+                                    (- (get-internal-real-time) wall-start))
+                                   (resource-seconds
+                                    (- (get-internal-run-time) cpu-start))
+                                   (cl-markdown-kit:markdown-resource-limit-error-limit-name condition)
+                                   (cl-markdown-kit:markdown-resource-limit-error-limit condition)
+                                   (cl-markdown-kit:markdown-resource-limit-error-actual condition))
+                           condition)))))))
+      (write-string report *standard-output*)
+      (ecase expected-result
+        (:document
+         (assert (typep result 'cl-markdown-kit:document))
+         (assert (null expected-limit-name))
+         (assert (null expected-limit))
+         (assert (null expected-actual))
+         (assert (search "result=DOCUMENT" report)))
+        (:resource-limit
+         (assert (typep result 'cl-markdown-kit:markdown-resource-limit-error))
+         (assert (equal expected-limit-name
+                        (cl-markdown-kit:markdown-resource-limit-error-limit-name result)))
+         (assert (eql expected-limit
+                      (cl-markdown-kit:markdown-resource-limit-error-limit result)))
+         (assert (eql expected-actual
+                      (cl-markdown-kit:markdown-resource-limit-error-actual result)))
+         (assert (search
+                  (format nil "result=RESOURCE-LIMIT name=~A limit=~S actual=~S"
+                          expected-limit-name expected-limit expected-actual)
+                  report))))
+      result)))
 
 (describe "cmark-gfm pathological inputs: emphasis and delimiters (7 cases)"
-  (it "parses nested strong emphasis delimiters"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "nested strong emph"
-     (concatenate 'string
-                  (resource-repeat-string "*a **a " 65000)
-                  "b"
-                  (resource-repeat-string " a** a*" 65000))
-     910001))
-  (it "scans unmatched emphasis closers"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "many emph closers with no openers"
-     (resource-repeat-string "a_ " 65000) 195000))
-  (it "scans unmatched emphasis openers"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "many emph openers with no closers"
-     (resource-repeat-string "_a " 65000) 195000))
-  (it "handles mismatched emphasis openers and closers"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "mismatched openers and closers"
-     (resource-repeat-string "*a_ " 50000) 200000))
-  (it "handles delimiter counts that are multiples of three"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "openers and closers multiple of 3"
-     (concatenate 'string "a**b" (resource-repeat-string "c* " 50000))
-     150004))
-  (it "scans emphasis closers after link openers"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "link openers and emph closers"
-     (resource-repeat-string "[ a_" 50000) 200000))
-  (it "handles the hard link and emphasis delimiter case"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "hard link/emph case" "**x [a*b**c*](d)" 16)))
+  (cl-weave:describe-each (("parses nested strong emphasis delimiters"
+      "nested strong emph"
+      (concatenate 'string
+                   (resource-repeat-string "*a **a " 65000)
+                   "b"
+                   (resource-repeat-string " a** a*" 65000))
+      910001 :resource-limit :inline-delimiter-depth 4096 4097)
+     ("scans unmatched emphasis closers"
+      "many emph closers with no openers"
+      (resource-repeat-string "a_ " 65000)
+      195000 :document nil nil nil)
+     ("scans unmatched emphasis openers"
+      "many emph openers with no closers"
+      (resource-repeat-string "_a " 65000)
+      195000 :resource-limit :inline-delimiter-depth 4096 4097)
+     ("handles mismatched emphasis openers and closers"
+      "mismatched openers and closers"
+      (resource-repeat-string "*a_ " 50000)
+      200000 :resource-limit :inline-delimiter-depth 4096 4097)
+     ("handles delimiter counts that are multiples of three"
+      "openers and closers multiple of 3"
+      (concatenate 'string "a**b" (resource-repeat-string "c* " 50000))
+      150004 :document nil nil nil)
+     ("scans emphasis closers after link openers"
+      "link openers and emph closers"
+      (resource-repeat-string "[ a_" 50000)
+      200000 :resource-limit :inline-delimiter-depth 4096 4097)
+     ("handles the hard link and emphasis delimiter case"
+      "hard link/emph case"
+      "**x [a*b**c*](d)"
+      16 :document nil nil nil))
+    "~A"
+    (case-title name input-form expected-length expected-result
+                expected-limit-name expected-limit expected-actual)
+    (it "checks the expected parser result and resource report"
+      (:timeout-ms 15000)
+      (resource-report-pathological-case
+       name (eval input-form) expected-length expected-result
+       expected-limit-name expected-limit expected-actual))))
 
 (describe "cmark-gfm pathological inputs: links and brackets (7 cases)"
-  (it "scans unmatched link closers"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "many link closers with no openers"
-     (resource-repeat-string "a]" 65000) 130000))
-  (it "scans unmatched link openers"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "many link openers with no closers"
-     (resource-repeat-string "[a" 65000) 130000))
-  (it "scans repeated bracket and parenthesis patterns"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "pattern [ (]( repeated"
-     (resource-repeat-string "[ (](" 80000) 400000))
-  (it "scans repeated image and link delimiter patterns"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "pattern ![[]() repeated"
-     (resource-repeat-string "![[]()" 160000) 960000))
-  (it "handles nested link brackets"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "nested brackets"
-     (concatenate 'string
-                  (make-string 50000 :initial-element #\[)
-                  "a"
-                  (make-string 50000 :initial-element #\]))
-     100001))
-  (it "handles the first unclosed link destination shape"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "unclosed links A" (resource-repeat-string "[a](<b" 30000) 180000))
-  (it "handles the second unclosed link destination shape"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "unclosed links B" (resource-repeat-string "[a](b" 30000) 150000)))
+  (cl-weave:describe-each (("scans unmatched link closers"
+      "many link closers with no openers"
+      (resource-repeat-string "a]" 65000)
+      130000 :document nil nil nil)
+     ("scans unmatched link openers"
+      "many link openers with no closers"
+      (resource-repeat-string "[a" 65000)
+      130000 :resource-limit :inline-delimiter-depth 4096 4097)
+     ("scans repeated bracket and parenthesis patterns"
+      "pattern [ (]( repeated"
+      (resource-repeat-string "[ (](" 80000)
+      400000 :document nil nil nil)
+     ("scans repeated image and link delimiter patterns"
+      "pattern ![[]() repeated"
+      (resource-repeat-string "![[]()" 160000)
+      960000 :resource-limit :inline-delimiter-depth 4096 4097)
+     ("handles nested link brackets"
+      "nested brackets"
+      (concatenate 'string
+                   (make-string 50000 :initial-element #\[)
+                   "a"
+                   (make-string 50000 :initial-element #\]))
+      100001 :resource-limit :inline-delimiter-depth 4096 4097)
+     ("handles the first unclosed link destination shape"
+      "unclosed links A"
+      (resource-repeat-string "[a](<b" 30000)
+      180000 :document nil nil nil)
+     ("handles the second unclosed link destination shape"
+      "unclosed links B"
+      (resource-repeat-string "[a](b" 30000)
+      150000 :document nil nil nil))
+    "~A"
+    (case-title name input-form expected-length expected-result
+                expected-limit-name expected-limit expected-actual)
+    (it "checks the expected parser result and resource report"
+      (:timeout-ms 15000)
+      (resource-report-pathological-case
+       name (eval input-form) expected-length expected-result
+       expected-limit-name expected-limit expected-actual))))
 
 (describe "cmark-gfm pathological inputs: block nesting (2 cases)"
-  (it "handles deeply nested block quotes"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "nested block quotes"
-     (concatenate 'string (resource-repeat-string "> " 50000) "a")
-     100001))
-  (it "handles deeply nested lists"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "deeply nested lists" (resource-input-nested-lists 1000 "* a") 1003000)))
+  (cl-weave:describe-each (("handles deeply nested block quotes"
+      "nested block quotes"
+      (concatenate 'string (resource-repeat-string "> " 50000) "a")
+      100001 :resource-limit :nesting-depth 256 257)
+     ("handles deeply nested lists"
+      "deeply nested lists"
+      (resource-input-nested-lists 1000 "* a")
+      1003000 :resource-limit :nesting-depth 256 257))
+    "~A"
+    (case-title name input-form expected-length expected-result
+                expected-limit-name expected-limit expected-actual)
+    (it "checks the expected parser result and resource report"
+      (:timeout-ms 15000)
+      (resource-report-pathological-case
+       name (eval input-form) expected-length expected-result
+       expected-limit-name expected-limit expected-actual))))
 
 (describe "cmark-gfm pathological inputs: other scanning cases (3 cases)"
-  (it "handles U+0000 in the input"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "U+0000 in input"
-     (concatenate 'string "abc" (string (code-char 0)) "de" (string (code-char 0)))
-     7))
-  (it "scans increasing runs of backticks"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "backticks" (resource-input-backticks) 12502499))
-  (it "scans an unclosed HTML comment opener sequence"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "unclosed <!--"
-     (concatenate 'string "</" (resource-repeat-string "<!--" 300000))
-     1200002)))
+  (cl-weave:describe-each (("handles U+0000 in the input"
+      "U+0000 in input"
+      (concatenate 'string "abc" (string (code-char 0)) "de"
+                   (string (code-char 0)))
+      7 :document nil nil nil)
+     ("scans increasing runs of backticks"
+      "backticks"
+      (resource-input-backticks)
+      12502499 :document nil nil nil)
+     ("scans an unclosed HTML comment opener sequence"
+      "unclosed <!--"
+      (concatenate 'string "</" (resource-repeat-string "<!--" 300000))
+      1200002 :document nil nil nil))
+    "~A"
+    (case-title name input-form expected-length expected-result
+                expected-limit-name expected-limit expected-actual)
+    (it "checks the expected parser result and resource report"
+      (:timeout-ms 15000)
+      (resource-report-pathological-case
+       name (eval input-form) expected-length expected-result
+       expected-limit-name expected-limit expected-actual))))
 
 (describe "cmark-gfm pathological inputs: GFM table (1 case)"
-  (it "scans repeated carriage-return and vertical-tab table rows"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case "tables" (resource-input-table-rows) 330000)))
+  (cl-weave:describe-each (("scans repeated carriage-return and vertical-tab table rows"
+      "tables"
+      (resource-input-table-rows)
+      330000 :document nil nil nil))
+    "~A"
+    (case-title name input-form expected-length expected-result
+                expected-limit-name expected-limit expected-actual)
+    (it "checks the expected parser result and resource report"
+      (:timeout-ms 15000)
+      (resource-report-pathological-case
+       name (eval input-form) expected-length expected-result
+       expected-limit-name expected-limit expected-actual))))
 
 (describe "cmark-gfm pathological inputs: reference hash collision (1 case)"
-  (it "builds and parses all active reference collision definitions"
-    (:timeout-ms 15000)
-    (resource-report-pathological-case
-     "reference collisions" (resource-input-reference-collisions) 1143036)))
+  (cl-weave:describe-each (("builds and parses all active reference collision definitions"
+      "reference collisions"
+      (resource-input-reference-collisions)
+      1143036 :document nil nil nil))
+    "~A"
+    (case-title name input-form expected-length expected-result
+                expected-limit-name expected-limit expected-actual)
+    (it "checks the expected parser result and resource report"
+      (:timeout-ms 15000)
+      (resource-report-pathological-case
+       name (eval input-form) expected-length expected-result
+       expected-limit-name expected-limit expected-actual))))
 
 (defparameter *resource-pathological-category-counts*
   '((:emphasis-and-delimiter . 7)

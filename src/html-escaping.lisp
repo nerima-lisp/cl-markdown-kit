@@ -23,10 +23,9 @@
         (<= #x61 code #x66))))
 
 (defun %write-percent-encoded-byte (byte output)
-  (let ((hex-digits "0123456789ABCDEF"))
-    (write-char #\% output)
-    (write-char (char hex-digits (ash byte -4)) output)
-    (write-char (char hex-digits (logand byte #x0F)) output)))
+  (write-char #\% output)
+  (write-char (char +uri-hexadecimal-digits+ (ash byte -4)) output)
+  (write-char (char +uri-hexadecimal-digits+ (logand byte #x0F)) output))
 
 (defun %write-percent-encoded-character (char output)
   (let ((code (char-code char)))
@@ -66,7 +65,7 @@
                      (or (<= #x30 code #x39)
                          (<= #x41 code #x5A)
                          (<= #x61 code #x7A)
-                         (find char ";/?:@&=+$,-_.!~*'()#" :test #'char=)))
+                         (find char +uri-percent-encoding-safe-characters+ :test #'char=)))
                 (write-char char output))
                ((< code 128)
                 (%write-percent-encoded-byte code output))
@@ -84,13 +83,10 @@
                        prefix-code))))
 
 (defun dangerous-url-p (uri)
-  (or (%ascii-prefix-equal-p uri "javascript:")
-      (%ascii-prefix-equal-p uri "vbscript:")
-      (%ascii-prefix-equal-p uri "file:")
-      (and (%ascii-prefix-equal-p uri "data:")
+  (or (some (lambda (prefix)
+              (%ascii-prefix-equal-p uri prefix))
+            +dangerous-uri-scheme-prefixes+)
+      (and (%ascii-prefix-equal-p uri +data-uri-scheme-prefix+)
            (not (some (lambda (image-type)
                         (%ascii-prefix-equal-p uri image-type))
-                      '("data:image/png"
-                        "data:image/gif"
-                        "data:image/jpeg"
-                        "data:image/webp"))))))
+                      +safe-data-image-prefixes+)))))

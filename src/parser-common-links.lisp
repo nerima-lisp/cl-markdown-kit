@@ -122,14 +122,14 @@
 
 (defun %pc-bare-web-url-candidate-at (text index end)
   (when (%pc-bare-url-start-p text index)
-    (let* ((www-p (%pc-ascii-prefix-p text index "www."))
-           (https-p (%pc-ascii-prefix-p text index "https://"))
-           (http-p (%pc-ascii-prefix-p text index "http://")))
+    (let* ((www-p (%pc-ascii-prefix-p text index +www-url-prefix+))
+           (https-p (%pc-ascii-prefix-p text index +https-url-prefix+))
+           (http-p (%pc-ascii-prefix-p text index +http-url-prefix+)))
       (when (or www-p https-p http-p)
         (let* ((prefix-length
-                 (cond (www-p 4)
-                       (https-p 8)
-                       (t 7)))
+                 (cond (www-p (length +www-url-prefix+))
+                       (https-p (length +https-url-prefix+))
+                       (t (length +http-url-prefix+))))
                (domain-end
                  (%pc-gfm-domain-end text
                                      (+ index prefix-length)
@@ -144,7 +144,7 @@
                    (destination
                      (normalize-uri-percent-encoding
                       (if www-p
-                          (concatenate 'string "http://" display)
+                          (concatenate 'string +http-url-prefix+ display)
                           display))))
               (%pc-make-candidate index
                                   link-end
@@ -154,9 +154,9 @@
 
 (defun %pc-bare-mailto-candidate-at (text index end)
   (when (and (%pc-bare-email-start-p text index)
-             (%pc-ascii-prefix-p text index "mailto:"))
+             (%pc-ascii-prefix-p text index +mailto-url-prefix+))
     (let ((domain-end
-            (%pc-email-address-end text (+ index (length "mailto:")) end)))
+            (%pc-email-address-end text (+ index (length +mailto-url-prefix+)) end)))
       (when domain-end
         (let ((display (subseq text index domain-end)))
           (%pc-make-candidate
@@ -168,9 +168,9 @@
 
 (defun %pc-bare-xmpp-candidate-at (text index end)
   (when (and (%pc-bare-url-start-p text index)
-             (%pc-ascii-prefix-p text index "xmpp:"))
+             (%pc-ascii-prefix-p text index +xmpp-url-prefix+))
     (let ((domain-end
-            (%pc-email-address-end text (+ index (length "xmpp:")) end)))
+            (%pc-email-address-end text (+ index (length +xmpp-url-prefix+)) end)))
       (when domain-end
         (let* ((raw-end (%pc-url-end text index end))
                (link-end (%pc-trim-url-end text index raw-end))
@@ -190,7 +190,7 @@
         (let* ((display (subseq text index domain-end))
                (destination
                  (normalize-uri-percent-encoding
-                  (concatenate 'string "mailto:" display))))
+                  (concatenate 'string +mailto-url-prefix+ display))))
           (%pc-make-candidate index
                               domain-end
                               destination
