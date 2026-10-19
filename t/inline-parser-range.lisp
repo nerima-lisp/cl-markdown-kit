@@ -218,15 +218,24 @@
               normalized boundary-map (make-hash-table :test (function equal))
               4096 nil nil nil nil nil nil
               (cl-markdown-kit::%ip-build-html-closes normalized)))
-           (state
+           (disallowed-state
              (cl-markdown-kit::%ip-make-range-state
-              context 0 (length normalized) nil 0)))
-      (cl-markdown-kit::%ip-range-scan-angle state (length normalized))
-      (expect (cl-markdown-kit::%ip-range-state-index state)
+              context 0 (length normalized) nil 0))
+           (allowed-state
+             (cl-markdown-kit::%ip-make-range-state
+              context 0 (length normalized) t 0)))
+      (cl-markdown-kit::%ip-range-scan-angle
+       disallowed-state (length normalized))
+      (cl-markdown-kit::%ip-range-scan-angle
+       allowed-state (length normalized))
+      (expect (cl-markdown-kit::%ip-range-state-index disallowed-state)
               :to-equal (length normalized))
       (expect (inline-parser-test-node-sequence-signature
-               (cl-markdown-kit::%ip-range-finalize state))
-              :to-equal (list (list :text text)))))
+               (cl-markdown-kit::%ip-range-finalize disallowed-state))
+              :to-equal (list (list :text text)))
+      (expect (typep (first (cl-markdown-kit::%ip-range-finalize allowed-state))
+                     (quote cl-markdown-kit:autolink))
+              :to-be-truthy)))
 
 (it "rejects invalid inline parser arguments"
     (let* ((buffer (cl-markdown-kit:make-source-buffer "x"))
