@@ -27,7 +27,7 @@
   ("commonmark-0025" ((((:text "  & © Æ Ď") (:soft-break) (:text "¾ ℋ ⅆ") (:soft-break) (:text "∲ ≧̸"))) nil))
   ("commonmark-0026" ((((:text "# Ӓ Ϡ �"))) nil))
   ("commonmark-0027" ((((:text "\" ആ ಫ"))) nil))
-  ("commonmark-0028" ((((:text "&nbsp &x; &#; &#x;") (:soft-break) (:text "�") (:soft-break) (:text "&#abcdef0;") (:soft-break) (:text "&ThisIsNotDefined; &hi?;"))) nil))
+  ("commonmark-0028" ((((:text "&nbsp &x; &#; &#x;") (:soft-break) (:text "&#87654321;") (:soft-break) (:text "&#abcdef0;") (:soft-break) (:text "&ThisIsNotDefined; &hi?;"))) nil))
   ("commonmark-0029" ((((:text "&copy"))) nil))
   ("commonmark-0030" ((((:text "&MadeUpEntity;"))) nil))
   ("commonmark-0031" (nil nil))
