@@ -412,32 +412,57 @@
 
 (defun resource-time-ratio (larger smaller)
   (assert (plusp smaller))
-  (/ larger smaller))
+  (/ (float larger 1d0) smaller))
+(defun resource-scaling-work-measurement (input)
+  (let ((document
+          (cl-markdown-kit:parse-string
+           input :max-nesting-depth 2048
+                 :max-inline-delimiter-depth 16384))
+        (prefix-characters 0))
+    (unless (typep document 'cl-markdown-kit:document)
+      (error "Scaling input returned a non-document."))
+    (cl-markdown-kit:walk-node-tree
+     document
+     (lambda (frame)
+       (when (eq :enter (cl-markdown-kit:node-tree-frame-phase frame))
+         (let ((node (cl-markdown-kit:node-tree-frame-node frame)))
+           (when (cl-markdown-kit:block-node-p node)
+             (incf prefix-characters
+                   (length
+                    (cl-markdown-kit:block-node-continuation-prefix node))))))
+       :descend))
+    (list (length input)
+          prefix-characters
+          (+ (length input) prefix-characters))))
 
 (defun resource-measure-scaling-series (kind sizes)
   (let* ((inputs (mapcar (lambda (size)
-                          (resource-input-for-scaling kind size))
-                        sizes))
-         (character-sizes (mapcar #'length inputs))
+                           (resource-input-for-scaling kind size))
+                         sizes))
+         (work-measurements
+           (mapcar #'resource-scaling-work-measurement inputs))
+         (character-sizes (mapcar #'first work-measurements))
+         (prefix-character-sizes (mapcar #'second work-measurements))
+         (work-sizes (mapcar #'third work-measurements))
          (wall-samples (make-list +resource-scaling-sample-count+
-                                 :initial-element nil))
+                                  :initial-element nil))
          (cpu-samples (make-list +resource-scaling-sample-count+
-                                :initial-element nil))
+                                 :initial-element nil))
          (iteration-counts (make-list +resource-scaling-sample-count+
                                       :initial-element 0)))
     (assert (= (length sizes) 3))
-    (assert (<= 1.8d0
+    (assert (<= 3.8d0
                 (/ (second character-sizes)
                    (float (first character-sizes) 1d0))
-                2.2d0))
-    (assert (<= 1.8d0
+                4.3d0))
+    (assert (<= 3.8d0
                 (/ (third character-sizes)
                    (float (second character-sizes) 1d0))
-                2.2d0))
-    (assert (<= 3.6d0
+                4.3d0))
+    (assert (<= 14.4d0
                 (/ (third character-sizes)
                    (float (first character-sizes) 1d0))
-                4.4d0))
+                17.6d0))
     (loop for input in inputs
           for index from 0
           do (resource-scaling-batch input 1)
@@ -451,31 +476,46 @@
              (mapcar (lambda (samples iterations)
                        (/ (resource-median samples) (float iterations 1d0)))
                      cpu-samples iteration-counts))
-           (first-second
-             (resource-time-ratio (second median-cpus)
-                                  (first median-cpus)))
-           (second-fourth
-             (resource-time-ratio (third median-cpus)
-                                  (second median-cpus)))
-           (first-fourth
-             (resource-time-ratio (third median-cpus)
-                                  (first median-cpus))))
-      (format t "T-007 scaling kind=~A samples=~D chars=~S batch-iterations=~S batch-wall=~S batch-cpu=~S median-batch-wall=~S median-per-parse-cpu=~S cpu-ratios=~S~%"
-              kind +resource-scaling-sample-count+ character-sizes
+           (cpu-ratios
+             (list (resource-time-ratio (second median-cpus)
+                                        (first median-cpus))
+                   (resource-time-ratio (third median-cpus)
+                                        (second median-cpus))
+                   (resource-time-ratio (third median-cpus)
+                                        (first median-cpus))))
+           (work-ratios
+             (list (resource-time-ratio (second work-sizes)
+                                        (first work-sizes))
+                   (resource-time-ratio (third work-sizes)
+                                        (second work-sizes))
+                   (resource-time-ratio (third work-sizes)
+                                        (first work-sizes))))
+           (normalized-ratios
+             (mapcar #'/ cpu-ratios work-ratios)))
+      (format t "T-007 scaling kind=~A samples=~D chars=~S prefix-chars=~S work=~S batch-iterations=~S batch-wall=~S batch-cpu=~S median-batch-wall=~S median-per-parse-cpu=~S cpu-ratios=~S work-ratios=~S normalized-ratios=~S~%"
+              kind +resource-scaling-sample-count+
+              character-sizes prefix-character-sizes work-sizes
               iteration-counts wall-samples cpu-samples
-              median-walls median-cpus
-              (list first-second second-fourth first-fourth))
+              median-walls median-cpus cpu-ratios work-ratios
+              normalized-ratios)
       (finish-output)
-      (assert (<= first-second 5.0d0))
-      (assert (<= second-fourth 5.0d0))
-      ;; Fourfold input growth below 10x remains separated from quadratic 16x growth.
-      (assert (<= first-fourth 10.0d0)))))
+      (assert (<= (first normalized-ratios) 5.0d0))
+      (assert (<= (second normalized-ratios) 5.0d0))
+      (assert (<= (third normalized-ratios) 10.0d0)))))
 
-(it "measures five families at approximately 1x, 2x, and 4x source sizes"
+(it "measures five families at approximately 1x, 4x, and 16x source sizes"
   (:timeout-ms 30000)
-  (dolist (series '((:quote (128 256 512))
-                    (:list (32 45 65))
-                    (:bracket (2048 4096 8192))
-                    (:delimiter (2048 4096 8192))
-                    (:long-line (65536 131072 262144))))
+  (let* ((depth 64)
+         (measurement
+           (resource-scaling-work-measurement
+            (resource-input-for-scaling :quote depth)))
+         (expected-prefix-characters (* depth (1+ depth))))
+    (expect (second measurement) :to-equal expected-prefix-characters)
+    (expect (third measurement)
+           :to-equal (+ (first measurement) expected-prefix-characters)))
+  (dolist (series '((:quote (64 256 1024))
+                    (:list (8 17 35))
+                    (:bracket (512 2048 8192))
+                    (:delimiter (512 2048 8192))
+                    (:long-line (65536 262144 1048576))))
     (resource-measure-scaling-series (first series) (second series))))
