@@ -85,7 +85,6 @@
     (assert (plusp characters))
     (when expected-length
       (assert (= characters expected-length)))
-    (sb-ext:gc :full t)
     (let ((wall-start (get-internal-real-time))
           (cpu-start (get-internal-run-time)))
       (handler-case
