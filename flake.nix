@@ -189,8 +189,7 @@
         "cl-process-kit/cl-date-kit";
       inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-host-kit.follows =
         "cl-process-kit/cl-host-kit";
-      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-log-kit.follows =
-        "cl-process-kit/cl-log-kit";
+      inputs.cl-regex-kit.inputs.cl-dataflow-kit.inputs.cl-log-kit.follows = "cl-process-kit/cl-log-kit";
       inputs.cl-regex-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-prolog-kit.inputs.cl-nix-forge.inputs.treefmt-nix.follows =
         "treefmt-nix";
