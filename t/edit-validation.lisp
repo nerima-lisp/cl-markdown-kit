@@ -18,10 +18,10 @@
              (test-condition (lambda () (cl-markdown-kit:replace-node document document "changed"))))
            (invalid-edit-condition
              (test-condition (lambda ()
-                (cl-markdown-kit::%perform-edit document -1 0 "" nil nil (function identity) (function error)))))
+                (cl-markdown-kit::%perform-edit document -1 0 "" nil nil))))
            (noninteger-edit-condition
              (test-condition (lambda ()
-                (cl-markdown-kit::%perform-edit document :invalid 0 "" nil nil (function identity) (function error)))))
+                (cl-markdown-kit::%perform-edit document :invalid 0 "" nil nil))))
            (missing-span-document (cl-markdown-kit:parse-string source))
            (missing-span-node
              (second (cl-markdown-kit:document-children missing-span-document)))
@@ -237,32 +237,32 @@
                                      (- (length edited-octets)
                                         (length suffix-octets)))))
                 :to-be-truthy)))
-  (it "passes validated edits to the on-match continuation"
+  (it "returns the verified edit string"
     (let* ((document (cl-markdown-kit:parse-string "# A"))
            (target (first (cl-markdown-kit:document-children document)))
            (range (edit-node-range target))
-           (markdown "# B"))
-      (cl-weave:with-continuation-result (edited on-match calledp)
-        (cl-markdown-kit::%perform-edit
-         document (car range) (cdr range) markdown target range
-         #'on-match #'error)
-        (expect calledp :to-be-truthy)
-        (expect edited :to-equal markdown))))
-  (it "passes edit verification failures to the on-fail continuation"
+           (markdown "# B")
+           (edited
+             (cl-markdown-kit::%perform-edit
+              document (car range) (cdr range) markdown target range)))
+      (expect edited :to-equal markdown)))
+  (it "signals edit verification conditions directly"
     (let ((document (cl-markdown-kit:parse-string "# A")))
-      (cl-weave:with-continuation-result (range-condition on-fail calledp)
-        (cl-markdown-kit::%perform-edit
-         document -1 0 "" nil nil #'identity #'on-fail)
-        (expect calledp :to-be-truthy)
+      (let ((range-condition
+              (test-condition
+               (lambda ()
+                 (cl-markdown-kit::%perform-edit
+                  document -1 0 "" nil nil)))))
         (expect (typep range-condition 'simple-error) :to-be-truthy)
         (expect (simple-condition-format-control range-condition)
                 :to-equal "Invalid edit interval [~S,~S) for source length ~D.")
         (expect (simple-condition-format-arguments range-condition)
                 :to-equal '(-1 0 3)))
-      (cl-weave:with-continuation-result (source-condition on-fail calledp)
-        (cl-markdown-kit::%perform-edit
-         (cl-markdown-kit:make-document) 0 0 "" nil nil #'identity #'on-fail)
-        (expect calledp :to-be-truthy)
+      (let ((source-condition
+              (test-condition
+               (lambda ()
+                 (cl-markdown-kit::%perform-edit
+                  (cl-markdown-kit:make-document) 0 0 "" nil nil)))))
         (expect (typep source-condition 'simple-error) :to-be-truthy)
         (expect (simple-condition-format-control source-condition)
                 :to-equal "Cannot edit a document without a source snapshot.")
@@ -274,21 +274,21 @@
              (replacement
                (with-output-to-string (output)
                  (loop repeat 9 do (write-string "> " output))
-                 (write-string "nested" output))))
-        (cl-weave:with-continuation-result (parse-condition on-fail calledp)
-          (cl-markdown-kit::%perform-edit
-           document 0 (length source) replacement nil nil
-           #'identity #'on-fail)
-          (expect calledp :to-be-truthy)
-          (expect (typep parse-condition
-                         'cl-markdown-kit:markdown-resource-limit-error)
-                  :to-be-truthy)
-          (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
-                   parse-condition)
-                  :to-equal :nesting-depth)
-          (expect (cl-markdown-kit:markdown-resource-limit-error-limit
-                   parse-condition)
-                  :to-equal 8)
-          (expect (cl-markdown-kit:markdown-resource-limit-error-actual
-                   parse-condition)
-                  :to-equal 9))))))
+                 (write-string "nested" output)))
+             (parse-condition
+               (test-condition
+                (lambda ()
+                  (cl-markdown-kit::%perform-edit
+                   document 0 (length source) replacement nil nil)))))
+        (expect (typep parse-condition
+                       'cl-markdown-kit:markdown-resource-limit-error)
+                :to-be-truthy)
+        (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
+                 parse-condition)
+                :to-equal :nesting-depth)
+        (expect (cl-markdown-kit:markdown-resource-limit-error-limit
+                 parse-condition)
+                :to-equal 8)
+        (expect (cl-markdown-kit:markdown-resource-limit-error-actual
+                 parse-condition)
+                :to-equal 9)))))
