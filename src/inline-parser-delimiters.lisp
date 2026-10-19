@@ -165,8 +165,8 @@
                 do (when (< position (%ip-pair-inner-end container))
                      (push container container-stack))
                    (incf container-index))
-          (push run (gethash (first container-stack) groups)))
-      groups)))
+          (push run (gethash (first container-stack) groups))))
+      groups))
 
   (defun %ip-delimiter-run-events (groups)
     (let ((events nil))
