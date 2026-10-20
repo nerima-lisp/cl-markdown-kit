@@ -46,6 +46,33 @@
         (expect (cl-parser-kit:span-source span) :to-equal "x")
         (expect (source-contract-span-coordinates span)
                 :to-equal (list 0 1 1 1 1 2))))
+  (it "maps compact fragment offsets through normalized source coordinates"
+      (let* ((source (format nil "a~C~%b" #\Return))
+             (buffer (cl-markdown-kit:make-source-buffer source))
+             (parent-map
+               (cl-markdown-kit::source-buffer-boundary-map buffer))
+             (boundary-map
+               (cl-markdown-kit::%make-boundary-map
+                source nil 3 #() #() parent-map #(0 2) #(0 2)))
+             (span (cl-markdown-kit::make-source-span boundary-map 1 3)))
+        (expect (cl-markdown-kit::boundary-map-length boundary-map) :to-equal 3)
+        (expect (equalp
+                 (cl-markdown-kit::boundary-map-segment-maps boundary-map)
+                 #(0 2))
+                :to-be-truthy)
+        (expect
+         (cl-markdown-kit::source-boundary-offset
+          (cl-markdown-kit::boundary-map-boundary boundary-map 2))
+         :to-equal 3)
+        (expect
+         (list (cl-parser-kit:span-start span)
+               (cl-parser-kit:span-end span)
+               (cl-parser-kit:span-start-line span)
+               (cl-parser-kit:span-start-column span)
+               (cl-parser-kit:span-end-line span)
+               (cl-parser-kit:span-end-column span))
+         :to-equal '(1 4 1 2 2 2))
+        (expect (cl-parser-kit:span-source span) :to-equal source)))
 
   (it "normalizes LF while keeping half-open one-based source coordinates"
     (let* ((source (format nil "alpha~%beta"))

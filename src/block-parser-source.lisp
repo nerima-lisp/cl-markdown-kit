@@ -4,14 +4,17 @@
              (:constructor %make-block-line
                  (text boundaries raw-start raw-end after column-start)))
   (text "" :type string)
-  (boundaries #() :type vector)
+  (boundaries 0 :type (or (integer 0 *) vector))
   (raw-start 0 :type (integer 0 *))
   (raw-end 0 :type (integer 0 *))
   (after 0 :type (integer 0 *))
   (column-start 0 :type (integer 0 *)))
 
 (defun %bp-line-boundary (line index)
-  (aref (%block-line-boundaries line) index))
+  (let ((boundaries (%block-line-boundaries line)))
+    (if (vectorp boundaries)
+        (aref boundaries index)
+        (+ boundaries index))))
 
 (defun %bp-array-slice-view (array start end)
   (let ((base array)
@@ -38,13 +41,16 @@
         finally (return column)))
 
 (defun %bp-line-slice (line start &optional (end (length (%block-line-text line))))
-  (%make-block-line
-   (%bp-array-slice-view (%block-line-text line) start end)
-   (%bp-array-slice-view (%block-line-boundaries line) start (1+ end))
-   (%block-line-raw-start line)
-   (%block-line-raw-end line)
-   (%block-line-after line)
-   (%bp-line-column-at line start)))
+  (let ((boundaries (%block-line-boundaries line)))
+    (%make-block-line
+     (%bp-array-slice-view (%block-line-text line) start end)
+     (if (vectorp boundaries)
+         (%bp-array-slice-view boundaries start (1+ end))
+         (+ boundaries start))
+     (%block-line-raw-start line)
+     (%block-line-raw-end line)
+     (%block-line-after line)
+     (%bp-line-column-at line start))))
 
 (defun %bp-line-prefix-spaces (line count)
   (let* ((text (%block-line-text line))
@@ -70,22 +76,13 @@
         (length (length text)))
     (loop for index from 0 below length
           when (char= (char text index) #\Newline)
-            do (let* ((boundaries
-                        (make-array (1+ (- index start))))
-                      (line-text (subseq text start index)))
-                 (loop for offset from start to index
-                       for boundary-index from 0
-                       do (setf (aref boundaries boundary-index) offset))
-                 (push (%make-block-line line-text boundaries start index
+            do (let ((line-text (%bp-array-slice-view text start index)))
+                 (push (%make-block-line line-text start start index
                                          (1+ index) 0)
-                       lines)
-                 (setf start (1+ index))))
-    (let* ((boundaries (make-array (1+ (- length start))))
-           (line-text (subseq text start length)))
-      (loop for offset from start to length
-            for boundary-index from 0
-            do (setf (aref boundaries boundary-index) offset))
-      (push (%make-block-line line-text boundaries start length length 0) lines))
+                       lines))
+               (setf start (1+ index)))
+    (let ((line-text (%bp-array-slice-view text start length)))
+      (push (%make-block-line line-text start start length length 0) lines))
     (coerce (nreverse lines) 'vector)))
 
 (defun %bp-leading-indent (text &optional (limit 3) (initial-column 0))

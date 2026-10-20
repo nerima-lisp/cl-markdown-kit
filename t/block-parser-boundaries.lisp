@@ -75,6 +75,151 @@
                       (= (cl-markdown-kit:document-max-nesting-depth document)
                          cl-markdown-kit::+default-max-nesting-depth+))
                  :to-be-truthy)))
+          (it "uses offset boundaries and displaced views for ordinary lines and fragments"
+              (let* ((bom (or (code-char #xfeff) (error "No BOM character available")))
+                     (source
+                       (concatenate 'string (string bom) "first"
+                                    (string #\Return) (string #\Newline) "second"))
+                     (buffer (cl-markdown-kit:make-source-buffer source))
+                     (text (cl-markdown-kit:source-buffer-normalized-text buffer))
+                     (lines (cl-markdown-kit::%bp-split-lines text))
+                     (first-line (aref lines 0))
+                     (second-line (aref lines 1))
+                     (slice (cl-markdown-kit::%bp-line-slice second-line 1 4))
+                     (owner :boundary-owner))
+                (let ((cl-markdown-kit::*block-inline-fragments* nil))
+                  (cl-markdown-kit::%bp-add-fragment
+                   buffer owner (list first-line second-line))
+                  (let* ((fragment (first cl-markdown-kit::*block-inline-fragments*))
+                         (boundary-map
+                           (cl-markdown-kit::inline-fragment-boundary-map fragment))
+                         (span (cl-markdown-kit::make-source-span boundary-map 5 6)))
+                    (expect
+                     (and
+                      (eq (cl-markdown-kit::inline-fragment-node fragment) owner)
+                      (eql (cl-markdown-kit::%block-line-boundaries first-line) 0)
+                      (eql (cl-markdown-kit::%block-line-boundaries second-line) 6)
+                      (= (cl-markdown-kit::%bp-line-boundary first-line 5) 5)
+                      (= (cl-markdown-kit::%bp-line-boundary second-line 6) 12)
+                      (string= (cl-markdown-kit::%block-line-text first-line) "first")
+                      (string= (cl-markdown-kit::%block-line-text second-line) "second")
+                      (multiple-value-bind (displaced-to displacement-offset)
+                          (array-displacement
+                           (cl-markdown-kit::%block-line-text first-line))
+                        (and (eq displaced-to text) (= displacement-offset 0)))
+                      (eql (cl-markdown-kit::%block-line-boundaries slice) 7)
+                      (string= (cl-markdown-kit::%block-line-text slice) "eco")
+                      (= (cl-markdown-kit::%bp-line-boundary slice 3) 10)
+                      (multiple-value-bind (displaced-to displacement-offset)
+                          (array-displacement
+                           (cl-markdown-kit::%block-line-text slice))
+                        (and (eq displaced-to text) (= displacement-offset 7)))
+                      (string= (cl-markdown-kit::inline-fragment-text fragment)
+                               (format nil "first~%second"))
+                      (equalp (cl-markdown-kit::boundary-map-segment-maps boundary-map)
+                              #(0 6))
+                      (= (cl-markdown-kit::boundary-map-length boundary-map) 12)
+                      (= (cl-markdown-kit::source-boundary-offset
+                          (cl-markdown-kit::boundary-map-boundary boundary-map 0))
+                         1)
+                      (= (cl-markdown-kit::source-boundary-offset
+                          (cl-markdown-kit::boundary-map-boundary boundary-map 5))
+                         6)
+                      (= (cl-markdown-kit::source-boundary-offset
+                          (cl-markdown-kit::boundary-map-boundary boundary-map 6))
+                         8)
+                      (= (cl-markdown-kit::source-boundary-offset
+                          (cl-markdown-kit::boundary-map-boundary boundary-map 12))
+                         14)
+                      (equal
+                       (list (cl-parser-kit:span-start span)
+                             (cl-parser-kit:span-end span)
+                             (cl-parser-kit:span-start-line span)
+                             (cl-parser-kit:span-start-column span)
+                             (cl-parser-kit:span-end-line span)
+                             (cl-parser-kit:span-end-column span))
+                       '(6 8 1 6 2 1))
+                      (equal (cl-parser-kit:span-source span) source))
+                     :to-be-truthy)))))
+          (it "keeps explicit maps for transformed line text"
+              (let* ((source-line
+                       (aref (cl-markdown-kit::%bp-split-lines "  abc") 0))
+                     (plain-line (cl-markdown-kit::%bp-line-slice source-line 2))
+                     (prefixed (cl-markdown-kit::%bp-line-prefix-spaces
+                                plain-line 2))
+                     (pipe-line
+                       (aref (cl-markdown-kit::%bp-split-lines "a\\|b") 0))
+                     (unescaped (cl-markdown-kit::%bp-unescape-table-pipes
+                                 pipe-line))
+                     (joined
+                       (cl-markdown-kit::%bp-join-lines
+                        (cl-markdown-kit::%bp-split-lines
+                         (format nil "a~%b")))))
+                (expect
+                 (and
+                  (string= (cl-markdown-kit::%block-line-text prefixed)
+                           "  abc")
+                  (vectorp (cl-markdown-kit::%block-line-boundaries prefixed))
+                  (equal (coerce (cl-markdown-kit::%block-line-boundaries prefixed)
+                                 'list)
+                         '(2 2 2 3 4 5))
+                  (string= (cl-markdown-kit::%block-line-text unescaped) "a|b")
+                  (vectorp (cl-markdown-kit::%block-line-boundaries unescaped))
+                  (equal (coerce (cl-markdown-kit::%block-line-boundaries unescaped)
+                                 'list)
+                         '(0 1 3 4))
+                  (string= (cl-markdown-kit::%block-line-text joined)
+                           (format nil "a~%b"))
+                  (vectorp (cl-markdown-kit::%block-line-boundaries joined))
+                  (equal (coerce (cl-markdown-kit::%block-line-boundaries joined)
+                                 'list)
+                         '(0 1 2 3)))
+                 :to-be-truthy)
+                (let* ((fragment-source (format nil "  abc~%rest"))
+                       (fragment-buffer (cl-markdown-kit:make-source-buffer fragment-source))
+                       (fragment-lines
+                         (cl-markdown-kit::%bp-split-lines
+                          (cl-markdown-kit:source-buffer-normalized-text fragment-buffer)))
+                       (plain-fragment-line
+                         (cl-markdown-kit::%bp-line-slice (aref fragment-lines 0) 2))
+                       (prefixed-fragment-line
+                         (cl-markdown-kit::%bp-line-prefix-spaces plain-fragment-line 2))
+                       (owner :boundary-owner))
+                  (let ((cl-markdown-kit::*block-inline-fragments* nil))
+                    (cl-markdown-kit::%bp-add-fragment
+                     fragment-buffer owner
+                     (list prefixed-fragment-line (aref fragment-lines 1)))
+                    (let* ((fragment (first cl-markdown-kit::*block-inline-fragments*))
+                           (boundary-map
+                             (cl-markdown-kit::inline-fragment-boundary-map fragment))
+                           (span (cl-markdown-kit::make-source-span boundary-map 0 10)))
+                      (expect
+                       (and
+                        (eq (cl-markdown-kit::inline-fragment-node fragment) owner)
+                        (string= (cl-markdown-kit::inline-fragment-text fragment)
+                                 (format nil "  abc~%rest"))
+                        (equalp (cl-markdown-kit::boundary-map-segment-maps boundary-map)
+                                #(#(2 2 2 3 4 5) 6))
+                        (= (cl-markdown-kit::boundary-map-length boundary-map) 10)
+                        (= (cl-markdown-kit::source-boundary-offset
+                            (cl-markdown-kit::boundary-map-boundary boundary-map 0))
+                           2)
+                        (= (cl-markdown-kit::source-boundary-offset
+                            (cl-markdown-kit::boundary-map-boundary boundary-map 2))
+                           2)
+                        (= (cl-markdown-kit::source-boundary-offset
+                            (cl-markdown-kit::boundary-map-boundary boundary-map 5))
+                           5)
+                        (= (cl-markdown-kit::source-boundary-offset
+                            (cl-markdown-kit::boundary-map-boundary boundary-map 6))
+                           6)
+                        (= (cl-markdown-kit::source-boundary-offset
+                            (cl-markdown-kit::boundary-map-boundary boundary-map 10))
+                           10)
+                        (= (cl-parser-kit:span-start span) 2)
+                        (= (cl-parser-kit:span-end span) 10)
+                        (equal (cl-parser-kit:span-source span) fragment-source))
+                       :to-be-truthy))))))
           (it
            "handles tab stops and partial indentation removal with source boundaries"
            (let* ((tab-line

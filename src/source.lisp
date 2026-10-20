@@ -65,20 +65,23 @@ BOUNDARIES has one entry for each text boundary, including both ends."
        (aref boundaries index))
       (parent-map
        (let* ((length (boundary-map-normalized-length boundary-map)))
-          (check-type index (integer 0 *))
-          (unless (<= index length)
-            (error "Boundary index ~D is outside the mapped range [0,~D]."
-                   index length))
-          (let* ((line-index
-                   (%boundary-map-line-index
-                    (boundary-map-segment-starts boundary-map) index))
-                 (fragment-line-start
-                   (aref (boundary-map-segment-starts boundary-map) line-index))
-                 (source-index
-                   (aref (aref (boundary-map-segment-maps boundary-map)
-                               line-index)
-                         (- index fragment-line-start))))
-            (boundary-map-boundary parent-map source-index))))
+         (check-type index (integer 0 *))
+         (unless (<= index length)
+           (error "Boundary index ~D is outside the mapped range [0,~D]."
+                  index length))
+         (let* ((line-index
+                  (%boundary-map-line-index
+                   (boundary-map-segment-starts boundary-map) index))
+                (fragment-line-start
+                  (aref (boundary-map-segment-starts boundary-map) line-index))
+                (segment-index (- index fragment-line-start))
+                (segment-map
+                  (aref (boundary-map-segment-maps boundary-map) line-index))
+                (source-index
+                  (if (integerp segment-map)
+                      (+ segment-map segment-index)
+                      (aref segment-map segment-index))))
+           (boundary-map-boundary parent-map source-index))))
       (t
        (let* ((length (boundary-map-normalized-length boundary-map)))
          (check-type index (integer 0 *))

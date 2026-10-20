@@ -346,4 +346,19 @@
               :to-equal raised-limit)
       (expect (length replacement) :to-equal (- raised-limit 4))
       (expect (length edited) :to-equal raised-limit)
-      (expect (> (length edited) default-limit) :to-be-truthy))))
+      (expect (> (length edited) default-limit) :to-be-truthy)))
+  (it "accepts an edit candidate at the default input-size limit"
+    (let* ((default-limit cl-markdown-kit:+default-max-input-size+)
+           (source "# A")
+           (document (cl-markdown-kit:parse-string source))
+           (replacement
+             (make-string (- default-limit 4)
+                          :element-type 'base-char
+                          :initial-element #\Space))
+           (edited
+             (cl-markdown-kit:replace-section-body
+              document "/A" replacement)))
+      (expect (cl-markdown-kit:document-max-input-size document)
+              :to-equal default-limit)
+      (expect (length replacement) :to-equal (- default-limit 4))
+      (expect (length edited) :to-equal default-limit))))
