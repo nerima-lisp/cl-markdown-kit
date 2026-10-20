@@ -31,32 +31,15 @@
            (%hw-write context "<br />")
            (%hw-write-char context #\Newline))))
 
-(defun %hw-render-inline-emphasis-stage (context phase) (case phase
-     (:enter
-      (unless (%hw-inline-plain-alt-p context)
-        (%hw-write context "<em>"))
-      :descend)
-     (:leave
-      (unless (%hw-inline-plain-alt-p context)
-        (%hw-write context "</em>")))))
-
-(defun %hw-render-inline-strong-stage (context phase) (case phase
-     (:enter
-      (unless (%hw-inline-plain-alt-p context)
-        (%hw-write context "<strong>"))
-      :descend)
-     (:leave
-      (unless (%hw-inline-plain-alt-p context)
-        (%hw-write context "</strong>")))))
-
-(defun %hw-render-inline-strikethrough-stage (context phase) (case phase
-     (:enter
-      (unless (%hw-inline-plain-alt-p context)
-        (%hw-write context "<del>"))
-      :descend)
-     (:leave
-      (unless (%hw-inline-plain-alt-p context)
-        (%hw-write context "</del>")))))
+(defun %hw-render-inline-wrapper-stage (context phase opening closing)
+  (case phase
+    (:enter
+     (unless (%hw-inline-plain-alt-p context)
+       (%hw-write context opening))
+     :descend)
+    (:leave
+     (unless (%hw-inline-plain-alt-p context)
+       (%hw-write context closing)))))
 
 (defun %hw-render-inline-link-stage (context node phase) (case phase
      (:enter
@@ -125,12 +108,9 @@
    (when (eq phase :enter)
      (%hw-render-inline-hard-break-content context))
    (when (eq phase :enter) :descend))
-  (emphasis
-   (%hw-render-inline-emphasis-stage context phase))
-  (strong
-   (%hw-render-inline-strong-stage context phase))
-  (strikethrough
-   (%hw-render-inline-strikethrough-stage context phase))
+  (emphasis (%hw-render-inline-wrapper-stage context phase "<em>" "</em>"))
+  (strong (%hw-render-inline-wrapper-stage context phase "<strong>" "</strong>"))
+  (strikethrough (%hw-render-inline-wrapper-stage context phase "<del>" "</del>"))
   (link
    (%hw-render-inline-link-stage context node phase))
   (image

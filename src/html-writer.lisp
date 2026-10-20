@@ -36,7 +36,9 @@
   (check-type document document)
   (check-type stream stream)
   (unless (output-stream-p stream)
-    (error "STREAM is not open for output"))
+    (error 'type-error
+           :datum stream
+           :expected-type '(satisfies output-stream-p)))
   (unless (member raw-html '(:omit :escape :pass-through))
     (error "RAW-HTML must be :OMIT, :ESCAPE, or :PASS-THROUGH"))
   (unless (typep unsafe-urls 'boolean)
