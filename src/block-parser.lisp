@@ -43,16 +43,11 @@
 
 (defun parse-blocks
     (source-buffer
-     &rest keyword-arguments
-     &key front-matter gfm max-nesting-depth)
+     &key (front-matter t)
+          (gfm t)
+          (max-nesting-depth +default-max-nesting-depth+))
   "Parse block structure and defer paragraph, heading, and table-cell inlines."
   (check-type source-buffer source-buffer)
-  (unless (get-properties keyword-arguments '(:front-matter))
-    (setf front-matter t))
-  (unless (get-properties keyword-arguments '(:gfm))
-    (setf gfm t))
-  (unless (get-properties keyword-arguments '(:max-nesting-depth))
-    (setf max-nesting-depth +default-max-nesting-depth+))
   (check-type gfm boolean)
   (unless (and (integerp max-nesting-depth) (plusp max-nesting-depth))
     (error 'type-error :datum max-nesting-depth
