@@ -260,6 +260,12 @@
                   (lambda () (cl-markdown-kit:parse-stream 1))
                   (quote type-error))
                  :to-be-truthy)
+         (with-open-file (stream "/dev/null" :direction :input
+                          :element-type (quote (unsigned-byte 8)))
+           (expect (parser-contract-signals-p
+                    (lambda () (cl-markdown-kit:parse-stream stream))
+                    (quote type-error))
+                   :to-be-truthy))
          (expect (with-output-to-string (stream)
                    (parser-contract-signals-p
                   (lambda ()
