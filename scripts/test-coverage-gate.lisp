@@ -274,10 +274,20 @@
                          :external-format :utf-8)
                (dolist (line lines)
                  (write-line line stream)))))
-      (dolist (fixture fixtures)
-        (write-fixture
-         (merge-pathnames (first fixture) source-directory)
-         (cdddr fixture)))
+      (progn
+        (dolist (fixture fixtures)
+          (write-fixture
+           (merge-pathnames (first fixture) source-directory)
+           (cdddr fixture)))
+        (with-open-file
+            (stream
+             (merge-pathnames "block-parser-classification.fasl" source-directory)
+             :direction :output
+             :if-exists :supersede
+             :if-does-not-exist :create
+             :element-type (quote (unsigned-byte 8)))
+          (loop for byte across #(255 6 0 0)
+                do (write-byte byte stream))))
       (with-open-file
           (stream summary-file
                   :direction :output

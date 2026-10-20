@@ -425,7 +425,10 @@
     nil))
 (defun source-constant-symbol-names (directory)
   (let ((names nil))
-    (dolist (path (uiop:directory-files directory))
+    (dolist (path (directory
+                     (merge-pathnames
+                      "*.lisp"
+                      (uiop:ensure-directory-pathname directory))))
       (let ((depth 0))
         (with-open-file (stream path :direction :input :external-format :utf-8)
           (loop for original = (read-line stream nil nil)
