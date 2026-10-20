@@ -42,14 +42,16 @@
           (values node (1+ closing-index)))))))
 
 (defun parse-blocks
-    (source-buffer &key (front-matter nil front-matter-p)
-                         (gfm nil gfm-p)
-                         (max-nesting-depth nil max-nesting-depth-p))
+    (source-buffer
+     &rest keyword-arguments
+     &key front-matter gfm max-nesting-depth)
   "Parse block structure and defer paragraph, heading, and table-cell inlines."
   (check-type source-buffer source-buffer)
-  (unless front-matter-p (setf front-matter t))
-  (unless gfm-p (setf gfm t))
-  (unless max-nesting-depth-p
+  (unless (get-properties keyword-arguments '(:front-matter))
+    (setf front-matter t))
+  (unless (get-properties keyword-arguments '(:gfm))
+    (setf gfm t))
+  (unless (get-properties keyword-arguments '(:max-nesting-depth))
     (setf max-nesting-depth +default-max-nesting-depth+))
   (check-type gfm boolean)
   (unless (and (integerp max-nesting-depth) (plusp max-nesting-depth))
