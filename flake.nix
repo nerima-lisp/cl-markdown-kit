@@ -361,7 +361,7 @@
         };
         checks.coverage-gate = ctx.cl.mkCommandCheck {
           drv = ctx.package;
-          name = "coverage-gate-regression";
+          name = "coverage-aggregate-gate-regression";
           command = [
             "${ctx.pkgs.sbcl}/bin/sbcl"
             "--script"
