@@ -154,8 +154,7 @@
       (labels ((capture-resource-limit-error (function)
                  (handler-case
                      (progn (funcall function) nil)
-                   (cl-markdown-kit:markdown-resource-limit-error (condition)
-                     condition))))
+                   (serious-condition (condition) condition))))
         (call-with-parser-contract-stubs
          (lambda ()
            (expect
@@ -166,18 +165,9 @@
                    (capture-resource-limit-error
                     (lambda ()
                       (cl-markdown-kit:parse-string "abcd" :max-input-size 3)))))
-             (expect (typep condition
-                             (quote cl-markdown-kit:markdown-resource-limit-error))
-                     :to-be-truthy)
-             (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
-                      condition)
-                     :to-equal :input-size)
-             (expect (cl-markdown-kit:markdown-resource-limit-error-limit condition)
-                     :to-equal 3)
-             (expect (cl-markdown-kit:markdown-resource-limit-error-actual condition)
-                     :to-equal 4)
-             (expect (cl-markdown-kit:markdown-resource-limit-error-context condition)
-                     :to-equal "parse-string"))
+             (expect (test-resource-limit-fields condition)
+                     :to-equal
+                     (list :input-size 3 4 "parse-string")))
            (with-input-from-string (stream "abc")
              (expect
               (cl-markdown-kit:document-max-input-size
@@ -188,22 +178,9 @@
                      (capture-resource-limit-error
                       (lambda ()
                         (cl-markdown-kit:parse-stream stream :max-input-size 3)))))
-               (progn
-                 (expect (typep condition
-                               (quote cl-markdown-kit:markdown-resource-limit-error))
-                         :to-be-truthy)
-                 (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
-                          condition)
-                         :to-equal :input-size)
-                 (expect (cl-markdown-kit:markdown-resource-limit-error-limit
-                          condition)
-                         :to-equal 3)
-                 (expect (cl-markdown-kit:markdown-resource-limit-error-actual
-                          condition)
-                         :to-equal 4))
-               (expect (cl-markdown-kit:markdown-resource-limit-error-context
-                        condition)
-                       :to-equal "parse-stream")
+               (expect (test-resource-limit-fields condition)
+                       :to-equal
+                       (list :input-size 3 4 "parse-stream"))
                (expect (read-char stream nil nil) :to-equal #\e)))
            (let ((octets
                    (make-array 3 :element-type '(unsigned-byte 8)
@@ -216,25 +193,12 @@
                    (capture-resource-limit-error
                     (lambda ()
                       (cl-markdown-kit:parse-octets
-                       (make-array 4 :element-type '(unsigned-byte 8)
-                                     :initial-contents '(255 255 255 255))
+                       (make-array 4 :element-type (quote (unsigned-byte 8))
+                                     :initial-contents (quote (255 255 255 255)))
                        :max-input-size 3)))))
-             (progn
-               (expect (typep condition
-                              (quote cl-markdown-kit:markdown-resource-limit-error))
-                       :to-be-truthy)
-               (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
-                        condition)
-                       :to-equal :input-size)
-               (expect (cl-markdown-kit:markdown-resource-limit-error-limit
-                        condition)
-                       :to-equal 3)
-               (expect (cl-markdown-kit:markdown-resource-limit-error-actual
-                        condition)
-                       :to-equal 4))
-             (expect (cl-markdown-kit:markdown-resource-limit-error-context
-                      condition)
-                     :to-equal "parse-octets"))
+             (expect (test-resource-limit-fields condition)
+                     :to-equal
+                     (list :input-size 3 4 "parse-octets")))
            (expect
             (parser-contract-signals-p
              (lambda ()

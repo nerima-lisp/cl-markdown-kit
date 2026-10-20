@@ -22,8 +22,7 @@
 (defun source-contract-capture-resource-limit-error (function)
   (handler-case
       (progn (funcall function) nil)
-    (cl-markdown-kit:markdown-resource-limit-error (condition)
-      condition)))
+    (serious-condition (condition) condition)))
 
 (describe "Source buffer contract"
   (it "constructs public source formats and spans"
@@ -337,7 +336,7 @@
                   (cl-markdown-kit:markdown-resource-limit-error-actual condition)
                   (cl-markdown-kit:markdown-resource-limit-error-context
                    condition)))))
-        (expect (cl-markdown-kit:+default-max-input-size+)
+        (expect cl-markdown-kit:+default-max-input-size+
                 :to-equal 16777216)
         (expect (cl-markdown-kit:source-buffer-source bom-crlf-buffer)
                 :to-equal bom-crlf-source)

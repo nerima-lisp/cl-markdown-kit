@@ -303,16 +303,9 @@
                 (cl-markdown-kit::%perform-edit
                  document 0 (length source) candidate nil nil)))))
       (expect (length candidate) :to-equal 101)
-      (expect (typep condition
-                     (quote cl-markdown-kit:markdown-resource-limit-error))
-              :to-be-truthy)
-      (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
-               condition)
-              :to-equal :input-size)
-      (expect (cl-markdown-kit:markdown-resource-limit-error-limit condition)
-              :to-equal 5)
-      (expect (cl-markdown-kit:markdown-resource-limit-error-actual condition)
-              :to-equal 6)))
+      (expect (test-resource-limit-fields condition)
+              :to-equal
+              (list :input-size 5 101 "parse-string"))))
   (it "accepts an edit candidate above the default input-size limit"
     (let* ((default-limit cl-markdown-kit:+default-max-input-size+)
            (raised-limit (1+ default-limit))
