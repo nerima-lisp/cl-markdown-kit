@@ -4,6 +4,7 @@
 (:kind top-level-form :head "defstruct" :reason "Structure slot declarations and type specifications are compile-time metadata." :reproduction "scripts/coverage-reproductions/defstruct.lisp")
 (:kind top-level-form :head "declaim" :reason "Compiler declarations configure compilation and have no runtime coverage location." :reproduction "scripts/coverage-reproductions/declaim.lisp")
 (:kind defun-header :head "defun" :name "make-source-boundary" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
+(:kind defun-header :head "defun" :name "make-source-buffer" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
 (:kind defun-header :head "defun" :name "make-source-format" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
 (:kind defun-header :head "defun" :name "parse-string" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
 (:kind defun-header :head "defun" :name "parse-stream" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
