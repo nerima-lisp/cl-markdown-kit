@@ -11,19 +11,11 @@
   (boundary-map nil :type boundary-map))
 
 (defstruct (block-parse-result
-             (:constructor %make-block-parse-result
-                 (document inline-fragments reference-index)))
+             (:constructor make-block-parse-result
+                 (&key document inline-fragments reference-index)))
   document
   (inline-fragments nil :type list)
-  (reference-index nil :type hash-table))
-
-(defun make-block-parse-result (&key document
-                                      inline-fragments
-                                      (reference-index nil reference-index-p))
-  (unless reference-index-p
-    (setf reference-index (make-hash-table :test 'equal)))
-  (check-type reference-index hash-table)
-  (%make-block-parse-result document inline-fragments reference-index))
+  (reference-index (make-hash-table :test 'equal) :type hash-table))
 
 (defun %positive-limit (value)
   (unless (and (integerp value) (plusp value))

@@ -84,12 +84,20 @@
                   (concatenate 'string
                                (character-data-codepoint-string #x2267)
                                (character-data-codepoint-string #x0338)))))
-  (it "builds the named entity table from all generated entries"
-    (let ((cl-markdown-kit::*html5-entities* nil))
-      (expect (cl-markdown-kit::lookup-html5-entity "amp;")
-              :to-equal "&")
-      (expect (hash-table-count cl-markdown-kit::*html5-entities*)
-              :to-equal 2125)))
+  (it "builds all named entity lookups at load time"
+    (let ((table cl-markdown-kit::*html5-entities*)
+          (data cl-markdown-kit::+html5-entity-data+))
+      (expect (hash-table-p table) :to-be-truthy)
+      (expect (hash-table-count table) :to-equal (length data))
+      (expect (loop for entry in data
+                    for name = (car entry)
+                    for expected = (map "string"
+                                        (lambda (codepoint)
+                                          (code-char codepoint))
+                                        (cdr entry))
+                    always (equal (cl-markdown-kit::lookup-html5-entity name)
+                                  expected))
+              :to-be-truthy)))
 
   (it "decodes the decimal numeric references in CommonMark Example 26"
     (expect (mapcar (lambda (digits)
