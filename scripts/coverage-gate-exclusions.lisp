@@ -385,12 +385,13 @@
               (named-p (first form) "DEFINE-NODE")
               (defstruct-form-p (second form)))))
       ((string= head "defparameter")
-       (let* ((form (read-form))
-              (initializer (and (consp form) (third form))))
-         (and (consp form)
+       (let ((form (read-form)))
+         (and (proper-list-p form)
+              (<= 3 (length form) 4)
               (symbolp (second form))
-              initializer
-              (literal-p initializer))))
+              (literal-p (third form))
+              (or (= (length form) 3)
+                  (stringp (fourth form))))))
       (t
        (let* ((form (read-form))
               (initializer (and (consp form) (third form))))

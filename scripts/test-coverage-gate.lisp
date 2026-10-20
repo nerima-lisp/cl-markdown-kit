@@ -250,8 +250,11 @@
              ("runtime-parameter.lisp" "1" "1:0/2"
               "(defparameter +ip-html-close-patterns+ (progn 1))")
              ("runtime-entity-data.lisp" "1" "1:0/2" "(defparameter +html5-entity-data+ (progn 1))")
+             ("runtime-generic-parameter.lisp" "1" "1:0/2" "(defparameter *coverage-value* (progn 1))")
              ("literal-parameter.lisp" "1" "1:0/2"
               "(defparameter +ip-html-close-patterns+ (quote (1 2)))")
+             ("literal-generic-parameter.lisp" "1" "1:0/2" "(defparameter *coverage-value* (quote (1 2)))")
+             ("literal-nil-parameter.lisp" "1" "1:0/2" "(defparameter *coverage-value* nil)")
              ("direct-runtime.lisp" "1" "1:0/2"
               "(defstruct runtime-control (value (if flag 1 2)))")
              ("wrapped-runtime.lisp" "1" "1:0/2"
@@ -335,14 +338,18 @@
                  "wrapped-runtime.lisp"
                  "nested-runtime.lisp"
                  "constructor-runtime.lisp"
-                 "runtime-entity-data.lisp"))
-             (expected-safe '("literal-parameter.lisp"
-                 "direct-literal.lisp"
-                 "direct-constant.lisp"
-                 "wrapped-constant.lisp"
-                 "nested-constant.lisp"
-                 "constructor-literal.lisp"
-                 "constructor-constant.lisp")))
+                 "runtime-entity-data.lisp"
+                 "runtime-generic-parameter.lisp"))
+             (expected-safe
+               (quote ("literal-parameter.lisp"
+                       "direct-literal.lisp"
+                       "direct-constant.lisp"
+                       "wrapped-constant.lisp"
+                       "nested-constant.lisp"
+                       "constructor-literal.lisp"
+                       "constructor-constant.lisp"
+                       "literal-generic-parameter.lisp"
+                       "literal-nil-parameter.lisp"))))
         (unless (= status 1)
           (error "Expected runtime declarations to fail coverage, got status ~D:~%~A"
                  status
@@ -361,7 +368,7 @@
                  (search "| literal-parameter.lisp | 0.0% | n/a | 1 |" report)
                  (search "| runtime-parameter.lisp | 0.0% | 0.0% | 1 |" report)
                  (search "| nested-constant.lisp | 0.0% | n/a | 3 |" report)
-                 (search "coverage gate: FAIL (6 of 13 files below threshold)" report))
+                 (search "coverage gate: FAIL (7 of 16 files below threshold)" report))
           (error "Declaration coverage did not preserve safe controls and reject runtime forms:~%~A"
                  report))
         (format t "coverage gate regression passed: literal and constant declarations excluded; direct, wrapped, nested, and constructor runtime initializers remain uncovered.~%"))))
