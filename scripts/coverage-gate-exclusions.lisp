@@ -242,7 +242,8 @@
            (constructor-lambda-list-p (lambda-list)
              (and (proper-list-p lambda-list)
                   (let ((mode :required))
-                    (loop for parameter in lambda-list
+                    (and
+                     (loop for parameter in lambda-list
                           always
                           (cond
                             ((named-p parameter "&OPTIONAL")
@@ -275,7 +276,7 @@
                             ((eq mode :key) (key-parameter-p parameter))
                             ((eq mode :aux) (aux-parameter-p parameter))
                             (t nil)))
-                    (not (eq mode :rest-variable)))))
+                     (not (eq mode :rest-variable))))))
            (slot-p (slot)
              (or (parameter-name-p slot)
                  (and (proper-list-p slot)
@@ -308,7 +309,7 @@
                     ((:conc-name :copier :predicate)
                      (and (= (length option) 2)
                           (or (null (second option))
-                              (parameter-name-p (second option))))))
+                              (parameter-name-p (second option)))))
                     (:named (= (length option) 1))
                     (:type (and (= (length option) 2)
                                 (or (member (second option) '(:list :vector))
@@ -340,7 +341,7 @@
                     (and (parameter-name-p name)
                          (every #'defstruct-option-p options)
                          (<= (length constructor-options) 1)
-                         (every #'slot-p slots))))
+                         (every #'slot-p slots)))))
            (source-text ()
              (with-output-to-string (stream)
                (loop for index from start-index below end-line
