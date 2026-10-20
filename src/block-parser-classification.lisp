@@ -23,8 +23,7 @@
             (let* ((raw-label (subseq text label-start close))
                    (normalized
                      (normalize-link-label
-                      (%bp-decode-character-references
-                       (%pc-unescape raw-label))))
+                      (%pc-unescape raw-label)))
                    (cursor (%bp-skip-whitespace text (+ close 2))))
               (values raw-label normalized cursor
                       indent))))))))

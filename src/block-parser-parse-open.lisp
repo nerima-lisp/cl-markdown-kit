@@ -180,107 +180,104 @@
     next))
 
 (defun %bp-state-open-container (state physical-line content)
-  (cond
-    ((%bp-blank-line-p content)
-     (values content nil 1 t))
-    ((and (%bp-parser-state-gfm state)
-          (nth-value 0 (%bp-footnote-start content)))
-     (%bp-state-mark-container-content state)
-     (multiple-value-bind (raw-label normalized content-start indent)
-         (%bp-footnote-start content)
-       (values (%bp-state-open-footnote
-                state physical-line content raw-label normalized
-                content-start indent)
-               t 1 t)))
-    ((%bp-link-definition-start-p content)
-     (multiple-value-bind (candidate line parsed next)
-         (%bp-state-reference-candidate state content)
-       (if candidate
-           (values content nil
-                   (%bp-state-open-reference-definition
-                    state line parsed next)
-                   t)
-           (values content nil 1 nil))))
-    (t
-     (multiple-value-bind (marker-start quote-content prefix)
-         (%bp-quote-content content)
-       (if marker-start
-           (progn
-             (%bp-state-mark-container-content state)
-             (values (%bp-state-open-quote
-                      state physical-line content marker-start
-                      quote-content prefix)
-                     t 1 t))
-           (values content nil 1 nil))))))
+  (if (%bp-blank-line-p content)
+      (values content nil 1 t)
+      (multiple-value-bind (raw-label normalized content-start indent)
+          (if (%bp-parser-state-gfm state)
+              (%bp-footnote-start content)
+              (values nil nil nil nil))
+        (cond
+          (raw-label
+           (%bp-state-mark-container-content state)
+           (values (%bp-state-open-footnote
+                    state physical-line content raw-label normalized
+                    content-start indent)
+                   t 1 t))
+          ((%bp-link-definition-start-p content)
+           (multiple-value-bind (candidate line parsed next)
+               (%bp-state-reference-candidate state content)
+             (if candidate
+                 (values content nil
+                         (%bp-state-open-reference-definition
+                          state line parsed next)
+                         t)
+                 (values content nil 1 nil))))
+          (t
+           (multiple-value-bind (marker-start quote-content prefix)
+               (%bp-quote-content content)
+             (if marker-start
+                 (progn
+                   (%bp-state-mark-container-content state)
+                   (values (%bp-state-open-quote
+                            state physical-line content marker-start
+                            quote-content prefix)
+                           t 1 t))
+                 (values content nil 1 nil))))))))
 
 (defun %bp-state-open-heading (state content)
-  (cond
-    ((nth-value 0 (%bp-thematic-break content))
-     (multiple-value-bind (marker count start)
-         (%bp-thematic-break content)
-       (%bp-state-append-node
-        state
-        (%bp-make-thematic-break
-         (%bp-parser-state-source-buffer state) content
-         (%bp-state-current-context state) marker count start))
-       t))
-    ((nth-value 0 (%bp-atx-heading content))
-     (multiple-value-bind (level indent content-start content-end
-                                  opening closing)
-         (%bp-atx-heading content)
-       (let* ((content-line (%bp-line-slice content content-start content-end))
-              (node
-                (make-heading
-                 :span (%bp-line-span
-                        (%bp-parser-state-source-buffer state) content indent
-                        (length (%block-line-text content)))
-                 :continuation-prefix (%bp-state-current-context state)
-                 :level level :style :atx
-                 :marker-character +bp-atx-heading-marker+
-                 :opening-marker-length opening :closing-marker-length closing
-                 :children nil)))
-         (%bp-add-fragment
-          (%bp-parser-state-source-buffer state) node (list content-line))
-         (%bp-state-append-node state node))
-       t))
-    (t nil)))
+  (multiple-value-bind (marker count start)
+      (%bp-thematic-break content)
+    (if marker
+        (progn
+          (%bp-state-append-node
+           state
+           (%bp-make-thematic-break
+            (%bp-parser-state-source-buffer state) content
+            (%bp-state-current-context state) marker count start))
+          t)
+        (multiple-value-bind (level indent content-start content-end opening closing)
+            (%bp-atx-heading content)
+          (when level
+            (let* ((content-line (%bp-line-slice content content-start content-end))
+                   (node
+                     (make-heading
+                      :span (%bp-line-span
+                             (%bp-parser-state-source-buffer state) content indent
+                             (length (%block-line-text content)))
+                      :continuation-prefix (%bp-state-current-context state)
+                      :level level :style :atx
+                      :marker-character +bp-atx-heading-marker+
+                      :opening-marker-length opening :closing-marker-length closing
+                      :children nil)))
+              (%bp-add-fragment
+               (%bp-parser-state-source-buffer state) node (list content-line))
+              (%bp-state-append-node state node))
+            t)))))
 
 (defun %bp-state-open-fence-or-html (state physical-line content)
-  (cond
-    ((nth-value 0 (%bp-fence-start content))
-     (multiple-value-bind (character fence-length indentation fence-end
-                                    info-string fence-start)
-         (%bp-fence-start content)
-       (declare (ignore fence-end))
-       (setf (%bp-parser-state-leaf state)
-             (%bp-make-open-leaf
-              :kind :fenced :context (%bp-state-current-context state)
-              :start-line content :start-position fence-start
-              :end-line physical-line :lines nil
-              :fence-character character :fence-length fence-length
-              :indentation indentation
-              :info-string
-              (let ((trimmed (%pc-trimmed-string info-string)))
-                (unless (zerop (length trimmed))
-                  (%bp-decode-character-references
-                   (%pc-unescape trimmed)))))))
-     t)
-    ((nth-value 0 (%bp-html-block-type content))
-     (multiple-value-bind (kind terminator name)
-         (%bp-html-block-type content)
-       (declare (ignore name))
-       (setf (%bp-parser-state-leaf state)
-             (%bp-make-open-leaf
-              :kind :html :context (%bp-state-current-context state)
-              :start-line content
-              :start-position (nth-value 0 (%bp-line-leading-indent content 3))
-              :end-line physical-line :lines (list content)
-              :html-kind kind :html-terminator terminator))
-       (when (and (<= kind 5)
-                  (%bp-html-terminator-p content terminator kind))
-         (%bp-state-close-leaf state)))
-     t)
-    (t nil)))
+  (multiple-value-bind (character fence-length indentation fence-end
+                                 info-string fence-start)
+      (%bp-fence-start content)
+    (declare (ignore fence-end))
+    (if character
+        (progn
+          (setf (%bp-parser-state-leaf state)
+                (%bp-make-open-leaf
+                 :kind :fenced :context (%bp-state-current-context state)
+                 :start-line content :start-position fence-start
+                 :end-line physical-line :lines nil
+                 :fence-character character :fence-length fence-length
+                 :indentation indentation
+                 :info-string
+                 (let ((trimmed (%pc-trimmed-string info-string)))
+                   (unless (zerop (length trimmed))
+                     (%pc-unescape trimmed)))))
+          t)
+        (multiple-value-bind (kind terminator name)
+            (%bp-html-block-type content)
+          (declare (ignore name))
+          (when kind
+            (setf (%bp-parser-state-leaf state)
+                  (%bp-make-open-leaf
+                   :kind :html :context (%bp-state-current-context state)
+                   :start-line content
+                   :start-position (nth-value 0 (%bp-line-leading-indent content 3))
+                   :end-line physical-line :lines (list content)
+                   :html-kind kind :html-terminator terminator))
+            (when (and (<= kind 5)
+                       (%bp-html-terminator-p content terminator kind))
+              (%bp-state-close-leaf state))
+            t)))))
 
 (defun %bp-state-open-list-or-paragraph (state physical-line content)
   (let ((record (%bp-list-marker-record content)))

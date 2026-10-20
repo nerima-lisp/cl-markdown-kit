@@ -3,35 +3,6 @@
 (defun %bp-footnote-index-key (normalized-label)
   (cons :footnote normalized-label))
 
-(defun %bp-decode-character-references (text)
-  (with-output-to-string (output)
-    (loop with index = 0
-          while (< index (length text))
-          do (if (char= (char text index) #\&)
-                 (let ((semicolon (position #\; text :start (1+ index))))
-                   (if semicolon
-                       (let* ((reference (subseq text (1+ index) semicolon))
-                              (decoded
-                                (cond
-                                  ((and (> (length reference) 1)
-                                        (char= (char reference 0) #\#))
-                                   (if (and (> (length reference) 2)
-                                            (find (char reference 1) '(#\x #\X)))
-                                       (%pc-decode-numeric-reference (subseq reference 2) 16)
-                                       (%pc-decode-numeric-reference (subseq reference 1) 10)))
-                                  ((plusp (length reference))
-                                   (lookup-html5-entity
-                                    (concatenate 'string reference ";"))))))
-                         (if decoded
-                             (progn (write-string decoded output)
-                                    (setf index (1+ semicolon)))
-                             (progn (write-char #\& output)
-                                    (incf index))))
-                       (progn (write-char #\& output)
-                              (incf index))))
-                 (progn (write-char (char text index) output)
-                        (incf index))))))
-
 (defun %bp-parse-destination (text index)
   (let ((start index)
         (depth 0)
@@ -109,8 +80,7 @@
           (let* ((raw-label (subseq text label-start index))
                  (normalized
                    (normalize-link-label
-                    (%bp-decode-character-references
-                     (%pc-unescape raw-label))))
+                    (%pc-unescape raw-label)))
                  (cursor (%bp-link-skip-whitespace text (+ index 2))))
             (when (zerop (length normalized))
               (return-from %bp-link-definition nil))
@@ -154,8 +124,8 @@
                                                  destination-line-end))
                             (return-from %bp-link-definition nil)))))
                   (values raw-label normalized
-                          (%bp-decode-character-references destination)
-                          (and title (%bp-decode-character-references title))
+                          destination
+                          title
                           end))))))))))
 
 (defun %bp-link-label-final-line (lines index)
