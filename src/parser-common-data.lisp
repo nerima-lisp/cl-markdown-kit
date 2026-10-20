@@ -83,13 +83,13 @@
 
 (sb-ext:defglobal +html-attribute-name-extra-characters+ ":._-")
 
-(sb-ext:defglobal +html-unquoted-attribute-excluded-characters+ (concatenate 'string (string #\") "'=<>" (string (code-char #x60))))
+(sb-ext:defglobal +html-unquoted-attribute-excluded-characters+ "\"'=<>`")
 
 (sb-ext:defglobal +autolink-angle-excluded-characters+ "<>")
 
 (sb-ext:defglobal +uri-scheme-extra-characters+ "+.-")
 
-(sb-ext:defglobal +angle-email-local-part-characters+ (concatenate 'string "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.!#$%&'*+/=?^_" (string (code-char #x60)) "{|}~-"))
+(sb-ext:defglobal +angle-email-local-part-characters+ "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.!#$%&'*+/=?^_`{|}~-")
 
 (sb-ext:defglobal +email-local-part-extra-characters+ ".-_+")
 
@@ -97,15 +97,15 @@
 
 (sb-ext:defglobal +bare-url-trailing-punctuation-characters+ "?!.,:*_~")
 
-(sb-ext:defglobal +common-quote-characters+ (list #\" #\'))
+(sb-ext:defglobal +common-quote-characters+ '(#\" #\'))
 
-(sb-ext:defglobal +link-label-unescape-characters+ (list #\\ #\[ #\]))
+(sb-ext:defglobal +link-label-unescape-characters+ '(#\\ #\[ #\]))
 
-(sb-ext:defglobal +reference-label-space-characters+ (list #\Space #\Tab #\Newline))
+(sb-ext:defglobal +reference-label-space-characters+ '(#\Space #\Tab #\Newline))
 
-(sb-ext:defglobal +inline-delimiter-characters+ (list #\* #\_ #\~))
+(sb-ext:defglobal +inline-delimiter-characters+ '(#\* #\_ #\~))
 
-(sb-ext:defglobal +inline-text-special-characters+ (list #\\ #\` #\& #\< #\Newline #\Space #\Tab #\! #\[ #\] #\* #\_ #\~))
+(sb-ext:defglobal +inline-text-special-characters+ '(#\\ #\` #\& #\< #\Newline #\Space #\Tab #\! #\[ #\] #\* #\_ #\~))
 
 (sb-ext:defglobal +numeric-reference-hex-prefix-characters+ "xX")
 
@@ -113,7 +113,7 @@
 
 (sb-ext:defglobal +bare-url-preceding-excluded-characters+ ":/@<")
 
-(sb-ext:defglobal +link-title-delimiters+ (list #\" #\' #\())
+(sb-ext:defglobal +link-title-delimiters+ '(#\" #\' #\())
 (sb-ext:defglobal +www-url-prefix+ "www.")
 (sb-ext:defglobal +https-url-prefix+ "https://")
 (sb-ext:defglobal +http-url-prefix+ "http://")
