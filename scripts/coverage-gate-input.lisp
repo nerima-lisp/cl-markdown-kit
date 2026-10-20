@@ -3,52 +3,6 @@
 (defun ascii-digit-p (character)
   (and (char<= #\0 character #\9)))
 
-(defun parse-decimal (string)
-  (let ((point (position #\. string)))
-    (when
-        (or (zerop (length string))
-            (and point
-                 (or (position #\. string :start (1+ point))
-                     (= point (1- (length string))))))
-      (return-from parse-decimal
-        nil))
-    (let* ((whole
-            (if point
-                (subseq string 0 point)
-                string))
-           (fraction (and point (subseq string (1+ point)))))
-      (unless
-          (and
-           (or (plusp (length whole)) (and fraction (plusp (length fraction))))
-           (every #'ascii-digit-p whole)
-           (or (null fraction) (every #'ascii-digit-p fraction)))
-        (return-from parse-decimal
-          nil))
-      (let ((whole-value
-             (if (plusp (length whole))
-                 (parse-integer whole)
-                 0)))
-        (if fraction
-            (+ whole-value
-               (/ (parse-integer fraction) (expt 10 (length fraction))))
-            whole-value)))))
-
-(defun resolve-percent (setting given environment default)
-  (multiple-value-bind (raw origin)
-      (resolve-setting setting given environment default)
-    (let ((number
-           (if (realp raw)
-               raw
-               (parse-decimal raw))))
-      (unless (and number (<= 0 number 100))
-        (gate-fail
-         (format nil
-                 "--~A (~A) must be a percentage in 0..100, got '~A'"
-                 setting
-                 origin
-                 raw)))
-      number)))
-
 (defun split-on-character (string separator)
   (loop with start = 0
         for
@@ -300,50 +254,45 @@
   (with-open-file (stream path :direction :input :external-format :utf-8)
     (read-rows-from-stream path stream)))
 
-(defun read-exclusion-rules (path)
-  (with-open-file (stream path :direction :input :external-format :utf-8)
-    (let ((*read-eval* nil)
-          (eof (gensym "EOF"))
-          (rules nil))
-      (loop for form = (read stream nil eof)
-            until (eq form eof)
-            do (unless (and (consp form) (keywordp (first form)))
-                 (gate-fail
-                  (format nil
-                          "~A: expected an exclusion rule, got ~S"
-                          path
-                          form))) (let* ((kind-value (getf form :kind))
-                                         (head (getf form :head))
-                                         (name (getf form :name))
-                                         (reproduction
-                                          (getf form :reproduction)))
-                                    (unless
-                                        (and (symbolp kind-value)
-                                             (stringp head)
-                                             (or (null name) (stringp name))
-                                             (stringp reproduction))
-                                      (gate-fail
-                                       (format nil
-                                               "~A: expected :kind and :head in '~S'"
-                                               path
-                                               form)))
-                                    (unless (probe-file reproduction)
-                                      (gate-fail
-                                       (format nil
-                                               "~A: missing reproduction ~A"
-                                               path
-                                               reproduction)))
-                                    (push
-                                     (list :kind
-                                           (string-downcase
-                                            (symbol-name kind-value))
-                                           :head
-                                           head
-                                           :name
-                                           name
-                                           :reproduction
-                                           reproduction)
-                                     rules)))
-      (unless rules
-        (gate-fail (format nil "~A has no exclusion rules" path)))
-      (nreverse rules))))
+(defun source-files-under (directory)
+  (append
+   (directory (merge-pathnames "*.lisp" directory) :resolve-symlinks t)
+   (mapcan #'source-files-under (uiop:subdirectories directory))))
+
+(defun manifest-source-files (source-root)
+  (let ((directory
+         (uiop:ensure-directory-pathname (pathname source-root))))
+    (unless (probe-file directory)
+      (gate-fail (format nil "source root does not exist: ~A" directory)))
+    (setf directory (uiop:ensure-directory-pathname (truename directory)))
+    (let ((files (source-files-under directory)))
+      (unless files
+        (gate-fail (format nil "source root contains no .lisp files: ~A" directory)))
+      (mapcar (lambda (file) (enough-namestring file directory))
+              (sort files (function string<) :key (lambda (file)
+                                           (enough-namestring file directory)))))))
+
+(defun file-list-text (files)
+  (format nil "~{~A~^, ~}" files))
+
+(defun validate-source-manifest (rows source-root)
+  (let ((manifest (manifest-source-files source-root))
+        (seen (make-hash-table :test #'equal))
+        (duplicates nil)
+        (external nil))
+    (dolist (row rows)
+      (let ((file (getf row :file)))
+        (if (member file manifest :test #'string=)
+            (if (gethash file seen)
+                (push file duplicates)
+                (setf (gethash file seen) t))
+            (push file external))))
+    (let ((missing (remove-if (lambda (file) (gethash file seen)) manifest)))
+      (when (or missing duplicates external)
+        (gate-fail
+         (format nil
+                 "summary files do not match source manifest: missing [~A]; duplicate [~A]; outside source root [~A]"
+                 (file-list-text (nreverse missing))
+                 (file-list-text (nreverse duplicates))
+                 (file-list-text (nreverse external)))))
+      manifest)))

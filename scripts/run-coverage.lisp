@@ -383,9 +383,7 @@
                                    (list "--input"
                                          (namestring summary-file)
                                          "--source-root"
-                                         (namestring source-directory)
-                                         "--exclusions"
-                                         "scripts/coverage-exclusions.sexp")))))
+                                         (namestring source-directory))))))
           (format t
                   "~&Coverage: ~D/~D expressions, ~D/~D branches.~%"
                   (getf statistics :expression-covered)
