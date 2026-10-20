@@ -1,6 +1,8 @@
 ;;;; src/source.lisp
 (in-package #:cl-markdown-kit)
 
+(defconstant +default-max-input-size+ 16777216)
+
 (defstruct (source-boundary
              (:constructor %make-source-boundary (offset line column)))
   (offset 0 :type (integer 0 *))
@@ -109,7 +111,6 @@ BOUNDARIES has one entry for each text boundary, including both ends."
 (defun make-source-format (&key (input-kind :string) encoding (bom-p nil)
                                 (newline-style :none) (newline-sequence #()))
   (%make-source-format input-kind encoding bom-p newline-style newline-sequence))
-
 (defstruct (source-buffer
              (:constructor %make-source-buffer
                  (source normalized-text format boundary-map)))
@@ -117,7 +118,6 @@ BOUNDARIES has one entry for each text boundary, including both ends."
   (normalized-text "" :type string)
   (format nil :type source-format)
   (boundary-map nil :type boundary-map))
-(defconstant +default-max-input-size+ 16777216)
 
 (defun %bom-character ()
   #+sb-unicode
