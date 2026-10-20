@@ -165,7 +165,18 @@
                             (eq (getf definition :family) family)))
                      *node-definitions*))
 
-    (defun %node-definition-depth (definition) (loop with current = definition with depth = 0 do (let* ((parent (getf current :parent)) (parent-definition (find parent *node-definitions* :key (lambda (item) (getf item :name))))) (unless parent-definition (return depth)) (incf depth) (setf current parent-definition))))
+    (defun %node-definition-depth (definition)
+      (loop with current = definition
+            with depth = 0
+            do (let* ((parent (getf current :parent))
+                      (parent-definition
+                        (find parent *node-definitions*
+                              :key (lambda (item)
+                                     (getf item :name)))))
+                 (unless parent-definition
+                   (return depth))
+                 (incf depth)
+                 (setf current parent-definition))))
 
     (defun %sorted-node-definitions (&optional family)
       (stable-sort (if family (%node-definitions-for-family family)
@@ -351,14 +362,24 @@
 
 (define-node (defstruct (inline-node (:include node) (:constructor make-inline-node))) :abstract t :kind nil :family :abstract :children nil :attributes () :edit-text :empty :edit-attributes ())
 
-(define-node (defstruct (document (:include block-node) (:constructor make-document)) (children nil :type list)
-  (source nil :type (or null string))
-  (source-format nil :type (or null source-format))
-  (reference-index nil :type (or null hash-table))
-  (front-matter-p t :type boolean)
-  (gfm-p t :type boolean)
-  (max-nesting-depth +default-max-nesting-depth+ :type (integer 1 *))
-  (max-inline-delimiter-depth +default-max-inline-delimiter-depth+ :type (integer 1 *))) :kind :document :family :block :children children :attributes (:front-matter-p :gfm-p) :edit-text :container :edit-attributes ())
+(define-node
+  (defstruct (document (:include block-node) (:constructor make-document))
+    (children nil :type list)
+    (source nil :type (or null string))
+    (source-format nil :type (or null source-format))
+    (reference-index nil :type (or null hash-table))
+    (front-matter-p t :type boolean)
+    (gfm-p t :type boolean)
+    (max-nesting-depth +default-max-nesting-depth+ :type (integer 1 *))
+    (max-inline-delimiter-depth +default-max-inline-delimiter-depth+
+                                :type (integer 1 *))
+    (max-input-size +default-max-input-size+ :type (integer 1 *)))
+  :kind :document
+  :family :block
+  :children children
+  :attributes (:front-matter-p :gfm-p :max-input-size)
+  :edit-text :container
+  :edit-attributes ())
 
 (define-node (defstruct (front-matter (:include block-node) (:constructor make-front-matter)) (raw-text "" :type string)
   (opening-delimiter "---" :type string)

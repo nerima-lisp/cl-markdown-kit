@@ -118,6 +118,7 @@ BOUNDARIES has one entry for each text boundary, including both ends."
   (format nil :type source-format)
   (boundary-map nil :type boundary-map))
 
+(defconstant +default-max-input-size+ 16777216)
 (defun %bom-character ()
   #+sb-unicode
   (code-char #xfeff))
@@ -126,40 +127,59 @@ BOUNDARIES has one entry for each text boundary, including both ends."
   (and (plusp (length string))
        (= (char-code (char string 0)) #xfeff)))
 
-(defun %read-character-stream (stream)
+(defun %read-character-stream (stream &optional max-input-size context)
   (unless (input-stream-p stream)
     (error 'type-error :datum stream :expected-type '(satisfies input-stream-p)))
   (unless (nth-value 0 (subtypep (stream-element-type stream) 'character))
-    (error "Expected a character input stream, got element type ~S."
-           (stream-element-type stream)))
+    (error 'type-error :datum (stream-element-type stream)
+           :expected-type 'character))
   (with-output-to-string (output)
-    (loop for character = (read-char stream nil nil)
-          while character
-          do (write-char character output))))
+    (let ((count 0))
+      (loop for character = (read-char stream nil nil)
+            while character
+            do (when max-input-size
+                 (incf count)
+                 (when (> count max-input-size)
+                   (error 'markdown-resource-limit-error
+                          :limit-name :input-size
+                          :limit max-input-size
+                          :actual count
+                          :context context)))
+               (write-char character output)))))
 
-(defun %decode-source-input (source)
-  (cond
-    ((stringp source)
-     (values source :string nil nil))
-    ((and (vectorp source)
-          (typep source '(vector (unsigned-byte 8))))
-     (multiple-value-bind (encoding bom-octets)
-         (cl-codec-kit:detect-unicode-encoding source)
-       (let* ((decoded (cl-codec-kit:octets-to-string
-                        source :encoding :auto :errorp t))
-              (restored
-                (if (plusp bom-octets)
-                    (concatenate 'string (string (%bom-character)) decoded)
-                    decoded)))
-         (values restored :octets encoding (plusp bom-octets)))))
-    ((streamp source)
-     (values (%read-character-stream source) :stream nil nil))
-    (t
-     (error 'type-error
-            :datum source
-            :expected-type '(or string
-                                (vector (unsigned-byte 8))
-                                (satisfies input-stream-p))))))
+(defun %decode-source-input (source &optional max-input-size context)
+  (flet ((check-input-size (actual)
+           (when (and max-input-size (> actual max-input-size))
+             (error 'markdown-resource-limit-error
+                    :limit-name :input-size
+                    :limit max-input-size
+                    :actual actual
+                    :context context))))
+    (cond
+      ((stringp source)
+       (check-input-size (length source))
+       (values source :string nil nil))
+      ((and (vectorp source)
+            (typep source '(vector (unsigned-byte 8))))
+       (check-input-size (length source))
+       (multiple-value-bind (encoding bom-octets)
+           (cl-codec-kit:detect-unicode-encoding source)
+         (let* ((decoded (cl-codec-kit:octets-to-string
+                          source :encoding :auto :errorp t))
+                (restored
+                  (if (plusp bom-octets)
+                      (concatenate 'string (string (%bom-character)) decoded)
+                      decoded)))
+           (values restored :octets encoding (plusp bom-octets)))))
+      ((streamp source)
+       (values (%read-character-stream source max-input-size context)
+               :stream nil nil))
+      (t
+       (error 'type-error
+              :datum source
+              :expected-type '(or string
+                                  (vector (unsigned-byte 8))
+                                  (satisfies input-stream-p)))))))
 
 (defun %newline-style (sequence)
   (cond
@@ -236,13 +256,9 @@ BOUNDARIES has one entry for each text boundary, including both ends."
       (values text normalized-line-starts source-line-starts
               (%newline-style line-endings) line-endings))))
 
-(defun make-source-buffer (source)
-  "Snapshot SOURCE and build normalized text, format metadata, and coordinates.
-
-SOURCE may be a string, character input stream, or octet vector. An initial BOM
-remains in the source snapshot and is omitted from the parser-facing text."
+(defun %build-source-buffer-from-input (source &optional max-input-size context)
   (multiple-value-bind (decoded input-kind encoding octet-bom-p)
-      (%decode-source-input source)
+      (%decode-source-input source max-input-size context)
     (let* ((source-text (copy-seq decoded))
            (bom-p (or octet-bom-p (%starts-with-bom-p source-text)))
            (initial-offset (if (%starts-with-bom-p source-text) 1 0)))
@@ -256,6 +272,12 @@ remains in the source snapshot and is omitted from the parser-facing text."
                                      normalized-line-starts source-line-starts
                                      nil #() #())))
           (%make-source-buffer source-text normalized-text format boundary-map))))))
+(defun make-source-buffer (source)
+  "Snapshot SOURCE and build normalized text, format metadata, and coordinates.
+
+SOURCE may be a string, character input stream, or octet vector. An initial BOM
+remains in the source snapshot and is omitted from the parser-facing text."
+  (%build-source-buffer-from-input source))
 
 (defun make-source-span (boundary-map start end)
   "Create a cl-parser-kit span for [START,END) in BOUNDARY-MAP's text."

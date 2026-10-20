@@ -41,7 +41,7 @@
   owner)
 
 (defun %parse-source-buffer (source-buffer front-matter gfm max-nesting-depth
-                             max-inline-delimiter-depth)
+                             max-inline-delimiter-depth max-input-size)
   (check-type gfm boolean)
   (let* ((nesting-limit (%positive-limit max-nesting-depth))
          (inline-limit (%positive-limit max-inline-delimiter-depth))
@@ -68,64 +68,95 @@
           (document-front-matter-p document) (not (null front-matter))
           (document-gfm-p document) gfm
           (document-max-nesting-depth document) nesting-limit
-          (document-max-inline-delimiter-depth document) inline-limit)
+          (document-max-inline-delimiter-depth document) inline-limit
+          (document-max-input-size document) max-input-size)
     document))
 
 (defun parse-string (string &key (front-matter t) (gfm t)
                                (max-nesting-depth +default-max-nesting-depth+)
-                               (max-inline-delimiter-depth +default-max-inline-delimiter-depth+))
-  "Parse STRING; GFM controls extension parsing and FRONT-MATTER controls leading front matter."
+                               (max-inline-delimiter-depth +default-max-inline-delimiter-depth+)
+                               (max-input-size +default-max-input-size+))
+  "Parse STRING using the selected parser options.
+
+FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
+an optional BOM becomes a front-matter node. GFM controls extension parsing.
+MAX-INPUT-SIZE must be positive, counts characters, and defaults to
++DEFAULT-MAX-INPUT-SIZE+."
   (check-type string string)
-  (%parse-source-buffer (make-source-buffer string)
-                        front-matter
-                        gfm
-                        max-nesting-depth max-inline-delimiter-depth))
+  (let ((input-limit (%positive-limit max-input-size)))
+    (%parse-source-buffer
+     (%build-source-buffer-from-input string input-limit "parse-string")
+     front-matter gfm max-nesting-depth max-inline-delimiter-depth input-limit)))
 
 (defun parse-stream (character-stream &key (front-matter t) (gfm t)
                                        (max-nesting-depth +default-max-nesting-depth+)
-                                       (max-inline-delimiter-depth +default-max-inline-delimiter-depth+))
-  "Parse a character stream; GFM controls extension parsing."
+                                       (max-inline-delimiter-depth +default-max-inline-delimiter-depth+)
+                                       (max-input-size +default-max-input-size+))
+  "Parse CHARACTER-STREAM using the selected parser options.
+
+FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
+an optional BOM becomes a front-matter node. GFM controls extension parsing.
+MAX-INPUT-SIZE must be positive, counts characters, and defaults to
++DEFAULT-MAX-INPUT-SIZE+. On overflow, the parser consumes the first character
+beyond the limit, signals markdown-resource-limit-error, and leaves the rest of
+the stream unread."
   (check-type character-stream stream)
-  (%parse-source-buffer (make-source-buffer character-stream)
-                        front-matter
-                        gfm
-                        max-nesting-depth max-inline-delimiter-depth))
+  (let ((input-limit (%positive-limit max-input-size)))
+    (%parse-source-buffer
+     (%build-source-buffer-from-input
+      character-stream input-limit "parse-stream")
+     front-matter gfm max-nesting-depth max-inline-delimiter-depth input-limit)))
 
 (defun parse-octets (octet-vector &key (front-matter t) (gfm t)
                                     (max-nesting-depth +default-max-nesting-depth+)
-                                    (max-inline-delimiter-depth +default-max-inline-delimiter-depth+))
-  "Decode and parse OCTET-VECTOR; GFM controls extension parsing."
+                                    (max-inline-delimiter-depth +default-max-inline-delimiter-depth+)
+                                    (max-input-size +default-max-input-size+))
+  "Decode and parse OCTET-VECTOR using the selected parser options.
+
+FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
+an optional BOM becomes a front-matter node. GFM controls extension parsing.
+MAX-INPUT-SIZE must be positive, counts octets, and defaults to
++DEFAULT-MAX-INPUT-SIZE+. The size check runs before decoding."
   (unless (typep octet-vector '(vector (unsigned-byte 8)))
     (error 'type-error :datum octet-vector
            :expected-type '(vector (unsigned-byte 8))))
-  (%parse-source-buffer (make-source-buffer octet-vector)
-                        front-matter
-                        gfm
-                        max-nesting-depth max-inline-delimiter-depth))
+  (let ((input-limit (%positive-limit max-input-size)))
+    (%parse-source-buffer
+     (%build-source-buffer-from-input octet-vector input-limit "parse-octets")
+     front-matter gfm max-nesting-depth max-inline-delimiter-depth input-limit)))
 
 (defun parse (source &key (front-matter t) (gfm t)
                         (max-nesting-depth +default-max-nesting-depth+)
-                        (max-inline-delimiter-depth +default-max-inline-delimiter-depth+))
-  "Parse SOURCE; GFM controls extension parsing and FRONT-MATTER controls leading front matter."
+                        (max-inline-delimiter-depth +default-max-inline-delimiter-depth+)
+                        (max-input-size +default-max-input-size+))
+  "Parse SOURCE, dispatching by type.
+
+FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
+an optional BOM becomes a front-matter node. GFM controls extension parsing.
+MAX-INPUT-SIZE must be positive, counts characters for strings and character
+streams and octets for byte vectors, and defaults to +DEFAULT-MAX-INPUT-SIZE+."
   (cond
     ((stringp source)
      (parse-string source
                    :front-matter front-matter
                    :gfm gfm
                    :max-nesting-depth max-nesting-depth
-                   :max-inline-delimiter-depth max-inline-delimiter-depth))
+                   :max-inline-delimiter-depth max-inline-delimiter-depth
+                   :max-input-size max-input-size))
     ((typep source '(vector (unsigned-byte 8)))
      (parse-octets source
                    :front-matter front-matter
                    :gfm gfm
                    :max-nesting-depth max-nesting-depth
-                   :max-inline-delimiter-depth max-inline-delimiter-depth))
+                   :max-inline-delimiter-depth max-inline-delimiter-depth
+                   :max-input-size max-input-size))
     ((and (streamp source) (input-stream-p source))
      (parse-stream source
                    :front-matter front-matter
                    :gfm gfm
                    :max-nesting-depth max-nesting-depth
-                   :max-inline-delimiter-depth max-inline-delimiter-depth))
+                   :max-inline-delimiter-depth max-inline-delimiter-depth
+                   :max-input-size max-input-size))
     (t
      (error 'type-error
             :datum source

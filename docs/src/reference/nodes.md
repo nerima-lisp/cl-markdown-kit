@@ -32,7 +32,7 @@ inline nodes.
 
 | Type | Constructor | Fields |
 |---|---|---|
-| `document` | `make-document` | `children`, `source`, `source-format`, `reference-index`, `front-matter-p`, `gfm-p`, `max-nesting-depth`, `max-inline-delimiter-depth` |
+| `document` | `make-document` | `children`, `source`, `source-format`, `reference-index`, `front-matter-p`, `gfm-p`, `max-nesting-depth`, `max-inline-delimiter-depth`, `max-input-size` |
 | `front-matter` | `make-front-matter` | `raw-text`, `opening-delimiter`, `closing-delimiter` |
 | `block-quote` | `make-block-quote` | `children` |
 | `list-node` | `make-list-node` | `kind` (`:ordered` or `:unordered`), `tight-p`, `start-number`, `marker-character`, `delimiter-character`, `items` |
@@ -160,11 +160,13 @@ observed ending in order. Octet input retains the Unicode encoding selected by
 The public parser entry points are:
 
 ```lisp
-(parse source &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
-(parse-string string &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
-(parse-stream character-stream &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
-(parse-octets octet-vector &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
+(parse source &key front-matter gfm max-nesting-depth max-inline-delimiter-depth max-input-size)
+(parse-string string &key front-matter gfm max-nesting-depth max-inline-delimiter-depth max-input-size)
+(parse-stream character-stream &key front-matter gfm max-nesting-depth max-inline-delimiter-depth max-input-size)
+(parse-octets octet-vector &key front-matter gfm max-nesting-depth max-inline-delimiter-depth max-input-size)
 ```
+
+`parse` dispatches by input type and returns the parsed document.
 
 `parse-blocks` exposes the block-parsing stage used by the parser facade:
 
@@ -185,8 +187,7 @@ and boundary map. Its predicate is `inline-fragment-p`; its constructor is
 `make-inline-fragment` with `:node`, `:text`, and `:boundary-map` keywords; and
 its readers are `inline-fragment-node`, `inline-fragment-text`, and
 `inline-fragment-boundary-map`. The text and map provide the input needed to
-parse that node's inline content while retaining source boundaries. The normal
-`parse` entry points complete this inline stage before returning a document.
+parse that node's inline content while retaining source boundaries.
 
 `:front-matter` defaults to `t`. When true, a leading `---` line and a later
 closing `---` line are read as a front-matter node, after an optional byte
@@ -196,11 +197,27 @@ The parser retains front-matter text without interpreting it as YAML.
 `:gfm` defaults to `t`, enabling GFM block and inline extensions. Set it to
 `nil` to parse CommonMark without GFM extensions.
 
-`make-document` accepts `:front-matter-p` and `:gfm-p` keywords. A parsed
-document exposes these settings through `document-front-matter-p` and
-`document-gfm-p`, respectively; each reader returns `t` when its option is
-enabled and `nil` when disabled. Source-preserving edit operations reuse these
-values when reparsing edited source.
+`make-document` accepts `:front-matter-p`, `:gfm-p`, `:max-nesting-depth`,
+`:max-inline-delimiter-depth`, and `:max-input-size` keywords. A parsed document
+exposes these settings through `document-front-matter-p`, `document-gfm-p`,
+`document-max-nesting-depth`, `document-max-inline-delimiter-depth`, and
+`document-max-input-size`. The boolean readers return `t` when enabled and
+`nil` when disabled; the limit readers return their configured positive
+integers. Source-preserving edit operations reuse the front-matter and GFM
+settings when reparsing edited source.
 
-Limits must be positive integers. Defaults are 256 open block-container
-levels and 4096 unresolved inline delimiter or bracket records in a fragment.
+`max-input-size` defaults to `+default-max-input-size+`, which is 16,777,216.
+For strings and character streams, the limit counts characters. For octet
+vectors, it counts octets and is checked before decoding. A stream parser reads
+through the first character beyond the limit, then signals
+`markdown-resource-limit-error`; the rest of the stream remains unread. The
+condition reports `:input-size`, the configured limit, and the observed size.
+Read those values with `markdown-resource-limit-error-limit-name`,
+`markdown-resource-limit-error-limit`, `markdown-resource-limit-error-actual`,
+and `markdown-resource-limit-error-context`. The context reader returns the
+selected entry point name as a string. Errors raised through `parse` use the
+delegated entry point value: `parse-string`, `parse-stream`, or `parse-octets`.
+
+All limits must be positive integers. `max-nesting-depth` defaults to 256 open
+block-container levels. `max-inline-delimiter-depth` defaults to a combined
+count of 4096 unresolved inline delimiter and bracket records in one fragment.

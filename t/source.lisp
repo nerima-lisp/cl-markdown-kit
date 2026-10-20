@@ -14,10 +14,11 @@
           (cl-parser-kit:span-start-line span)
           (cl-parser-kit:span-start-column span))))
 
-(defun source-contract-signals-p (function)
+(defun source-contract-signals-p (function expected-type)
   (handler-case
       (progn (funcall function) nil)
-    (serious-condition () t)))
+    (serious-condition (condition)
+      (typep condition expected-type))))
 
 (describe "Source buffer contract"
   (it "constructs public source formats and spans"
@@ -237,34 +238,36 @@
                (cl-markdown-kit:source-buffer-format trailing-cr-buffer))
               :to-equal :cr)
       (expect (source-contract-signals-p
-               (lambda ()
-                 (cl-markdown-kit::make-boundary-map "" #())))
+               (lambda () (cl-markdown-kit::make-boundary-map "" #()))
+               simple-error)
               :to-be-truthy)
       (expect (source-contract-signals-p
                (lambda ()
-                 (cl-markdown-kit::make-boundary-map "x" #(0))))
+                 (cl-markdown-kit::make-boundary-map "x" #(0)))
+               type-error)
               :to-be-truthy)
       (expect (source-contract-signals-p
-               (lambda () (cl-markdown-kit:make-source-buffer 7)))
+               (lambda () (cl-markdown-kit:make-source-buffer 7))
+               type-error)
               :to-be-truthy)
       (expect (source-contract-signals-p
-               (lambda () (cl-markdown-kit:source-buffer-span empty-buffer 1 0)))
+               (lambda () (cl-markdown-kit:source-buffer-span empty-buffer 1 0))
+               simple-error)
               :to-be-truthy)
       (expect (cl-markdown-kit::source-boundary-offset
                (cl-markdown-kit::boundary-map-boundary composed-map 2))
               :to-equal 3)
       (expect (source-contract-signals-p
-               (lambda ()
-                 (cl-markdown-kit::boundary-map-boundary
-                  (cl-markdown-kit::source-buffer-boundary-map mapped-buffer)
-                  4)))
+               (lambda () (cl-markdown-kit::boundary-map-boundary (cl-markdown-kit::source-buffer-boundary-map mapped-buffer) 4))
+               simple-error)
               :to-be-truthy)
       (expect (source-contract-signals-p
-               (lambda ()
-                 (cl-markdown-kit::boundary-map-boundary composed-map 4)))
+               (lambda () (cl-markdown-kit::boundary-map-boundary composed-map 4))
+               simple-error)
               :to-be-truthy)
       (with-open-file (stream "/dev/null" :direction :input
                                        :element-type '(unsigned-byte 8))
         (expect (source-contract-signals-p
-                 (lambda () (cl-markdown-kit:make-source-buffer stream)))
+               (lambda () (cl-markdown-kit:make-source-buffer stream))
+               type-error)
                 :to-be-truthy)))))

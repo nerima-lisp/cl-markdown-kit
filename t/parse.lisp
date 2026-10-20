@@ -39,10 +39,11 @@
           (when (fboundp inline-symbol)
             (fmakunbound inline-symbol))))))
 
-(defun parser-contract-signals-p (function)
+(defun parser-contract-signals-p (function expected-type)
   (handler-case
       (progn (funcall function) nil)
-    (serious-condition () t)))
+    (serious-condition (condition)
+      (typep condition expected-type))))
 (defun parser-contract-call-entry-point (entry-point input option value)
   (labels ((call-with-option (function argument)
              (if (eq option :none)
@@ -141,10 +142,96 @@
       (expect (cl-markdown-kit::block-parse-result-inline-fragments first-result)
               :to-equal nil)
       (expect (parser-contract-signals-p
-               (lambda ()
+                  (lambda ()
                  (cl-markdown-kit::make-block-parse-result
-                  :reference-index nil)))
+                  :reference-index nil))
+                  type-error)
               :to-be-truthy)))
+  (it "enforces input-size limits before parsing, reading further, or decoding octets"
+    (let ((*parser-contract-block-result* nil)
+          (*parser-contract-block-calls* nil)
+          (*parser-contract-inline-calls* nil))
+      (labels ((capture-resource-limit-error (function)
+                 (handler-case
+                     (progn (funcall function) nil)
+                   (cl-markdown-kit:markdown-resource-limit-error (condition)
+                     condition))))
+        (call-with-parser-contract-stubs
+         (lambda ()
+           (expect
+            (cl-markdown-kit:document-max-input-size
+             (cl-markdown-kit:parse-string "abc" :max-input-size 3))
+            :to-equal 3)
+           (let ((condition
+                   (capture-resource-limit-error
+                    (lambda ()
+                      (cl-markdown-kit:parse-string "abcd" :max-input-size 3)))))
+             (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
+                      condition)
+                     :to-equal :input-size)
+             (expect (cl-markdown-kit:markdown-resource-limit-error-limit condition)
+                     :to-equal 3)
+             (expect (cl-markdown-kit:markdown-resource-limit-error-actual condition)
+                     :to-equal 4)
+             (expect (cl-markdown-kit:markdown-resource-limit-error-context condition)
+                     :to-equal "parse-string"))
+           (with-input-from-string (stream "abc")
+             (expect
+              (cl-markdown-kit:document-max-input-size
+               (cl-markdown-kit:parse-stream stream :max-input-size 3))
+              :to-equal 3))
+           (with-input-from-string (stream "abcde")
+             (let ((condition
+                     (capture-resource-limit-error
+                      (lambda ()
+                        (cl-markdown-kit:parse-stream stream :max-input-size 3)))))
+               (progn
+                 (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
+                          condition)
+                         :to-equal :input-size)
+                 (expect (cl-markdown-kit:markdown-resource-limit-error-limit
+                          condition)
+                         :to-equal 3)
+                 (expect (cl-markdown-kit:markdown-resource-limit-error-actual
+                          condition)
+                         :to-equal 4))
+               (expect (cl-markdown-kit:markdown-resource-limit-error-context
+                        condition)
+                       :to-equal "parse-stream")
+               (expect (read-char stream nil nil) :to-equal #\e)))
+           (let ((octets
+                   (make-array 3 :element-type '(unsigned-byte 8)
+                                 :initial-contents '(65 66 67))))
+             (expect
+              (cl-markdown-kit:document-max-input-size
+               (cl-markdown-kit:parse-octets octets :max-input-size 3))
+              :to-equal 3))
+           (let ((condition
+                   (capture-resource-limit-error
+                    (lambda ()
+                      (cl-markdown-kit:parse-octets
+                       (make-array 4 :element-type '(unsigned-byte 8)
+                                     :initial-contents '(255 255 255 255))
+                       :max-input-size 3)))))
+             (progn
+               (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
+                        condition)
+                       :to-equal :input-size)
+               (expect (cl-markdown-kit:markdown-resource-limit-error-limit
+                        condition)
+                       :to-equal 3)
+               (expect (cl-markdown-kit:markdown-resource-limit-error-actual
+                        condition)
+                       :to-equal 4))
+             (expect (cl-markdown-kit:markdown-resource-limit-error-context
+                      condition)
+                     :to-equal "parse-octets"))
+           (expect
+            (parser-contract-signals-p
+             (lambda ()
+               (cl-markdown-kit:parse-string "x" :max-input-size 0))
+             (quote type-error))
+            :to-be-truthy))))))
 
   (it "dispatches supported input types and rejects invalid inputs and limits"
     (let ((*parser-contract-block-result* nil)
@@ -162,45 +249,54 @@
                    (typep (cl-markdown-kit:parse stream) 'cl-markdown-kit:document))
                  :to-be-truthy)
          (expect (parser-contract-signals-p
-                  (lambda () (cl-markdown-kit:parse :invalid)))
+                  (lambda () (cl-markdown-kit:parse :invalid))
+                  type-error)
                  :to-be-truthy)
          (expect (parser-contract-signals-p
-                  (lambda () (cl-markdown-kit:parse-string 1)))
+                  (lambda () (cl-markdown-kit:parse-string 1))
+                  type-error)
                  :to-be-truthy)
          (expect (parser-contract-signals-p
-                  (lambda () (cl-markdown-kit:parse-stream 1)))
+                  (lambda () (cl-markdown-kit:parse-stream 1))
+                  type-error)
                  :to-be-truthy)
          (expect (with-output-to-string (stream)
                    (parser-contract-signals-p
-                    (lambda ()
-                      (cl-markdown-kit:parse-stream stream))))
+                  (lambda ()
+                      (cl-markdown-kit:parse-stream stream))
+                  type-error))
                  :to-be-truthy)
          (expect (parser-contract-signals-p
-                  (lambda () (cl-markdown-kit:parse-octets "x")))
+                  (lambda () (cl-markdown-kit:parse-octets "x"))
+                  type-error)
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda ()
                     (cl-markdown-kit:parse-string "x"
-                                                  :max-nesting-depth 0)))
+                                                  :max-nesting-depth 0))
+                  type-error)
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda ()
                     (cl-markdown-kit:parse-string
-                     "x" :max-inline-delimiter-depth 0)))
+                     "x" :max-inline-delimiter-depth 0))
+                  type-error)
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda ()
-                    (cl-markdown-kit:parse-string "" :gfm :invalid)))
+                    (cl-markdown-kit:parse-string "" :gfm :invalid))
+                  type-error)
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda ()
                     (cl-markdown-kit:parse-string
-                     "x" :max-nesting-depth "invalid")))
+                     "x" :max-nesting-depth "invalid"))
+                  type-error)
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda ()
-                    (cl-markdown-kit::%set-inline-children
-                     (cl-markdown-kit:make-front-matter) nil)))
+                    (cl-markdown-kit::%set-inline-children (cl-markdown-kit:make-front-matter) nil))
+                  simple-error)
                  :to-be-truthy)))))
 
   (cl-weave:it-each ((:parse-string "string")
@@ -224,15 +320,27 @@
                     entry-point input :none nil)))))
           (expect (cl-markdown-kit:document-max-nesting-depth document)
                   :to-equal 256)
-          (expect
-           (cl-markdown-kit:document-max-inline-delimiter-depth document)
-           :to-equal 4096)
+          (progn
+            (expect
+             (cl-markdown-kit:document-max-inline-delimiter-depth document)
+             :to-equal 4096)
+            (expect
+             (cl-markdown-kit:document-max-input-size document)
+             :to-equal cl-markdown-kit:+default-max-input-size+))
           (expect (second (first *parser-contract-block-calls*))
                   :to-equal 256)
           (expect (third (first *parser-contract-block-calls*))
                   :to-equal t)
-          (expect (fourth (first *parser-contract-block-calls*))
-                  :to-equal t)))))
+          (progn
+            (expect (fourth (first *parser-contract-block-calls*))
+                    :to-equal t)
+            (let ((limited-document
+                    (call-with-parser-contract-stubs
+                     (lambda ()
+                       (parser-contract-call-entry-point
+                        entry-point input :max-input-size 7)))))
+              (expect (cl-markdown-kit:document-max-input-size limited-document)
+                      :to-equal 7)))))))
 
   (cl-weave:it-each ((:parse-string "string")
      (:parse-stream "stream")

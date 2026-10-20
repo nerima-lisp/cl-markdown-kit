@@ -80,6 +80,7 @@
    #:document-front-matter-p
    #:document-gfm-p
    #:document-max-nesting-depth
+   #:document-max-input-size
    #:document-max-inline-delimiter-depth
    #:front-matter
    #:front-matter-p
@@ -251,6 +252,7 @@
    #:parse-string
    #:parse-stream
    #:parse-octets
+   #:+default-max-input-size+
    #:write-html
    #:write-html-to-stream
    ;; Query records and functions
