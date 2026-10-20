@@ -1,1 +1,0 @@
-(declaim (optimize speed))

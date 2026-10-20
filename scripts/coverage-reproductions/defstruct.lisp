@@ -1,1 +1,0 @@
-(defstruct coverage-reproduction value)
