@@ -356,6 +356,15 @@
       (expect (cl-markdown-kit::%normalize-newlines
                (concatenate 'string "x" cr) lf)
               :to-equal (concatenate 'string "x" lf))
+      (let ((normalized (concatenate 'string "a" lf "b")))
+        (expect (eq normalized (cl-markdown-kit::%normalize-newlines normalized lf))
+                :to-be-truthy))
+      (let ((normalized (concatenate 'string "a" cr "b")))
+        (expect (eq normalized (cl-markdown-kit::%normalize-newlines normalized cr))
+                :to-be-truthy))
+      (let ((normalized (concatenate 'string "a" crlf "b")))
+        (expect (eq normalized (cl-markdown-kit::%normalize-newlines normalized crlf))
+                :to-be-truthy))
       (expect (cl-markdown-kit::%trailing-line-ending-count "") :to-equal 0)
       (expect (cl-markdown-kit::%trailing-line-ending-count "x") :to-equal 0)
       (expect (cl-markdown-kit::%trailing-line-ending-count lf) :to-equal 1)
@@ -399,10 +408,32 @@
                (concatenate 'string "left" lf lf) "" "right" lf)
               :to-equal "")
       (expect (cl-markdown-kit::%set-trailing-newline-state
-               (concatenate 'string "text" cr crlf) (concatenate 'string "source" crlf) lf)
+               (concatenate 'string "text" cr crlf)
+               (concatenate 'string "source" crlf)
+               lf)
               :to-equal (concatenate 'string "text" lf))
+      (expect (cl-markdown-kit::%set-trailing-newline-state
+               (concatenate 'string "text" cr crlf lf)
+               (concatenate 'string "source" lf)
+               lf)
+              :to-equal (concatenate 'string "text" lf))
+      (expect (cl-markdown-kit::%set-trailing-newline-state
+               (concatenate 'string "text" crlf cr lf)
+               "source"
+               lf)
+              :to-equal "text")
       (expect (cl-markdown-kit::%set-trailing-newline-state "text" "source" lf)
               :to-equal "text")
+      (let ((replacement "text"))
+        (expect (eq replacement
+                     (cl-markdown-kit::%set-trailing-newline-state
+                      replacement "source" lf))
+                :to-be-truthy))
+      (let ((replacement (concatenate 'string "text" lf)))
+        (expect (eq replacement
+                     (cl-markdown-kit::%set-trailing-newline-state
+                      replacement (concatenate 'string "source" lf) lf))
+                :to-be-truthy))
       (expect (cl-markdown-kit::%set-trailing-newline-state "" "" lf)
               :to-equal "")))
 

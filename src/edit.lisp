@@ -56,22 +56,38 @@
        :lf)))
 
 (defun %normalize-newlines (text line-ending)
-  (with-output-to-string (output)
-    (loop with index = 0
-          while (< index (length text))
-          for character = (char text index)
-          do (cond
-               ((char= character #\Return)
-                (write-string line-ending output)
-                (incf index (if (and (< (1+ index) (length text))
-                                    (char= (char text (1+ index)) #\Newline))
-                               2 1)))
-               ((char= character #\Newline)
-                (write-string line-ending output)
-                (incf index))
-               (t
-                (write-char character output)
-                (incf index))))))
+  (let ((normalized-p
+          (loop with index = 0
+                while (< index (length text))
+                do (multiple-value-bind (style width)
+                       (%line-ending-at text index)
+                     (if style
+                         (if (and (= width (length line-ending))
+                                  (string= line-ending text
+                                           :start2 index
+                                           :end2 (+ index width)))
+                             (incf index width)
+                             (return nil))
+                         (incf index)))
+                finally (return t))))
+    (if normalized-p
+        text
+        (with-output-to-string (output)
+          (loop with index = 0
+                while (< index (length text))
+                for character = (char text index)
+                do (cond
+                     ((char= character #\Return)
+                      (write-string line-ending output)
+                      (incf index (if (and (< (1+ index) (length text))
+                                          (char= (char text (1+ index)) #\Newline))
+                                     2 1)))
+                     ((char= character #\Newline)
+                      (write-string line-ending output)
+                      (incf index))
+                     (t
+                      (write-char character output)
+                      (incf index))))))))
 
 (defun %prefix-continuation-lines (text prefix line-ending)
   (with-output-to-string (output)
@@ -160,13 +176,22 @@
        (find (char source (1- (length source))) '(#\Return #\Newline))))
 
 (defun %set-trailing-newline-state (replacement original line-ending)
-  (let ((end (length replacement)))
+  (let* ((replacement-length (length replacement))
+         (end replacement-length)
+         (original-trailing-p (%trailing-newline-p original)))
     (loop while (and (plusp end)
                      (find (char replacement (1- end)) '(#\Return #\Newline)))
           do (decf end))
-    (concatenate 'string
-                 (subseq replacement 0 end)
-                 (if (%trailing-newline-p original) line-ending ""))))
+    (if (or (and original-trailing-p
+                 (string= line-ending replacement
+                          :start2 end
+                          :end2 replacement-length))
+            (and (not original-trailing-p)
+                 (= end replacement-length)))
+        replacement
+        (concatenate 'string
+                     (subseq replacement 0 end)
+                     (if original-trailing-p line-ending "")))))
 
 (defun %span-range (span source)
   ;; Parsed spans share the document's source snapshot by identity.
