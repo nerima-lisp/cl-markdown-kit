@@ -9,7 +9,10 @@
       (t nil))))
 
 (defun lookup-html5-entity (name)
-  (gethash name *html5-entities*))
+  (let ((table (or *html5-entities*
+                   (setf *html5-entities*
+                         (build-html5-entity-table)))))
+    (gethash name table)))
 
 (defun decode-numeric-character-reference (digits radix)
   (unless (and (stringp digits)
