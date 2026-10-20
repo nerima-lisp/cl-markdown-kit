@@ -144,8 +144,8 @@
                                             (namestring exclusions-file))
                                       :output
                                       output)))
-               (unless (= status 1)
-                 (error "Expected the uncovered branch to return 1, got ~D."
+               (unless (= status 2)
+                 (error "Expected the uncovered branch and dash row to return 2, got ~D."
                         status))))))
       (unless (and (search "branch 50.0%, required 100.0%" report) (search "branch.lisp line 2: 1/2 branches covered" report) (search "dash-excluded.lisp: line 0.0%, required 100.0%" report) (uiop:symbol-call :coverage-gate :source-exclusion-lines (namestring dash-file) (uiop:symbol-call :coverage-gate :read-exclusion-rules (namestring exclusions-file)))) (error "The report did not identify the uncovered branch and low-coverage dash row with fixture exclusion ranges:~%~A" report))
       (progn
