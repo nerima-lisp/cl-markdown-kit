@@ -6,8 +6,7 @@ GitHub Flavored Markdown (GFM).
 ## Features
 
 - Parses CommonMark block and inline syntax, plus GFM tables, task lists,
-  strikethrough, extended autolinks, and footnotes. The HTML writer applies the
-  GFM tagfilter to raw HTML when enabled.
+  strikethrough, extended autolinks, and footnotes.
 - Builds an AST whose parsed nodes carry source spans.
 - Provides heading and section queries, and extraction of code blocks, links,
   images, tables, task items, headings, and front matter.
@@ -16,14 +15,15 @@ GitHub Flavored Markdown (GFM).
 - Recognizes leading YAML front matter as raw text. The optional
   `cl-markdown-kit/yaml` system parses that text as YAML.
 
-The parser accepts strings, character streams, and octet vectors. GFM and
-leading front matter parsing are enabled by default.
+The parser accepts strings, character streams, and octet vectors. Octets are
+decoded using Unicode encoding detection. GFM and leading front matter parsing
+are enabled by default.
 
 ## Conformance
 
 All 652 CommonMark 0.31.2 examples matched, with none excluded. The GFM fixture
 has 30 entries: one non-runnable `<IGNORE>` placeholder and 29 runnable
-examples, all of which matched. None of the runnable examples were excluded.
+examples, all of which matched.
 
 ## Install
 
@@ -40,15 +40,30 @@ Check out the two core dependencies under `./sources` at their release tags:
 mkdir -p sources
 git clone --branch v1.1.1 https://github.com/nerima-lisp/cl-parser-kit.git sources/cl-parser-kit
 git clone --branch v0.6.0 https://github.com/nerima-lisp/cl-codec-kit.git sources/cl-codec-kit
-export CL_SOURCE_REGISTRY='(:source-registry (:directory ".") (:tree "./sources") :inherit-configuration)'
+export CL_SOURCE_REGISTRY="(:source-registry
+  (:directory \"$PWD\")
+  (:tree \"$PWD/sources\")
+  :inherit-configuration)"
 ```
 
 To load `cl-markdown-kit/yaml`, also check out `cl-yaml-kit` v0.2.1 under
-`./sources`. This repository's direct ASDF dependencies are listed for each
-system in `cl-markdown-kit.asd`; consult the checked-out `cl-yaml-kit` system
-definition for any ASDF dependencies it requires.
+`./sources`:
 
-The supported implementation is SBCL. Load the core ASDF system with:
+```sh
+git clone --branch v0.2.1 https://github.com/nerima-lisp/cl-yaml-kit.git sources/cl-yaml-kit
+```
+
+This repository's direct ASDF dependencies are listed for each system in
+`cl-markdown-kit.asd`; consult the checked-out `cl-yaml-kit` system definition
+for any ASDF dependencies it requires.
+
+From the repository root, start an SBCL REPL:
+
+```sh
+sbcl
+```
+
+Load the core ASDF system at the REPL:
 
 ```lisp
 (require :asdf)
@@ -76,7 +91,8 @@ Render the document as HTML:
 ;; => <h1>Hello</h1>
 ```
 
-Find headings in a section, including the selected heading:
+Find headings in the `/Install` section address, including the selected heading;
+see the [section address rules](docs/src/reference/query.md#resolving-sections):
 
 ```lisp
 (let* ((document (cl-markdown-kit:parse
@@ -102,18 +118,23 @@ Replace a section body and write the updated Markdown:
 
 `write-html` omits raw HTML by default and does not write dangerous URL
 schemes to link or image attributes by default. `:unsafe-urls t` disables the
-URL scheme filter. `:raw-html :pass-through` is not a sanitizer. In that mode,
-the GFM tagfilter applies when `:gfm t` (the default). With
-`:raw-html :pass-through :gfm nil`, raw HTML passes through without the
-tagfilter. Use `:raw-html :escape` to render raw HTML as text.
+URL scheme filter. With `:raw-html :pass-through` and `:gfm t` (the default),
+the GFM tagfilter escapes the `<` before these tags: `title`, `textarea`,
+`style`, `xmp`, `iframe`, `noembed`, `noframes`, `script`, and `plaintext`.
+The tagfilter is not a sanitizer. With `:raw-html :pass-through :gfm nil`, raw
+HTML passes through without the filter. Use `:raw-html :escape` to render raw
+HTML as text.
 
 ## Resource limits
 
-`parse` defaults to a maximum nesting depth of 256 and a maximum inline
-delimiter depth of 4096. Exceeding either limit signals its dedicated
-condition, `markdown-nesting-depth-exceeded` or
-`markdown-inline-delimiter-depth-exceeded`. Unmatched emphasis openers count
-toward the inline delimiter limit. Set `:max-nesting-depth` or
+`parse` defaults to a maximum nesting depth of 256 and an inline delimiter
+limit of 4096. The inline limit counts unresolved delimiter and bracket records
+per inline fragment, such as a paragraph or table cell, including unmatched
+emphasis openers. The count resets for each fragment. The
+`:max-inline-delimiter-depth` option sets this record-count limit, not a nesting
+level. Exceeding either limit signals its dedicated condition,
+`markdown-nesting-depth-exceeded` or
+`markdown-inline-delimiter-depth-exceeded`. Set `:max-nesting-depth` or
 `:max-inline-delimiter-depth` on `parse` to change either limit.
 
 ## Documentation
@@ -127,7 +148,8 @@ toward the inline delimiter limit. Set `:max-nesting-depth` or
 ## Development
 
 Run the test suite on `x86_64-linux` with Nix. The test app supplies pinned
-CommonMark and GFM fixtures:
+CommonMark and GFM fixtures and runs both the core and YAML test systems through
+[`run-tests.lisp`](run-tests.lisp):
 
 ```sh
 nix run .#test
@@ -165,13 +187,6 @@ On `x86_64-linux`, regenerate the Lisp table in the Nix development shell with
 `nix develop --command sbcl --script scripts/generate-html5-entities.lisp`.
 The flake check runs the generator in `--check` mode and compares its output
 with the committed table.
-
-The internal character-data functions provide exact-case named-reference
-lookup, numeric-reference decoding, CommonMark whitespace and punctuation
-classification, link-label folding, HTML escaping, and URI percent encoding.
-HTML text and attribute escaping match commonmark.js and cmark for `&`, `<`,
-`>`, and `"`. URI percent encoding is a separate operation and preserves valid
-percent triplets exactly.
 
 ## License
 
