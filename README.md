@@ -30,7 +30,7 @@ examples, all of which matched. None of the runnable examples were excluded.
 From the repository root, make the project and its dependencies discoverable
 through ASDF. The core runtime dependencies are `cl-parser-kit` v1.1.1 and
 `cl-codec-kit` v0.6.0. The
-optional `cl-markdown-kit/yaml` system depends on `cl-yaml-kit` v0.1.0. The test
+optional `cl-markdown-kit/yaml` system depends on `cl-yaml-kit` v0.2.1. The test
 systems use `cl-weave` v1.4.0; the YAML system and its tests also require
 `cl-yaml-kit`.
 
@@ -43,8 +43,10 @@ git clone --branch v0.6.0 https://github.com/nerima-lisp/cl-codec-kit.git source
 export CL_SOURCE_REGISTRY='(:source-registry (:directory ".") (:tree "./sources") :inherit-configuration)'
 ```
 
-To load `cl-markdown-kit/yaml`, also check out `cl-yaml-kit` v0.1.0 and its
-ASDF dependencies under `./sources`.
+To load `cl-markdown-kit/yaml`, also check out `cl-yaml-kit` v0.2.1 under
+`./sources`. This repository's direct ASDF dependencies are listed for each
+system in `cl-markdown-kit.asd`; consult the checked-out `cl-yaml-kit` system
+definition for any ASDF dependencies it requires.
 
 The supported implementation is SBCL. Load the core ASDF system with:
 

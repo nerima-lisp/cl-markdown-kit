@@ -11,8 +11,12 @@ offsets; offsets are zero-based, while line and column values are one-based. A
 tab counts as one source column. The document span includes an initial BOM;
 ordinary parsing boundaries begin after that BOM at line 1, column 1.
 
-Every node has a keyword constructor named `make-<type>` and a predicate named
-`<type>-p`. Constructors accept keyword arguments. The common fields are:
+Every node has a keyword constructor named `make-<type>` and an exported
+predicate named `<type>-p`, such as `document-p`, `heading-p`, and `text-p`.
+Constructors accept keyword arguments. The field tables use the
+`<type>-<field>` reader naming convention; inherited fields keep the reader
+from their defining type, such as `list-item-children` on a `task-list-item`.
+The common fields are:
 
 | Type | Constructor | Fields |
 |---|---|---|
@@ -71,16 +75,48 @@ Reference kinds are `:inline`, `:full`, `:collapsed`, and `:shortcut`.
 Autolink kinds are `:angle-uri`, `:angle-email`, `:bare-url`, and
 `:bare-email`. Table alignments are `:left`, `:center`, `:right`, or `nil`.
 
+## Walking nodes
+
 Container readers return child lists in source order. `node-children` provides
-the uniform child-list interface and returns `nil` for leaves. `walk-nodes`
-takes a callback and a root node:
+the uniform child-list interface and returns `nil` for leaves. The exported
+`walk-node-tree` takes a root node and a callback:
 
 ```lisp
-(walk-nodes function root)
+(walk-node-tree root callback)
 ```
 
-It calls `function` on `root` first, then on descendants in pre-order,
-depth-first order, preserving child order. It returns `root`.
+The callback receives a frame in `:enter` and `:leave` phases.
+During `:enter`, return `nil` or `:descend` to visit children, `:skip` to omit
+children while still receiving `:leave`, or `:stop` to end traversal
+immediately. A `:leave` return value does not change traversal. Children are
+visited in source order, and `walk-node-tree` returns the root node.
+
+| Frame reader | Value |
+|---|---|
+| `node-tree-frame-node` | Current node |
+| `node-tree-frame-phase` | `:enter` or `:leave` |
+| `node-tree-frame-parent` | Parent node, or `nil` for the root |
+| `node-tree-frame-grandparent` | Grandparent node, or `nil` when absent |
+| `node-tree-frame-previous-sibling` | Previous sibling, or `nil` when absent |
+| `node-tree-frame-next-sibling` | Next sibling, or `nil` when absent |
+| `node-tree-frame-remaining-siblings` | Siblings after the current node |
+| `node-tree-frame-child-index` | Zero-based index; the root has index `0` |
+| `node-tree-frame-last-child-p` | Whether this is the last sibling; true for the root |
+| `node-tree-frame-result` | Value stored by the callback on this frame |
+| `node-tree-frame-child-results` | Child frame results in source order, available during `:leave` |
+
+Callbacks can store a value with `(setf (node-tree-frame-result frame) value)`.
+The parent frame receives each visited child's result in its
+`node-tree-frame-child-results` list.
+
+## Node metadata
+
+| Function | Result |
+|---|---|
+| `node-kind` | Declared keyword kind; signals an error for abstract base nodes |
+| `node-family` | `:block` or `:inline` for concrete nodes, `:abstract` for base nodes |
+| `node-semantic-attributes` | Plist of declared keyword attributes and their current values |
+| `node-edit-text-projection` | Slot value for a slot projection, `""` for `:empty`, or `nil` for `:container` |
 
 ## Source buffers and boundaries
 
@@ -100,14 +136,18 @@ BOM is present.
 | `source-buffer-span` | `(source-buffer-span buffer start end)` | A span for normalized `[start,end)` boundaries |
 | `source-buffer-document-span` | `(source-buffer-document-span buffer)` | A span covering source offsets `[0,length)` |
 | `make-source-format` | `(make-source-format &key input-kind encoding bom-p newline-style newline-sequence)` | Source encoding and newline metadata |
+| `source-buffer-p` | `(source-buffer-p object)` | Whether the object is a source buffer |
+| `source-format-p` | `(source-format-p object)` | Whether the object is source-format metadata |
 
-Internally, a boundary map has one boundary for the start and end of every
-represented character. Fragment maps may contain discontinuities where a
-block parser removes container prefixes; a line-break span can therefore
-include the physical line ending and a removed prefix. The map and its
-boundary records are implementation details. `source-buffer-span` accepts
-boundaries in the normalized text and returns a `cl-parser-kit:span` over the
-original decoded source.
+The source-buffer boundary map is internal; it maps normalized character
+boundaries to the decoded source. Fragment maps may contain discontinuities
+where a block parser removes container prefixes; a line-break span can
+therefore include the physical line ending and a removed prefix. The exported
+`inline-fragment-boundary-map` reader exposes a fragment map, but its
+representation and boundary records are opaque and have no public
+representation contract. `source-buffer-span` accepts boundaries in the
+normalized text and returns a `cl-parser-kit:span` over the original decoded
+source.
 
 `source-format` records `input-kind`, `encoding`, `bom-p`, `newline-style`,
 and `newline-sequence`. Its readers are `source-format-input-kind`,

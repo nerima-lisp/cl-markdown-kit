@@ -6,8 +6,9 @@ also include the AST node, while front matter returns only raw text and range.
 
 ## Headings
 
-`document-headings` returns heading records in source order, including headings
-nested inside block quotes, lists, and footnotes. Each record provides:
+`document-headings` returns `heading-record` values in source order, including
+headings nested inside block quotes, lists, and footnotes. Use
+`heading-record-p` to test a record. Each record provides:
 
 | Reader | Value |
 |---|---|
@@ -37,9 +38,10 @@ address `""` returns the whole document. Only document-level headings define
 sections; nested headings remain available through `document-headings` and
 heading extraction.
 
-The returned `section-record` provides `section-record-heading`,
-`section-record-span`, and `section-record-address`. The heading is a
-`heading-record`, except for the whole document where it is `nil`. The span is
+The returned `section-record` can be tested with `section-record-p`. It
+provides `section-record-heading`, `section-record-span`, and
+`section-record-address`. The heading is a `heading-record`, except for the
+whole document where it is `nil`. The span is
 a `cl-parser-kit:span` from the selected heading through the content before the
 next document-level heading of the same or a higher level, or through document
 end. The whole-document record has an empty address and spans the document.

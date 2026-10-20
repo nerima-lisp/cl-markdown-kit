@@ -1,10 +1,7 @@
-# Architecture and Public Contract
+# Contributor design note: architecture and public contract
 
-This document fixes the AST, source-span, parser-boundary, and public API
-contracts for `cl-markdown-kit` v0.2.0. The parser and writer implementations
-are owned by their respective streams. The versioned functional requirements
-and acceptance tests are in the run specification; decisions D-1 through D-6
-and its package Addendum are authoritative.
+This contributor design note describes the current AST, source-span, parser,
+writer, query, and edit architecture of `cl-markdown-kit`.
 
 ## nerima-lisp package policy
 
@@ -15,24 +12,18 @@ The core system uses the following pinned packages and layers:
 | `cl-parser-kit` | v1.1.1 | Public source locations use `cl-parser-kit:span`; this kit defines no local position or range types. |
 | `cl-codec-kit` | v0.6.0 | `parse-octets` detects BOM/encoding and decodes octet-vector input before source scanning. |
 
-`cl-regex-kit` v2.2.0 is a permitted runtime dependency for GFM extended
-autolink, HTML block start conditions, tagfilter, or URL scheme checks when a
-pattern is clearer than a scanner. Its engine is linear-time; use a
-hand-written scanner when simpler.
-
-Optional and test systems remain separate from the core parser system:
+The optional YAML system and test systems use separate dependencies:
 
 | Package | Tag | Use |
 |---|---|---|
-| `cl-yaml-kit` | v0.1.0 | Optional `cl-markdown-kit/yaml:parse-front-matter` API; the core keeps front matter as raw text and a span. |
-| `cl-json-kit` | v1.2.0 | Test fixtures and optional AST-to-JSON export if later aitools integration needs it. |
+| `cl-yaml-kit` | v0.2.1 | Optional `cl-markdown-kit/yaml:parse-front-matter` API; the core keeps front matter as raw text and a span. |
 | `cl-weave` | v1.4.0 | Tests. |
 
 Pin package inputs by release tag in `flake.nix`; give each ASDF
 `:depends-on` entry a one-line reason. Nix packaging uses
 `cl-nix-forge`'s `mkPackageFlake` at v0.6.1. SBCL's `sb-unicode` supplies the
-case folding and Unicode character classes required by D-3; it is part of the
-SBCL-only runtime policy, not a separate nerima-lisp package dependency.
+case folding and Unicode character classes used by the parser; it is part of
+the SBCL-only runtime policy, not a separate nerima-lisp package dependency.
 
 ## Design decisions
 
@@ -47,10 +38,10 @@ by the normalized Markdown writer. Nodes are mutable during construction, then
 treated as immutable after `parse` returns. Public constructors accept keyword
 arguments, and `node-children` returns the ordered child list.
 
-Every parsed node has a source span, including inline nodes beyond the subset
-required by FR-004. A node made directly with a public constructor may have a
-`nil` span. This makes source lookup consistent without requiring a parallel
-position tree. Children lists are homogeneous by contract: block containers
+Every parsed node has a source span, including inline nodes. A node made
+directly with a public constructor may have a `nil` span. This makes source
+lookup consistent without requiring a parallel position tree. Children lists
+are homogeneous: block containers
 contain block nodes, inline containers contain inline nodes, and table rows
 contain table cells.
 
@@ -71,7 +62,7 @@ their exact spelling remains available through the document source and spans.
 | Family | Node kinds and required slots |
 |---|---|
 | Document and source | `document`: block children, original source snapshot, source-format metadata, and link-reference index. `front-matter`: exact original inner text and opening/closing delimiter values. With the public `:front-matter` option enabled (the default), front matter is recognized only when an opening `---` line and a later closing `---` line occur at document start after an optional BOM; an unclosed opener remains ordinary Markdown. Set `:front-matter nil` to leave all leading delimiters to Markdown block parsing. The core does not interpret YAML. |
-| CommonMark containers | `block-quote`: block children. `list`: ordered/unordered kind, tight/loose flag, ordered start number, marker character, ordered-list delimiter character, and item children. `list-item`: block children. `task-list-item`: list-item subtype with `checked-p`, `task-marker-span` (a `cl-parser-kit:span`) covering exactly the recognized three-character `[ ]`, `[x]`, or `[X]` marker, and the original marker character; its distinct type means unchecked tasks are distinguishable from ordinary items. |
+| CommonMark containers | `block-quote`: block children. `list-node`: ordered/unordered kind, tight/loose flag, ordered start number, marker character, ordered-list delimiter character, and item children. `list-item`: block children. `task-list-item`: list-item subtype with `checked-p`, `task-marker-span` (a `cl-parser-kit:span`) covering exactly the recognized three-character `[ ]`, `[x]`, or `[X]` marker, and the original marker character; its distinct type means unchecked tasks are distinguishable from ordinary items. |
 | CommonMark leaf blocks | `paragraph`: inline children. `heading`: level, `:atx` or `:setext` style, ATX marker character and opening/closing marker lengths when applicable, and inline children. `thematic-break`: marker character and marker count. `code-block`: `:fenced` or `:indented` style, literal body, fence character/length, indentation, and info string. `html-block`: literal body and CommonMark HTML block kind. `link-reference-definition`: raw and normalized labels, destination, optional title, and first-definition eligibility. |
 | GFM blocks | `table`: column alignments and row children. `table-row`: header-row flag and cell children. `table-cell`: alignment and inline children. `footnote-definition`: raw and normalized label plus block children. |
 | CommonMark inline leaves | `text`: decoded text. `code-span`: literal text and source backtick-run length. `html-inline`: literal HTML. `soft-break` and `hard-break`: distinct kinds. |
@@ -129,26 +120,27 @@ declarations use `:abstract t`, `:kind nil`, and `:family :abstract`.
 accessor-name)` when the child list uses a different accessor. `:attributes`
 lists distinct keyword names for declared semantic slots.
 
-The declaration expands the supplied `defstruct`, registers its metadata, and
-exports the node type symbol, constructor, and declared slot accessors. The
-generated structure predicate stays internal; `front-matter-p` remains public
-for the front-matter prepass contract. After all declarations,
-`(define-node-registry)` generates the public metadata readers and
-`node-children` from the declarations.
+The declaration expands the supplied `defstruct` and registers its metadata.
+`src/package.lisp` exports each node type, its predicate, constructor, and
+declared slot readers. The predicates are public, including `document-p`,
+`heading-p`, `text-p`, and `front-matter-p`. After all declarations,
+`(define-node-registry)` generates the metadata readers and `node-children`
+from the declarations.
 `node-kind` returns the declared keyword kind and signals on abstract base
 nodes. `node-family` returns `:block` or `:inline` for a concrete node and
 `:abstract` for a base node. `node-semantic-attributes` returns a plist of
 declared keyword names and their current slot values. The `:edit-text`
-declaration is one of `:empty`, `:container`, `(:slot slot-name)`, or
-`(:literal value)`. `node-edit-text-projection` returns the current slot value
-or literal, converting a character literal to a one-character string. It
-returns the empty string for `:empty` and `nil` for `:container`; container
-text is projected from its children. `node-children` reads the child slots
+declaration is `:empty`, `:container`, or `(:slot slot-name)`.
+`node-edit-text-projection` returns the current slot value, the empty string
+for `:empty`, or `nil` for `:container`; container text is projected from its
+children. `node-children` reads the child slots
 declared by the node. Missing or invalid required metadata fails when the
 declaration macro expands. Consumers can test a public node type with `typep`.
 
 Writer operations use `define-node-dispatch` with one static clause for every
-concrete node in a family. The exact form is:
+concrete node in a family. This schematic shows the form; `body-form...` and
+`more-clauses...` stand for real clause bodies and the remaining concrete node
+clauses, so this is not a runnable Lisp example:
 
 ```lisp
 (in-package #:cl-markdown-kit)
@@ -170,19 +162,10 @@ coverage for each required family. The HTML renderer checks both `:block` and
 `:inline` at load time with
 `(verify-node-dispatches :operation :html-renderer :families '(:block :inline))`.
 
-`walk-node-tree-cps` keeps continuation state in an explicit frame stack, so
-Lisp call depth does not grow with tree depth. Its callback receives
-`(node phase parent grandparent previous-sibling next-sibling child-index
-last-child-p)` in that order. Parent and grandparent are node objects;
-previous and next sibling are relative to the parent's ordered children.
-`child-index` is zero-based, and `last-child-p` marks the final sibling. The
-root has no parent, grandparent, or siblings, index zero, and `last-child-p`
-true. Each node receives `:enter` before its children and `:leave` afterward;
-children and siblings follow source order. Return `:descend` (the default),
-`:skip`, or `:stop` from `:enter`: `:skip` omits descendants but still sends
-`:leave` for that node, while `:stop` returns immediately without leave
-callbacks for the active path. Leave results are ignored. The function returns
-the root.
+`walk-node-tree` uses an explicit frame stack, so Lisp call depth does not grow
+with tree depth. Its signature is `(walk-node-tree root callback)`. The
+callback phases, actions, and exported frame readers are documented in the
+[AST reference](../src/reference/nodes.md#walking-nodes).
 
 ## Source spans and input
 
@@ -213,13 +196,9 @@ The LF's source span covers the physical line ending and removed prefix
 between the retained characters. A block parser must not derive offsets by
 adding an index to the fragment start.
 
-For character streams, the parser reads characters rather than using
-`read-line`, so CR, LF, and CRLF received from the stream remain observable.
-The contract is over the decoded characters delivered by that stream.
-`parse-octets` adds octet-vector input and uses `cl-codec-kit` for BOM/encoding
-detection and decoding. It reinserts any detected BOM character into the
-source snapshot and retains encoding/BOM metadata. Source offsets remain
-character offsets after decode.
+Character streams are read character by character so CR, LF, and CRLF remain
+observable. Octet input is decoded before source scanning; public offsets are
+character offsets in the decoded text.
 
 Block spans begin at the first syntax character owned by the block and end
 immediately after its last syntax/content character. They exclude the line
@@ -238,25 +217,18 @@ column counter with four-column tab stops; public source columns remain
 character counts. A U+FEFF anywhere except the initial BOM is ordinary source
 text.
 
-An AST returned by `parse` retains its decoded source snapshot for FR-020. A
-document constructed by a caller has no source snapshot and cannot be passed
+An AST returned by `parse` retains its decoded source snapshot. A document
+constructed by a caller has no source snapshot and cannot be passed
 to a source-preserving edit operation. Normalized Markdown output uses LF and
 does not include a BOM; edit operations use the source's recorded line-ending
 metadata for replacement text and retain the original BOM and trailing
-newline through source splicing. Edit APIs return a source string. For string
-and character-stream inputs, outside-target text is preserved
-character-for-character; byte identity is defined using the canonical UTF-8
-representation of that text. For octet input, source metadata retains the
-explicit encoding selected by `cl-codec-kit:detect-unicode-encoding`; a
-detected BOM is restored as U+FEFF in the source snapshot. Edits preserve
-decoded characters and line endings outside the target. Callers materialize
-the returned string with `cl-codec-kit:string-to-octets` and the retained
-encoding. Since decoding is strict and accepts only well-formed Unicode
-sequences, encoding unchanged characters with that encoding and original BOM
-state reproduces their original octets. The edit API returns a string, not an
-octet vector. FR-020/T-005 byte preservation therefore applies to the
-canonical UTF-8 representation for character input and to the retained Unicode
-encoding for octet input.
+newline through source splicing. Edit APIs return decoded strings. For octet
+input, source metadata retains the Unicode encoding selected by
+`cl-codec-kit:detect-unicode-encoding` and the original BOM state; callers can
+re-encode the result with that metadata to preserve untouched octets. For
+string and character-stream input, byte identity refers to the canonical UTF-8
+representation: encode both the original and returned strings as UTF-8 before
+comparing bytes.
 
 ## Parser and writer boundaries
 
@@ -264,25 +236,16 @@ encoding for octet input.
 
 `source.lisp` owns source normalization, source metadata, and the
 logical-to-original boundary map; it creates `cl-parser-kit:span` values and
-defines no local position/range types. The exported block parser accepts a
-source buffer through `(parse-blocks source-buffer &key (front-matter t) (gfm t)
-(max-nesting-depth 256))` and returns a `block-parse-result` containing the
-partial document, ordered `inline-fragment` records, and normalized-label
-reference index. The exported result type has predicate
-`block-parse-result-p`, constructor `make-block-parse-result`, and readers
-`block-parse-result-document`,
-`block-parse-result-inline-fragments`, and
-`block-parse-result-reference-index`. Each fragment identifies its owning
-paragraph, heading, or table cell, and contains logical text plus the boundary
-map for that text. The exported fragment type has predicate
-`inline-fragment-p`, constructor `make-inline-fragment`, and readers
-`inline-fragment-node`, `inline-fragment-text`, and
-`inline-fragment-boundary-map`.
-Block parsing also places all link-reference-definition nodes in source order
-on the partial document. It does not interpret inline emphasis, links, code
-spans, or inline HTML.
+defines no local position/range types. The block pass retains reference
+definitions on the partial document and produces deferred inline fragments
+with their owners, logical text, and source mappings. Keeping the passes
+separate lets block parsing resolve definitions and establish source mappings
+before inline parsing. The exported `parse-blocks` result exposes this
+intermediate state; it does not have a public completion operation. Use `parse`,
+`parse-string`, `parse-stream`, or `parse-octets` to obtain a complete AST.
 
-The inline parser entry point is:
+The internal `parse-inline` function consumes the deferred text, source map,
+and reference index:
 
 ```lisp
 (parse-inline text boundary-map reference-index
@@ -299,41 +262,17 @@ span. The function does not perform block parsing or fetch definitions
 itself. The parse facade fills the owning node's inline children with this
 result and returns only after every fragment has been consumed.
 
-`make-source-buffer` accepts a string, character stream, or octet vector and
-returns the normalized source buffer with decoded original text, source
-metadata, and coordinate map. Octet vectors are decoded through
-`cl-codec-kit`. This boundary is independently testable without invoking
-either parser.
+The source-normalization layer is independently testable, keeping both parser
+passes independent of whether input arrived as a string, character stream, or
+octet vector. The public `parse` facade normalizes the input, runs the block
+pass, parses each deferred inline fragment with its source mapping and
+reference index, and returns the completed document. The public parser
+signatures are listed in the [AST and source-location reference](../src/reference/nodes.md).
 
-The public `parse` facade normalizes input, calls the block parser, parses
-each deferred inline fragment, and returns the completed document. Its public
-entry points are:
-
-```lisp
-(parse source &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
-(parse-string string &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
-(parse-stream character-stream &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
-(parse-octets octet-vector &key front-matter gfm max-nesting-depth max-inline-delimiter-depth)
-```
-
-`:front-matter` defaults to `t` across all entry points. Set it to `nil` to
-disable the leading front-matter prepass, which lets a leading `---` be parsed
-as Markdown, including in the CommonMark structure comparison. The option does
-not change the source snapshot or YAML interpretation. `parse` dispatches on
-string, character input stream, or octet vector. `parse-octets` decodes through
-`cl-codec-kit` before creating source spans. A missing limit argument uses the
-corresponding positive default.
-`:gfm` defaults to `t` and enables GFM block and inline extensions. Set it to
-`nil` to parse CommonMark without GFM extensions.
-`max-nesting-depth` counts
-simultaneously open block containers below the document.
-`max-inline-delimiter-depth` counts unresolved inline delimiter and bracket
-opener records within one inline fragment. Both limits are checked before
-pushing beyond the limit; they
-are not disabled with `nil`. Defaults are 256 block levels and 4096 inline
-records. Exceeding either signals a dedicated resource-limit subtype with the
-resource name, configured limit, and observed depth. The same effective limits
-are retained by the document and reused when an edit reparses its candidate.
+`:front-matter` defaults to `t`; setting it to `nil` leaves leading delimiter
+lines to Markdown parsing. `:gfm` defaults to `t`; setting it to `nil` selects
+CommonMark behavior. The completed document retains these options so
+source-preserving edits can reparse with the same parsing mode.
 
 ### Optional YAML interpretation
 
@@ -382,10 +321,9 @@ canonical `-` bullets and `.` ordered-list delimiters, preserves ordered-list
 start values, emits safe fenced code blocks, writes alignment rows for tables,
 and writes links with inline destinations. It emits reference definitions
 from their AST nodes in source order, and emits front matter with `---`
-delimiters without interpreting its contents. FR-021/T-003 compares HTML
-under identical writer options on both sides of the Markdown round trip. Safe
-defaults therefore apply consistently; conformance output opts into raw HTML
-and unsafe URLs explicitly.
+delimiters without interpreting its contents. Compare HTML before and after a
+Markdown round trip with identical writer options. Safe defaults apply on both
+sides; conformance output opts into raw HTML and unsafe URLs explicitly.
 
 For deterministic safe code fences, the writer uses backticks unless the info
 string contains a backtick, in which case it uses tildes. It chooses a fence
@@ -395,16 +333,14 @@ fence character in the code body.
 ## Public query and edit API
 
 The package is `cl-markdown-kit`; exported names use the sibling kit's
-hyphenated `parse`-family naming. Node structures generated by `define-node`
-export their type name, constructor, and declared readers. Their generated
-predicates remain internal, except `front-matter-p`; use `typep` with an
-exported node type to test a node. The non-node public records retain the
-predicates, constructors, and readers listed in this document. The contract
-is:
+hyphenated `parse`-family naming. The package exports each node type predicate,
+such as `document-p`, `heading-p`, and `text-p`, as well as its constructor and
+declared slot readers. Callers may also use `typep` with an exported node type.
+The query and edit contract is:
 
 | Function | Signature and result |
 |---|---|
-| `document-headings` | `(document-headings document)`: ordered heading records with node, level, plain text, source form, and section span. All headings are listed; only direct document children participate in section hierarchy/spans, per D-2. Nested headings have no section span. |
+| `document-headings` | `(document-headings document)`: ordered heading records with node, level, plain text, source form, and section span. All headings are listed; only direct document children participate in section hierarchy and spans. Nested headings have no section span. |
 | `find-section` | `(find-section document address)`, where `address` is an RFC 6901 string or a 1-based heading line number. `""` denotes the whole document. A nonempty pointer must begin with `/`; components decode only `~0` to `~` and `~1` to `/`, and compare exactly with heading plain text after inline markup is stripped. It returns a section record; signals no-match for zero matches, ambiguous with candidate headings/1-based line numbers for duplicate sibling matches, and invalid-address for malformed pointer escapes. |
 | `extract` | `(extract document kind &key section info-string language include-source-slice)`: ordered values for `:code-block`, `:link`, `:image`, `:table`, `:task-item`, `:heading`, or `:front-matter`, optionally restricted to a section. `section` is `nil`, a section address accepted by `find-section`, or a section record; scope includes its heading and body. Each supplied code filter must match: `info-string` matches the complete info string and `language` matches its first token. Link/image values include destination and title; table values include header/cell strings; task values include checked state. Front matter returns its raw text and source range without YAML interpretation. `include-source-slice` adds the exact source substring for each result when requested. |
 | `replace-section-body` | `(replace-section-body document address markdown)`: replaces content after the selected heading through its section end, retaining the heading itself. The empty address targets the whole document body. |
@@ -414,13 +350,12 @@ is:
 | `replace-node` | `(replace-node document node markdown)`: replaces one source-backed block node. |
 | `set-task-checked` | `(set-task-checked document task-item checked-p)`: toggles only the task marker and returns edited source. |
 
-`document-headings` returns `heading-record` values with the exported readers
-`heading-record-node`, `heading-record-level`, `heading-record-plain-text`,
-`heading-record-source-form`, and `heading-record-section-span`. `find-section`
-returns a `section-record` with the exported readers
-`section-record-heading`, `section-record-span`, and
-`section-record-address`. The heading reader returns a heading record, or `nil`
-for the whole-document address; the span is a `cl-parser-kit:span`.
+`document-headings` returns `heading-record` values; see the
+[Query API](../src/reference/query.md#headings) for their readers.
+`find-section` returns a `section-record` whose `section-record-heading` is a
+heading record or `nil` for the whole-document address, and whose
+`section-record-span` is a `cl-parser-kit:span`. The [Query API](../src/reference/query.md#resolving-sections)
+documents the remaining section-record reader.
 
 All edit functions return a new source string and never mutate the document.
 Replacement Markdown is normalized to the detected source newline convention;
@@ -463,9 +398,8 @@ its descendants, including heading level, code info string, link/image
 destination and title, list kind/start/delimiter/tightness, task checked state,
 table alignment, HTML block kind, footnote labels, and reference labels,
 destinations, and titles. If either side's projection differs, it signals
-`markdown-structure-changed-error` and returns no source. This is D-6's
-structural guard; a later aitools adapter should map it to the distinct error
-code `refusal.structure-changed` from Q-3.
+`markdown-structure-changed-error` and returns no source. This condition is the
+edit layer's structural guard.
 
 `find-section` resolves document-level headings only. Their implied parent is
 the nearest preceding document-level heading of lower level; headings at the
@@ -479,8 +413,8 @@ span literals, link/autolink display text, and image alt text are included;
 emphasis/strong/strikethrough delimiters and raw HTML tags are omitted; soft
 and hard breaks become one space; footnote references contribute their raw
 label. After concatenation, runs of whitespace collapse to one space and
-leading/trailing whitespace is removed. This one rule drives heading records
-and exact D-1 path matching.
+leading/trailing whitespace is removed. Heading records and section addresses
+use this plain-text form.
 
 `insert-section :last-child` appends after the selected heading's last direct
 child section, or at the end of the selected section body when it has no child
@@ -530,42 +464,26 @@ YAML parse and composition conditions are wrapped in `markdown-yaml-error`;
 YAML resource-limit conditions from `cl-yaml-kit` propagate with their
 original condition types.
 
-## Files, load order, and ownership
+## Current system organization
 
-The system uses serial ASDF components in dependency order. The skeleton
-stream owns `cl-markdown-kit.asd`, the initial `src/package.lisp`,
-`src/conditions.lisp`, test harness, CI, and flake. The AST/API stream owns the
-exports/condition extensions and the AST/source implementation. The
-`md-char-data` stream owns the three character and HTML data/helper files. The
-remaining files have one owner each:
+`cl-markdown-kit.asd` loads the core source files serially. The components are
+grouped by their current role below; the ASDF file defines their load order.
 
-| ASDF order | File | Owner |
-|---:|---|---|
-| 1 | `src/package.lisp` | AST/API stream; coordinate changes with skeleton owner |
-| 2 | `src/conditions.lisp` | AST/API stream; extend the skeleton base condition |
-| 3 | `src/html-entities-data.lisp` | `md-char-data` stream; name-to-string HTML5 entity table |
-| 4 | `src/character-data.lisp` | `md-char-data` stream; numeric-reference decoding, CommonMark character classes, and `normalize-link-label` |
-| 5 | `src/html-escaping.lisp` | `md-char-data` stream; HTML escaping, URL percent-encoding normalization, and dangerous-scheme checks |
-| 6 | `src/source.lisp` | AST/API stream; source normalization and `cl-parser-kit:span` construction |
-| 7 | `src/nodes.lisp` | AST/API stream |
-| 8 | `src/block-parser.lisp` | Block parser stream |
-| 9 | `src/inline-parser.lisp` | Inline parser stream |
-| 10 | `src/parse.lisp` | AST/API stream; public facade over block and inline parsers |
-| 11 | `src/query.lisp` | Query API stream |
-| 12 | `src/html-writer.lisp` | HTML writer stream |
-| 13 | `src/markdown-writer.lisp` | Markdown writer stream |
-| 14 | `src/edit.lisp` | Format-preserving edit stream |
+| Area | Current components |
+|---|---|
+| Package and conditions | `package`, `conditions` |
+| Character data and common parsing | `html-entities-data`, `character-data`, `character-logic`, `parser-common-data`, `parser-common`, `html-escaping`, `parser-common-links` |
+| Source, AST, and traversal | `source`, `nodes`, `tree-walker` |
+| Block parser | `block-parser-data`, `block-parser-source`, `block-parser-references`, `block-parser-classification`, `block-parser-nodes`, `block-parser-parse-state`, `block-parser-parse-open`, `block-parser-parse-leaf`, `block-parser` |
+| Inline parser | `inline-parser-data`, `inline-parser-model`, `inline-parser-indexes`, `inline-parser-links`, `inline-parser-delimiters`, `inline-parser-build`, `inline-parser-range`, `inline-parser` |
+| Parser facade and queries | `parse`, `query` |
+| HTML writer | `html-writer-output`, `html-writer-footnotes`, `html-writer-inline`, `html-writer-block-elements`, `html-writer-block-events`, `html-writer` |
+| Markdown writer | `markdown-writer-escape`, `markdown-writer-state`, `markdown-writer-inline`, `markdown-writer-block`, `markdown-writer-document` |
+| Source-preserving edits | `edit` |
 
-Tests follow the sibling kit's `t/` convention and are loaded in dependency
-order after the library: `t/nodes.lisp` and `t/source.lisp` belong to AST/API;
-`t/block-parser.lisp`, `t/inline-parser.lisp`, `t/query.lisp`,
-`t/html-writer.lisp`, `t/markdown-writer.lisp`, and `t/edit.lisp` belong to
-their corresponding stream. `t/api-contract-test.lisp` and conformance
-fixtures remain with the harness/skeleton owner. The AST/API stream supplies
-`docs/src/reference/nodes.md` and its `docs/mkdocs.yml` navigation entry once
-the types are implemented; each feature stream owns its corresponding API
-reference page. This architecture decision is documented at
-`docs/design/architecture.md`, outside the mkdocs `docs/src` root.
+The optional YAML system loads `src/yaml/package.lisp` and
+`src/yaml/front-matter.lisp`. The core and YAML test systems are defined in
+`cl-markdown-kit.asd` and load their components from `t/`.
 
 ## Alternatives rejected
 
@@ -579,6 +497,6 @@ reference page. This architecture decision is documented at
 | Visual tab stops for columns | Tab width is renderer/editor dependent. Counting a tab as one character makes columns deterministic and keeps offsets and columns on the same character model. |
 | Including following blank separators in block spans | It would make single-block replacement consume formatting owned by neighboring blocks. Spans stop at the final syntax character; source splicing leaves separators untouched. |
 | Pass-through raw HTML as the HTML writer default | Safe defaults omit raw block and inline HTML and filter dangerous URLs. Conformance callers explicitly request `:raw-html :pass-through` and `:unsafe-urls t`. |
-| Keeping only document-level nodes as sections | Nested headings in quotes/lists are still useful query results. Keeping all heading nodes while limiting section binding to direct document children satisfies extraction and D-2. |
+| Keeping only document-level nodes as sections | Nested headings in quotes/lists are still useful query results. Keeping all heading nodes while limiting section binding to direct document children supports extraction. |
 | Parsing inline content inside the block parser | This couples two independently tested parser streams and prevents the block parser from handing off exact source mappings and the completed reference-definition index. |
 | Reconstructing edited source from Markdown output | Normalization would change text outside an edit target, line endings, BOM, or final-newline state. Edits splice the retained original source and validate the reparsed result. |
