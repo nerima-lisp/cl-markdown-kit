@@ -309,21 +309,6 @@
        name (resource-materialize-input input-form) expected-length expected-result
        expected-limit-name expected-limit expected-actual))))
 
-(defparameter *resource-pathological-category-counts*
-  '((:emphasis-and-delimiter . 7)
-    (:link-and-bracket . 7)
-    (:block-nesting . 2)
-    (:other-scanning . 3)
-    (:gfm-table . 1)
-    (:reference-collision . 1)))
-
-(it "keeps the active pathological input inventory at 21 cases"
-  (:timeout-ms 1000)
-  (expect (mapcar #'cdr *resource-pathological-category-counts*)
-          :to-equal '(7 7 2 3 1 1))
-  (expect (reduce #'+ *resource-pathological-category-counts* :key #'cdr)
-          :to-equal 21))
-
 (defun resource-input-for-scaling (kind size)
   (ecase kind
     (:quote

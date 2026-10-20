@@ -165,8 +165,7 @@
           (reference-label
             (cl-markdown-kit::normalize-link-label "SS")))
       (expect link-label :to-equal "ss")
-      (expect reference-label :to-equal "ss")
-      (expect (string= link-label reference-label) :to-be-truthy))
+      (expect reference-label :to-equal "ss"))
     (expect (cl-markdown-kit::normalize-link-label
              (format nil "  Foo~cBAR~cBAZ  " #\Tab #\Newline))
             :to-equal "foo bar baz")

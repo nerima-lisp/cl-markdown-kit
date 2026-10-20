@@ -78,7 +78,7 @@
          (>= (positions-test-leading-run line marker)
              (cl-markdown-kit:code-block-fence-length node)))))
 
-(defun positions-test-node-syntax-error (node slice)
+(defun positions-test-block-node-syntax-error (node slice)
   (typecase node
     (cl-markdown-kit:document
      (unless (string= slice (cl-markdown-kit:document-source node))
@@ -116,6 +116,10 @@
      (unless (and (plusp (length slice)) (char= (char slice 0) #\[)
                   (search "]:" slice :start2 1))
        :reference-definition-markers))
+    (t nil)))
+
+(defun positions-test-inline-node-syntax-error (node slice)
+  (typecase node
     (cl-markdown-kit:text
      (unless (string= (cl-markdown-kit:text-value node)
                       (cl-markdown-kit::%pc-unescape slice 0 (length slice)))
@@ -177,6 +181,10 @@
                             (char= (char slice (1- (length slice))) #\>))))
          :autolink-delimiters)))
     (t nil)))
+
+(defun positions-test-node-syntax-error (node slice)
+  (or (positions-test-block-node-syntax-error node slice)
+      (positions-test-inline-node-syntax-error node slice)))
 
 (defun positions-test-range (span source)
   (when span
