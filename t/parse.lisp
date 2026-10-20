@@ -338,9 +338,9 @@
                     (call-with-parser-contract-stubs
                      (lambda ()
                        (parser-contract-call-entry-point
-                        entry-point input :max-input-size 14)))))
+                        entry-point input :max-input-size 15)))))
               (expect (cl-markdown-kit:document-max-input-size limited-document)
-                      :to-equal 14)))))))
+                      :to-equal 15)))))))
 
   (cl-weave:it-each ((:parse-string "string")
      (:parse-stream "stream")
