@@ -336,7 +336,9 @@
            (document (cl-markdown-kit:parse-string
                       source :max-input-size raised-limit))
            (replacement
-             (make-string (- raised-limit 4) :initial-element #\Space))
+             (make-string (- raised-limit 4)
+                          :element-type 'base-char
+                          :initial-element #\Space))
            (edited
              (cl-markdown-kit:replace-section-body
               document "/A" replacement)))
