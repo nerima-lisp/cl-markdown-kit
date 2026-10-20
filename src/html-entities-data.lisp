@@ -9,10 +9,8 @@
 
 (in-package #:cl-markdown-kit)
 
-(defparameter *html5-entities*
-  (let ((table (make-hash-table :test 'equal :size 2125)))
-    (dolist (entry
-             '(
+(defparameter +html5-entity-data+
+  '(
                ("AElig;" #x00C6)
                ("AMP;" #x0026)
                ("Aacute;" #x00C1)
@@ -2138,7 +2136,13 @@
                ("zscr;" #x1D4CF)
                ("zwj;" #x200D)
                ("zwnj;" #x200C)
-               ))
+  ))
+
+(defparameter *html5-entities* nil)
+
+(defun build-html5-entity-table ()
+  (let ((table (make-hash-table :test 'equal :size 2125)))
+    (dolist (entry +html5-entity-data+)
       (setf (gethash (car entry) table)
             (map 'string #'code-char (cdr entry))))
     table))

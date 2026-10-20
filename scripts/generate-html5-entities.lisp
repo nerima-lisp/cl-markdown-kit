@@ -111,22 +111,25 @@
     (terpri output)
     (write-line "(in-package #:cl-markdown-kit)" output)
     (terpri output)
-    (write-line "(defparameter *html5-entities*" output)
-    (format output
-            "  (let ((table (make-hash-table :test 'equal :size ~D)))~%"
-            (length entries))
-    (write-line "    (dolist (entry" output)
-    (write-line "             '(" output)
+    (write-line "(defparameter +html5-entity-data+" output)
+    (write-line "  '(" output)
     (dolist (entry entries)
       (format output "               (~S " (car entry))
       (loop for codepoint across (cdr entry)
             for first-p = t then nil
             do (unless first-p
-                 (write-char #\Space output)) (format output
-                                                      "#x~4,'0X"
-                                                      codepoint))
+                 (write-char #\Space output))
+               (format output "#x~4,'0X" codepoint))
       (write-line ")" output))
-    (write-line "               ))" output)
+    (write-line "  ))" output)
+    (terpri output)
+    (write-line "(defparameter *html5-entities* nil)" output)
+    (terpri output)
+    (write-line "(defun build-html5-entity-table ()" output)
+    (format output
+            "  (let ((table (make-hash-table :test 'equal :size ~D)))~%"
+            (length entries))
+    (write-line "    (dolist (entry +html5-entity-data+)" output)
     (write-line "      (setf (gethash (car entry) table)" output)
     (write-line "            (map 'string #'code-char (cdr entry))))" output)
     (write-line "    table))" output)))
