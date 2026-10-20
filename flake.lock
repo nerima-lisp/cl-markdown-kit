@@ -103,7 +103,9 @@
     "cl-cli": {
       "inputs": {
         "cl-boundary-kit": "cl-boundary-kit_2",
-        "cl-codec-kit": "cl-codec-kit_3",
+        "cl-codec-kit": [
+          "cl-codec-kit"
+        ],
         "cl-concurrent-kit": "cl-concurrent-kit_2",
         "cl-date-kit": "cl-date-kit_2",
         "cl-host-kit": "cl-host-kit_2",
@@ -208,78 +210,6 @@
       "original": {
         "owner": "nerima-lisp",
         "ref": "v0.6.0",
-        "repo": "cl-codec-kit",
-        "type": "github"
-      }
-    },
-    "cl-codec-kit_2": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1785920269,
-        "narHash": "sha256-gdpeurD7tMtJdk5X87I9v/cDWHvkplaWHAeVUMCkyFU=",
-        "owner": "nerima-lisp",
-        "repo": "cl-codec-kit",
-        "rev": "e30be513f5f8e936e968ff8d7910f43ef986ba6f",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v0.5.0",
-        "repo": "cl-codec-kit",
-        "type": "github"
-      }
-    },
-    "cl-codec-kit_3": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1785657119,
-        "narHash": "sha256-73/PTRu9neWZNGC3L6bL7ltWt0CtORHNDS4zzf4uH2U=",
-        "owner": "nerima-lisp",
-        "repo": "cl-codec-kit",
-        "rev": "8570a6c16dcc0bc0f4774749a0f9f1d0520696c2",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v0.4.0",
-        "repo": "cl-codec-kit",
-        "type": "github"
-      }
-    },
-    "cl-codec-kit_4": {
-      "inputs": {
-        "cl-nix-forge": [
-          "cl-weave",
-          "cl-nix-forge"
-        ],
-        "cl-weave": [
-          "cl-codec-kit",
-          "cl-weave"
-        ],
-        "nixpkgs": [
-          "cl-yaml-kit",
-          "cl-regex-kit",
-          "nixpkgs"
-        ],
-        "paredit-cli": [
-          "cl-codec-kit",
-          "paredit-cli"
-        ],
-        "treefmt-nix": [
-          "treefmt-nix"
-        ]
-      },
-      "locked": {
-        "lastModified": 1785920269,
-        "narHash": "sha256-gdpeurD7tMtJdk5X87I9v/cDWHvkplaWHAeVUMCkyFU=",
-        "owner": "nerima-lisp",
-        "repo": "cl-codec-kit",
-        "rev": "e30be513f5f8e936e968ff8d7910f43ef986ba6f",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v0.5.0",
         "repo": "cl-codec-kit",
         "type": "github"
       }
@@ -815,7 +745,9 @@
     "cl-process-kit": {
       "inputs": {
         "cl-boundary-kit": "cl-boundary-kit",
-        "cl-codec-kit": "cl-codec-kit_2",
+        "cl-codec-kit": [
+          "cl-codec-kit"
+        ],
         "cl-concurrent-kit": "cl-concurrent-kit",
         "cl-date-kit": "cl-date-kit",
         "cl-host-kit": "cl-host-kit",
@@ -1027,7 +959,9 @@
     "cl-regex-kit": {
       "inputs": {
         "cl-cli": "cl-cli",
-        "cl-codec-kit": "cl-codec-kit_4",
+        "cl-codec-kit": [
+          "cl-codec-kit"
+        ],
         "cl-concurrent-kit": "cl-concurrent-kit_3",
         "cl-dataflow-kit": "cl-dataflow-kit",
         "cl-json-kit": [
