@@ -26,5 +26,5 @@
                (handler-case
                    (cl-markdown-kit:write-markdown-to-stream document stream)
                  (condition (condition) condition))))
-        (expect (typep condition 'simple-error) :to-be-truthy)
+        (expect (typep condition 'cl-markdown-kit:markdown-unsupported-node-error) :to-be-truthy)
         (expect (get-output-stream-string stream) :to-equal "written"))))

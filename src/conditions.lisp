@@ -53,3 +53,19 @@
            :reader markdown-structure-changed-error-target)
    (difference :initarg :difference
                :reader markdown-structure-changed-error-difference)))
+(define-condition markdown-invalid-edit-error (markdown-kit-error)
+  ((object :initarg :object
+           :reader markdown-invalid-edit-error-object))
+  (:report (lambda (condition stream)
+             (if (markdown-kit-error-message condition)
+                 (write-string (markdown-kit-error-message condition) stream)
+                 (format stream "Invalid Markdown edit involving ~S"
+                         (markdown-invalid-edit-error-object condition))))))
+(define-condition markdown-unsupported-node-error (markdown-kit-error)
+  ((object :initarg :object
+           :reader markdown-unsupported-node-error-object))
+  (:report (lambda (condition stream)
+             (if (markdown-kit-error-message condition)
+                 (write-string (markdown-kit-error-message condition) stream)
+                 (format stream "Unsupported Markdown tree object: ~S"
+                         (markdown-unsupported-node-error-object condition))))))

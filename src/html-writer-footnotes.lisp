@@ -36,8 +36,27 @@
         (next-number 0))
     (walk-node-tree document
      (lambda (frame)
-       (let ((node (node-tree-frame-node frame)))
-         (when (and (eq (node-tree-frame-phase frame) :enter)
+       (let* ((node (node-tree-frame-node frame))
+              (phase (node-tree-frame-phase frame))
+              (parent (node-tree-frame-parent frame)))
+         (when (eq phase :enter)
+           (unless (or (inline-node-p node) (block-node-p node))
+             (error 'markdown-unsupported-node-error
+                    :object node
+                    :message (format nil "Unsupported HTML node: ~S" node)))
+           (when (and (list-item-p node) (not (list-node-p parent)))
+             (error 'markdown-unsupported-node-error
+                    :object node
+                    :message
+                    (format nil "Unsupported HTML list item outside a list: ~S"
+                            node)))
+           (dolist (child (node-children node))
+             (unless (node-p child)
+               (error 'markdown-unsupported-node-error
+                      :object child
+                      :message (format nil "Unsupported HTML child: ~S"
+                                       child)))))
+         (when (and (eq phase :enter)
                     (footnote-definition-p node))
            (setf (gethash (footnote-definition-normalized-label node)
                           definitions)

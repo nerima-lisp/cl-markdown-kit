@@ -5,7 +5,9 @@
   (or (document-source document)
       (let ((span (node-span document)))
         (and span (cl-parser-kit:span-source span)))
-      (error "Cannot edit a document without a source snapshot.")))
+      (error 'markdown-invalid-edit-error
+             :object document
+             :message "Cannot edit a document without a source snapshot.")))
 
 (defun %line-ending-at (source index &optional (limit (length source)))
   (when (< index limit)
@@ -170,11 +172,15 @@
   ;; Parsed spans share the document's source snapshot by identity.
   (unless (and (typep span 'cl-parser-kit:span)
                (eq (cl-parser-kit:span-source span) source))
-    (error "The edit target must have a source span from this document."))
+    (error 'markdown-invalid-edit-error
+           :object span
+           :message "The edit target must have a source span from this document."))
   (let ((start (cl-parser-kit:span-start span))
         (end (cl-parser-kit:span-end span)))
     (unless (<= 0 start end (length source))
-      (error "The edit target has an invalid source span [~D,~D)." start end))
+      (error 'markdown-invalid-edit-error
+             :object span
+             :message (format nil "The edit target has an invalid source span [~D,~D)." start end)))
     (cons start end)))
 
 (defun %node-in-document-p (document target)
@@ -351,8 +357,11 @@
   (let ((source (%edit-document-source document)))
     (unless (and (integerp start) (integerp end)
                  (<= 0 start end (length source)))
-      (error "Invalid edit interval [~S,~S) for source length ~D."
-             start end (length source)))
+      (error 'markdown-invalid-edit-error
+             :object (list start end)
+             :message
+             (format nil "Invalid edit interval [~S,~S) for source length ~D."
+                     start end (length source))))
     (let* ((line-ending (%edit-line-ending source start end))
            (replacement (%normalize-newlines markdown line-ending)))
       (labels ((candidate-for (replacement-text)
@@ -509,7 +518,9 @@
   (unless (and (block-node-p node)
                (not (document-p node))
                (%node-in-document-p document node))
-    (error "REPLACE-NODE requires a source-backed block node in DOCUMENT."))
+    (error 'markdown-invalid-edit-error
+           :object node
+           :message "REPLACE-NODE requires a source-backed block node in DOCUMENT."))
   (let* ((source (%edit-document-source document))
          (range (%span-range (node-span node) source))
          (line-ending (%edit-line-ending source (car range) (cdr range)))
@@ -523,7 +534,9 @@
   (check-type document document)
   (unless (and (task-list-item-p task-item)
                (%node-in-document-p document task-item))
-    (error "SET-TASK-CHECKED requires a task-list-item in DOCUMENT."))
+    (error 'markdown-invalid-edit-error
+           :object task-item
+           :message "SET-TASK-CHECKED requires a task-list-item in DOCUMENT."))
   (unless (typep checked-p 'boolean)
     (error 'type-error :datum checked-p :expected-type 'boolean))
   (let* ((source (%edit-document-source document))
@@ -533,7 +546,9 @@
          (marker (subseq source (car marker-range) (cdr marker-range)))
          (currently-checked (task-list-item-checked-p task-item)))
     (unless (member marker '("[ ]" "[x]" "[X]") :test #'string=)
-      (error "The task marker span does not contain a recognized task marker."))
+      (error 'markdown-invalid-edit-error
+             :object marker-span
+             :message "The task marker span does not contain a recognized task marker."))
     (if (eq currently-checked checked-p)
         source
         (%perform-edit document

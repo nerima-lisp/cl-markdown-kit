@@ -23,6 +23,10 @@
    #:markdown-structure-changed-error
    #:markdown-structure-changed-error-target
    #:markdown-structure-changed-error-difference
+   #:markdown-invalid-edit-error
+   #:markdown-invalid-edit-error-object
+   #:markdown-unsupported-node-error
+   #:markdown-unsupported-node-error-object
    ;; Source buffers and locations
    #:source-format
    #:source-format-p

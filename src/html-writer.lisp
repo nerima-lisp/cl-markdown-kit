@@ -25,9 +25,7 @@
                    ((inline-node-p node)
                     (%hw-render-inline-event context node phase))
                    ((block-node-p node)
-                    (%hw-render-block-event context node phase))
-                   (t
-                    (error "Unsupported HTML node: ~S" node)))))
+                    (%hw-render-block-event context node phase)))))
            (if (eq phase :enter) action nil))))))
 
 (defun write-html-to-stream (document stream &key (raw-html :omit) unsafe-urls

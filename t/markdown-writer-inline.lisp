@@ -79,7 +79,7 @@
              (progn
                (markdown-writer-render-inline-nodes (list (cl-markdown-kit:make-node)))
                nil)
-           (simple-error () t))
+           (cl-markdown-kit:markdown-unsupported-node-error () t))
         :to-be-truthy)))
     (let* ((table
              (cl-markdown-kit:make-table

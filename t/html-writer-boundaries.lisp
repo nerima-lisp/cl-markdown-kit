@@ -1,16 +1,70 @@
 (in-package #:cl-markdown-kit/test)
 
 (describe "HTML writer boundaries"
-(html-writer-it "rejects unsupported node values in documents"
-    (expect
-     (handler-case
-         (progn
-           (cl-markdown-kit:write-html
-            (cl-markdown-kit:make-document
-             :children (list (cl-markdown-kit:make-node))))
-           nil)
-       (simple-error () t))
-     :to-be-truthy))
+  (html-writer-it "signals exact conditions for unsupported tree shapes"
+    (let* ((node (cl-markdown-kit:make-node))
+           (condition
+             (test-condition
+              (lambda ()
+                (cl-markdown-kit:write-html
+                 (cl-markdown-kit:make-document :children (list node)))))))
+      (expect (typep condition 'cl-markdown-kit:markdown-unsupported-node-error)
+              :to-be-truthy)
+      (progn
+        (expect (eq (cl-markdown-kit:markdown-unsupported-node-error-object condition)
+                    node)
+                :to-be-truthy)
+        (let ((message (cl-markdown-kit:markdown-kit-error-message condition)))
+          (expect (search "Unsupported HTML node:" message) :to-be-truthy)
+          (expect (search message (princ-to-string condition)) :to-be-truthy))))
+    (let* ((child :not-a-node)
+           (condition
+             (test-condition
+              (lambda ()
+                (cl-markdown-kit:write-html
+                 (html-writer-test-document
+                  (cl-markdown-kit:make-paragraph :children (list child))))))))
+      (expect (typep condition 'cl-markdown-kit:markdown-unsupported-node-error)
+              :to-be-truthy)
+      (progn
+        (expect (eq (cl-markdown-kit:markdown-unsupported-node-error-object condition)
+                    child)
+                :to-be-truthy)
+        (let ((message (cl-markdown-kit:markdown-kit-error-message condition)))
+          (expect (search "Unsupported HTML child:" message) :to-be-truthy)
+          (expect (search message (princ-to-string condition)) :to-be-truthy))))
+    (let* ((item (cl-markdown-kit:make-list-item))
+           (condition
+             (test-condition
+              (lambda ()
+                (cl-markdown-kit:write-html
+                 (cl-markdown-kit:make-document :children (list item)))))))
+      (expect (typep condition 'cl-markdown-kit:markdown-unsupported-node-error)
+              :to-be-truthy)
+      (progn
+        (expect (eq (cl-markdown-kit:markdown-unsupported-node-error-object condition)
+                    item)
+                :to-be-truthy)
+        (let ((message (cl-markdown-kit:markdown-kit-error-message condition)))
+          (expect (search "Unsupported HTML list item outside a list:"
+                          message)
+                  :to-be-truthy)
+          (expect (search message (princ-to-string condition)) :to-be-truthy))
+        (let* ((object :writer-fallback-object)
+               (fallback-condition
+                 (make-condition
+                  'cl-markdown-kit:markdown-unsupported-node-error
+                  :object object))
+               (reported (princ-to-string fallback-condition)))
+          (expect (null (cl-markdown-kit:markdown-kit-error-message
+                         fallback-condition))
+                  :to-be-truthy)
+          (expect (eq (cl-markdown-kit:markdown-unsupported-node-error-object
+                       fallback-condition)
+                      object)
+                  :to-be-truthy)
+          (expect (search "Unsupported Markdown tree object:" reported)
+                  :to-be-truthy)))))
 
 (html-writer-it "rejects unsupported nodes, invalid options, and non-output streams"
     (expect
@@ -25,7 +79,7 @@
             (html-writer-test-document
              (cl-markdown-kit:make-block-node)))
            nil)
-       (simple-error () t))
+       (cl-markdown-kit:markdown-unsupported-node-error () t))
      :to-be-truthy)
     (expect
      (handler-case
@@ -34,7 +88,7 @@
             (list (cl-markdown-kit:make-paragraph
                    :children (list (cl-markdown-kit:make-inline-node)))))
            nil)
-       (simple-error () t))
+       (cl-markdown-kit:markdown-unsupported-node-error () t))
      :to-be-truthy)
     (expect
      (handler-case

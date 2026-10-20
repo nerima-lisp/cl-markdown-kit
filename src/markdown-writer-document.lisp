@@ -21,6 +21,18 @@
                               (%mw-render-session-child-index context)
                               child-index)
                         (when (eq phase :enter)
+                          (unless (or (inline-node-p node) (block-node-p node))
+                            (error 'markdown-unsupported-node-error
+                                   :object node
+                                   :message (format nil "Unsupported Markdown node: ~S"
+                                                    node)))
+                          (dolist (child (node-children node))
+                            (unless (node-p child)
+                              (error 'markdown-unsupported-node-error
+                                     :object child
+                                     :message
+                                     (format nil "Unsupported Markdown child: ~S"
+                                             child))))
                           (setf (gethash node
                                          (%mw-render-session-frames context))
                                 (%mw-make-node-render-frame context node)))
@@ -29,9 +41,7 @@
                                   ((inline-node-p node)
                                    (%mw-render-inline-event context node phase))
                                   ((block-node-p node)
-                                   (%mw-render-block-event context node phase))
-                                  (t
-                                   (error "Unsupported Markdown node: ~S" node)))))
+                                   (%mw-render-block-event context node phase)))))
                           (when
                               (and (eq phase :leave)
                                    parent

@@ -195,7 +195,10 @@
 (defun %mw-render-list-item-result (context item results)
   (let ((list-node (%mw-render-session-parent context)))
     (unless (list-node-p list-node)
-      (error "Unsupported Markdown list item outside a list: ~S" item))
+      (error 'markdown-unsupported-node-error
+             :object item
+             :message
+             (format nil "Unsupported Markdown list item outside a list: ~S" item)))
     (let* ((separator
              (if (list-node-tight-p list-node)
                  (format nil "~%")

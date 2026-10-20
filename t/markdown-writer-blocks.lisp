@@ -236,7 +236,7 @@
            (progn
              (markdown-writer-render-node (cl-markdown-kit:make-node))
              nil)
-         (simple-error () t))
+         (cl-markdown-kit:markdown-unsupported-node-error () t))
        :to-be-truthy))
     (expect
      (handler-case

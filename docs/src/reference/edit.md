@@ -34,6 +34,22 @@ edit interval.
 `[x]`; turning it off writes `[ ]`. Asking for the existing state returns the
 original source, preserving the marker's spelling.
 
+All six edit functions can signal `markdown-invalid-edit-error` when
+`document` has no source snapshot or a computed edit interval is invalid. In
+those cases, `markdown-invalid-edit-error-object` is the document or the
+`(start end)` interval, respectively. `replace-node` also signals it when
+`node` is not a source-backed block node in `document`; the object is that
+node. If `replace-node` cannot use that node's source span, the source span is
+the object. `set-task-checked` signals it when `task-item` is not a task-list
+item in `document`; the object is that item. An invalid task-item span or an
+invalid or unrecognized task marker uses its source span as the object. The
+condition's report preserves the diagnostic message.
+
+Section-address lookup can separately signal
+`markdown-invalid-section-address-error`, `markdown-no-match-error`, or
+`markdown-ambiguous-match-error`. A rejected edit that changes a non-target
+block signals `markdown-structure-changed-error` instead.
+
 ```lisp
 (let* ((document (cl-markdown-kit:parse-string source))
        (updated (cl-markdown-kit:replace-section-body
@@ -50,8 +66,7 @@ are normalized to that sequence. Source outside the edit interval, BOM presence,
 and final-newline presence are preserved. For an edit that reaches EOF, any
 adjustment to match the original final-newline presence applies only to the
 inserted or replacement Markdown. Untouched trailing blank lines and their line
-endings remain unchanged; the candidate is not normalized to one final line
-ending.
+endings remain unchanged.
 
 After each edit, the source is parsed again with `:front-matter` and `:gfm`
 set from `(document-front-matter-p document)` and `(document-gfm-p document)`,

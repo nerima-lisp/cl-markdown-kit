@@ -304,14 +304,14 @@
                   (progn
                     (render-nodes (list (cl-markdown-kit:make-node)))
                     nil)
-                (simple-error () t))
+                (cl-markdown-kit:markdown-unsupported-node-error () t))
               :to-be-truthy)
       (expect (handler-case
                   (progn
                     (render-block
                      (paragraph (list (cl-markdown-kit:make-node))))
                     nil)
-                (simple-error () t))
+                (cl-markdown-kit:markdown-unsupported-node-error () t))
               :to-be-truthy)))
 
   (it "handles empty inputs to Markdown writer boundary helpers"
@@ -351,7 +351,7 @@
               :to-be-truthy)
       (expect (cl-markdown-kit::%mw-table-alignment-line-p ":---||:")
               :to-equal nil)))
-  (it "signals simple-error for list items outside lists"
+  (it "signals exact conditions for unsupported tree shapes"
       (let* ((item (cl-markdown-kit:make-list-item))
              (documents
                (list (cl-markdown-kit:make-document :children (list item))
@@ -360,10 +360,51 @@
                       (list (cl-markdown-kit:make-block-quote
                              :children (list item)))))))
         (dolist (document documents)
-          (expect
-           (typep
-            (handler-case
-                (cl-markdown-kit:write-markdown document)
-              (condition (condition) condition))
-            'simple-error)
-           :to-be-truthy)))))
+          (let ((condition
+                  (test-condition
+                   (lambda ()
+                     (cl-markdown-kit:write-markdown document)))))
+            (expect (typep condition 'cl-markdown-kit:markdown-unsupported-node-error)
+                    :to-be-truthy)
+            (progn
+              (expect (eq (cl-markdown-kit:markdown-unsupported-node-error-object condition)
+                          item)
+                      :to-be-truthy)
+              (let ((message (cl-markdown-kit:markdown-kit-error-message condition)))
+                (expect (search "Unsupported Markdown list item outside a list:"
+                                message)
+                        :to-be-truthy)
+                (expect (search message (princ-to-string condition)) :to-be-truthy))))))
+      (let* ((child :not-a-node)
+             (condition
+               (test-condition
+                (lambda ()
+                  (cl-markdown-kit:write-markdown
+                   (cl-markdown-kit:make-document
+                    :children
+                    (list (cl-markdown-kit:make-paragraph
+                           :children (list child)))))))))
+        (expect (typep condition 'cl-markdown-kit:markdown-unsupported-node-error)
+                :to-be-truthy)
+        (progn
+          (expect (eq (cl-markdown-kit:markdown-unsupported-node-error-object condition)
+                      child)
+                  :to-be-truthy)
+          (let ((message (cl-markdown-kit:markdown-kit-error-message condition)))
+            (expect (search "Unsupported Markdown child:" message) :to-be-truthy)
+            (expect (search message (princ-to-string condition)) :to-be-truthy))))
+      (let* ((node (cl-markdown-kit:make-node))
+             (condition
+               (test-condition
+                (lambda ()
+                  (cl-markdown-kit:write-markdown
+                   (cl-markdown-kit:make-document :children (list node)))))))
+        (expect (typep condition 'cl-markdown-kit:markdown-unsupported-node-error)
+                :to-be-truthy)
+        (progn
+          (expect (eq (cl-markdown-kit:markdown-unsupported-node-error-object condition)
+                      node)
+                  :to-be-truthy)
+          (let ((message (cl-markdown-kit:markdown-kit-error-message condition)))
+            (expect (search "Unsupported Markdown node:" message) :to-be-truthy)
+            (expect (search message (princ-to-string condition)) :to-be-truthy))))))

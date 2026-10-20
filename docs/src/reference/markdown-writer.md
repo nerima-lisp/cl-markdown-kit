@@ -27,6 +27,13 @@ spelling, source spans, delimiter choices, list marker characters, or source
 line endings. HTML nodes are emitted as stored. Front matter uses `---`
 delimiters.
 
+`write-markdown` and `write-markdown-to-stream` signal
+`markdown-unsupported-node-error` when the tree contains an unsupported node,
+a non-node child, or a `list-item` outside a list. The report retains the
+diagnostic message. Read the rejected node or child with
+`markdown-unsupported-node-error-object`; for a `list-item` outside a list,
+the object is that item.
+
 ## HTML writer
 
 `write-html` returns rendered HTML. `write-html-to-stream` writes the same
@@ -35,6 +42,12 @@ defaults to `t`.
 If `write-html-to-stream` signals an error after output begins, text already
 written remains in the stream.
 The `:unsafe-urls` option defaults to `nil` and accepts a boolean.
+
+`write-html` and `write-html-to-stream` signal
+`markdown-unsupported-node-error` for an unsupported node, non-node child, or
+`list-item` outside a list. Read the rejected node or child with
+`markdown-unsupported-node-error-object`. HTML validates the tree before
+writing output.
 
 The `:raw-html` option accepts `:omit` (the default), `:escape`, or
 `:pass-through`. With `:raw-html :pass-through`, the GFM tagfilter applies when
