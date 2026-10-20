@@ -132,9 +132,7 @@
     (write-line "            (map 'string #'code-char (cdr entry))))" output)
     (write-line "    table))" output)
     (terpri output)
-    (write-line
-     "(defparameter *html5-entities* (build-html5-entity-table))"
-     output)))
+    (write-line "(defparameter *html5-entities* nil)" output)))
 
 (defun string-to-utf8-octets (string)
   (sb-ext:string-to-octets string :external-format :utf-8))

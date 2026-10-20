@@ -2145,4 +2145,4 @@
             (map 'string #'code-char (cdr entry))))
     table))
 
-(defparameter *html5-entities* (build-html5-entity-table))
+(defparameter *html5-entities* nil)
