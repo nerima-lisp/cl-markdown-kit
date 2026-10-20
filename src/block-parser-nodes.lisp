@@ -11,9 +11,6 @@
                           (%block-line-raw-end line)))
                (write-char #\Newline output))))))
 
-(defun %bp-frame-context (frame)
-  (%bp-open-frame-child-context frame))
-
 (defun %bp-frame-add-node (frame node)
   (if (eq (%bp-open-frame-kind frame) :list)
       (push node (%bp-open-frame-items frame))

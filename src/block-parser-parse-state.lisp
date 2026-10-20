@@ -12,11 +12,10 @@
   (table-rows nil))
 
 (defstruct (%bp-parser-state
-            (:constructor %bp-make-parser-state
-                (&key source-buffer lines context depth limit gfm root stack)))
+             (:constructor %bp-make-parser-state
+                 (&key source-buffer lines depth limit gfm root stack)))
   source-buffer
   lines
-  context
   depth
   limit
   gfm
@@ -35,14 +34,19 @@
          (root (%bp-make-open-frame :kind :root :node nil
                                     :context context :child-context context)))
     (%bp-make-parser-state
-     :source-buffer source-buffer :lines lines :context context
-     :depth depth :limit limit :gfm gfm :root root :stack (list root))))
+     :source-buffer source-buffer
+     :lines lines
+     :depth depth
+     :limit limit
+     :gfm gfm
+     :root root
+     :stack (list root))))
 
 (defun %bp-state-current-frame (state)
   (car (%bp-parser-state-stack state)))
 
 (defun %bp-state-current-context (state)
-  (%bp-frame-context (%bp-state-current-frame state)))
+  (%bp-open-frame-child-context (%bp-state-current-frame state)))
 
 (defun %bp-state-mark-container-content (state)
   (dolist (frame (%bp-parser-state-content-frames state))

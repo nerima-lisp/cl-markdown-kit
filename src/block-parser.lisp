@@ -41,18 +41,10 @@
                       :closing-delimiter "---")))
           (values node (1+ closing-index)))))))
 
-(defun %bp-default-nesting-depth () +default-max-nesting-depth+)
-
-(defun %bp-default-front-matter-p ()
-  t)
-
-(defun %bp-default-gfm-p ()
-  t)
-
 (defun parse-blocks
-    (source-buffer &key (front-matter (%bp-default-front-matter-p))
-                        (gfm (%bp-default-gfm-p))
-                        (max-nesting-depth (%bp-default-nesting-depth)))
+    (source-buffer &key (front-matter t)
+                        (gfm t)
+                        (max-nesting-depth +default-max-nesting-depth+))
   "Parse block structure and defer paragraph, heading, and table-cell inlines."
   (check-type source-buffer source-buffer)
   (check-type gfm boolean)
