@@ -31,8 +31,7 @@
      (:constructor %mw-make-render-session
                    (&key (frames (make-hash-table :test #'eq))
                          (results (make-hash-table :test #'eq))
-                         output-stream
-                         child-index)))
+                         output-stream)))
   frames
   results
   output-stream

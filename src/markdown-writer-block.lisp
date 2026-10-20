@@ -193,17 +193,19 @@
         do (write-char #\Newline stream)))
 
 (defun %mw-render-list-item-result (context item results)
-  (let* ((list-node (%mw-render-session-parent context))
-         (separator
-           (if (list-node-tight-p list-node)
-               (format nil "~%")
-               (format nil "~%~%")))
-         (marker
-           (%mw-list-marker list-node
-                            (%mw-render-session-child-index context)))
-         (continuation-prefix
-           (make-string (length marker) :initial-element #\Space)))
-    (%mw-render-list-item-content item results separator continuation-prefix)))
+  (let ((list-node (%mw-render-session-parent context)))
+    (unless (list-node-p list-node)
+      (error "Unsupported Markdown list item outside a list: ~S" item))
+    (let* ((separator
+             (if (list-node-tight-p list-node)
+                 (format nil "~%")
+                 (format nil "~%~%")))
+           (marker
+             (%mw-list-marker list-node
+                              (%mw-render-session-child-index context)))
+           (continuation-prefix
+             (make-string (length marker) :initial-element #\Space)))
+      (%mw-render-list-item-content item results separator continuation-prefix))))
 
 (defun %mw-render-list (node results)
   (let* ((items (list-node-items node))
@@ -213,9 +215,6 @@
         (loop for item in items
               for index from 0
               for marker = (%mw-list-marker node index)
-              for continuation-prefix = (make-string
-                                         (length marker)
-                                         :initial-element #\Space)
               for task-marker = (when (task-list-item-p item)
                                   (if (task-list-item-checked-p item)
                                       "[x] "

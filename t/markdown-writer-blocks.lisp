@@ -1,7 +1,7 @@
 (in-package #:cl-markdown-kit/test)
 
 (describe "Markdown writer blocks"
-(it "preserves table alignment, list continuation, and code fence behavior"
+  (it "preserves table alignment, list continuation, and code fence behavior"
     (expect (cl-markdown-kit::%mw-table-alignment-line-p "| :--- | ---: | :---: | --- |")
             :to-equal 4)
     (expect (cl-markdown-kit::%mw-table-alignment-line-p "plain text")
@@ -282,4 +282,24 @@
                            count (char= candidate character))))
             (expect (search "deep" markdown) :to-be-truthy)
             (expect (count-character #\*) :to-equal 8192)
-            (expect (count-character #\>) :to-equal 256)))))))
+            (expect (count-character #\>) :to-equal 256))))))
+  (it "releases a child's result after the parent stores its own result"
+      (let* ((child (cl-markdown-kit:make-paragraph))
+             (parent (cl-markdown-kit:make-block-quote
+                      :children (list child)))
+             (grandparent (cl-markdown-kit:make-block-quote
+                           :children (list parent)))
+             (context (cl-markdown-kit::%mw-make-render-session))
+             (results
+               (cl-markdown-kit::%mw-render-session-results context)))
+        (setf (gethash child results) "retained child"
+              (gethash parent
+                       (cl-markdown-kit::%mw-render-session-frames context))
+              (cl-markdown-kit::%mw-make-render-frame)
+              (cl-markdown-kit::%mw-render-session-parent context)
+              grandparent)
+        (cl-markdown-kit::%mw-render-block-dispatch-event
+         context parent :leave :block-quote)
+        (expect (gethash parent results) :to-equal "> retained child")
+        (expect (nth-value 1 (gethash parent results)) :to-equal t)
+        (expect (nth-value 1 (gethash child results)) :to-equal nil))))

@@ -2,8 +2,9 @@
 
 `write-markdown` serializes a parsed or constructed document as Markdown text.
 `write-markdown-to-stream` writes the same text to a character output stream and
-returns that stream. Both functions emit LF line endings and leave the input
-tree unchanged.
+returns that stream. If `write-markdown-to-stream` signals an error after
+output begins, text already written remains in the stream. Both functions emit
+LF line endings and leave the input tree unchanged.
 
 ```lisp
 (write-markdown (parse-string "# Heading"))
@@ -31,6 +32,8 @@ delimiters.
 `write-html` returns rendered HTML. `write-html-to-stream` writes the same
 output to a character stream and returns that stream. The `:gfm` option
 defaults to `t`.
+If `write-html-to-stream` signals an error after output begins, text already
+written remains in the stream.
 The `:unsafe-urls` option defaults to `nil` and accepts a boolean.
 
 The `:raw-html` option accepts `:omit` (the default), `:escape`, or

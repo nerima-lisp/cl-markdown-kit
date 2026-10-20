@@ -1,7 +1,7 @@
 (in-package #:cl-markdown-kit/test)
 
 (describe "Markdown writer boundaries"
-(it "escapes directly constructed inline AST boundaries"
+  (it "escapes directly constructed inline AST boundaries"
     (labels ((render-nodes (nodes)
                (cl-markdown-kit:write-markdown
                 (cl-markdown-kit:make-document :children nodes)))
@@ -351,5 +351,19 @@
               :to-be-truthy)
       (expect (cl-markdown-kit::%mw-table-alignment-line-p ":---||:")
               :to-equal nil)))
-
-)
+  (it "signals simple-error for list items outside lists"
+      (let* ((item (cl-markdown-kit:make-list-item))
+             (documents
+               (list (cl-markdown-kit:make-document :children (list item))
+                     (cl-markdown-kit:make-document
+                      :children
+                      (list (cl-markdown-kit:make-block-quote
+                             :children (list item)))))))
+        (dolist (document documents)
+          (expect
+           (typep
+            (handler-case
+                (cl-markdown-kit:write-markdown document)
+              (condition (condition) condition))
+            'simple-error)
+           :to-be-truthy)))))

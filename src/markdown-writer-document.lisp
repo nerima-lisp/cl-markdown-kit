@@ -66,7 +66,8 @@
     (%mw-render-document-tree document stream)))
 
 (defun write-markdown-to-stream (document stream)
-  "Write DOCUMENT as Markdown to STREAM and return STREAM."
+  "Write DOCUMENT as Markdown to STREAM and return STREAM.
+If rendering signals an error after output begins, text already written remains in STREAM."
   (check-type document document)
   (check-type stream stream)
   (unless (output-stream-p stream)
