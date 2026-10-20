@@ -653,8 +653,7 @@
           (and (consp form)
                (symbolp (second form))
                (or (and (string= head "defvar") (null initializer))
-                   (and initializer (literal-p initializer)))))))))
-  )
+                   (and initializer (literal-p initializer))))))))))
 
 (defun source-defun-header-end-line
     (lines start-index clean form-open head name
@@ -703,6 +702,7 @@
                                                     (char= (char part body-start)
                                                            (code-char 41))))))))))))))
     (values nil nil)))
+
 (defun source-constant-symbol-keys (directory)
   (labels ((package-token-name (token)
                                (let* ((token (string-upcase token))
