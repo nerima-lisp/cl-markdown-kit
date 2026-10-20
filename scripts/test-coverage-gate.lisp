@@ -30,6 +30,7 @@
          (source-directory (merge-pathnames "source/" temporary-directory))
          (source-file (merge-pathnames "branch.lisp" source-directory))
          (excluded-file (merge-pathnames "excluded.lisp" source-directory))
+         (dash-file (merge-pathnames "dash-excluded.lisp" source-directory))
          (summary-file (merge-pathnames "per-file.tsv" temporary-directory))
          (exclusions-file
           (merge-pathnames "scripts/coverage-exclusions.sexp" root)))
@@ -52,6 +53,26 @@
     ;; scanner to track nesting depth across lines.
     (with-open-file
         (stream excluded-file
+                :direction
+                :output
+                :if-exists
+                :supersede
+                :if-does-not-exist
+                :create
+                :external-format
+                :utf-8)
+      (write-line "(in-package #:cl-user)" stream)
+      (write-line "" stream)
+      (write-line "(defstruct (point" stream)
+      (write-line "             (:constructor make-point (x y)))" stream)
+      (write-line "  x" stream)
+      (write-line "  y)" stream)
+      (write-line "" stream)
+      (write-line "(declaim (optimize speed))" stream))
+    ;; The declaim follows a multi-line defstruct, so excluding it requires the
+    ;; scanner to track nesting depth across lines.
+    (with-open-file
+        (stream dash-file
                 :direction
                 :output
                 :if-exists
@@ -101,6 +122,14 @@
               #\Tab
               #\Tab
               #\Tab
+              #\Tab)
+      (format stream
+              "dash-excluded.lisp~C0~C6~C0~C0~C-~C-~%"
+              #\Tab
+              #\Tab
+              #\Tab
+              #\Tab
+              #\Tab
               #\Tab))
     (let ((report
            (with-output-to-string (output)
@@ -118,16 +147,14 @@
                (unless (= status 1)
                  (error "Expected the uncovered branch to return 1, got ~D."
                         status))))))
-      (unless (and (search "branch 50.0%, required 100.0%" report)
-                   (search "branch.lisp line 2: 1/2 branches covered" report))
-        (error "The report did not identify the uncovered branch:~%~A" report))
+      (unless (and (search "branch 50.0%, required 100.0%" report) (search "branch.lisp line 2: 1/2 branches covered" report) (search "dash-excluded.lisp: line 0.0%, required 100.0%" report) (uiop:symbol-call :coverage-gate :source-exclusion-lines (namestring dash-file) (uiop:symbol-call :coverage-gate :read-exclusion-rules (namestring exclusions-file)))) (error "The report did not identify the uncovered branch and low-coverage dash row with fixture exclusion ranges:~%~A" report))
       (progn
         (cl-weave:describe
          "Coverage gate"
          (cl-weave:it-each
           (("line and branch summary" "branch 50.0%, required 100.0%")
            ("per-file row" "| branch.lisp | 100.0% | 50.0% |")
-           ("failed gate" "coverage gate: FAIL (1 of 2 files below threshold)")
+           ("failed gate" "coverage gate: FAIL (2 of 3 files below threshold)")
            ("no-branch row" "| excluded.lisp | 0.0% | n/a | 1,3-6,8 |"))
           "reports ~A: ~A"
           (report-detail expected-substring)
@@ -173,7 +200,7 @@
       (unless (search "| branch.lisp | 100.0% | 50.0% |" report)
         (error "The report did not include the per-file coverage:~%~A" report))
       (unless
-          (search "coverage gate: FAIL (1 of 2 files below threshold)" report)
+          (search "coverage gate: FAIL (2 of 3 files below threshold)" report)
         (error "The report did not reject the uncovered branch:~%~A" report))
       (when (search "  excluded.lisp:" report)
         (error "The report rejected lines covered by exclusion rules:~%~A" report))
@@ -198,20 +225,46 @@
                    (get-internal-real-time))
            (uiop:ensure-directory-pathname (uiop:temporary-directory))))
          (source-directory (merge-pathnames "source/" temporary-directory))
-         (direct-file (merge-pathnames "direct.lisp" source-directory))
-         (wrapped-file (merge-pathnames "wrapped.lisp" source-directory))
-         (inline-context-file
-          (merge-pathnames "inline-context.lisp" source-directory))
-         (render-frame-file
-          (merge-pathnames "render-frame.lisp" source-directory))
-         (block-parse-result-file
-          (merge-pathnames "block-parse-result.lisp" source-directory))
-         (entities-file
-          (merge-pathnames "html-entities-data.lisp" source-directory))
          (summary-file (merge-pathnames "per-file.tsv" temporary-directory))
          (exclusions-file
-          (merge-pathnames "scripts/coverage-exclusions.sexp" root)))
-    (ensure-directories-exist direct-file)
+          (merge-pathnames "scripts/coverage-exclusions.sexp" root))
+         (fixtures
+           '(("direct-literal.lisp" "1" "1:0/2"
+              "(defstruct literal-control (value 7))")
+             ("direct-constant.lisp" "2" "2:0/2"
+              "(defconstant +fixture-value+ 17)"
+              "(defstruct constant-control (value +fixture-value+))")
+             ("wrapped-constant.lisp" "1" "1:0/2"
+              "(define-node (defstruct wrapped-constant (value +fixture-value+)) :kind :wrapped-constant)")
+             ("nested-constant.lisp" "3" "3:0/2"
+              "(eval-when (:compile-toplevel :load-toplevel :execute)"
+              "  (progn"
+              "    (define-node"
+              "      (defstruct nested-constant (value +fixture-value+))"
+              "      :kind :nested-constant)))")
+             ("constructor-literal.lisp" "1" "1:0/2"
+              "(defstruct (key-literal (:constructor make-key-literal (&key (value 7)))) value)")
+             ("constructor-constant.lisp" "2" "2:0/2"
+              "(defconstant +key-default+ 9)"
+              "(defstruct (key-constant (:constructor make-key-constant (&key (value +key-default+)))) value)")
+             ("runtime-parameter.lisp" "1" "1:0/2"
+              "(defparameter *runtime-parameter* (progn 1))")
+             ("literal-parameter.lisp" "1" "1:0/2"
+              "(defparameter +literal-parameter+ (quote (1 2)))")
+             ("direct-runtime.lisp" "1" "1:0/2"
+              "(defstruct runtime-control (value (if flag 1 2)))")
+             ("wrapped-runtime.lisp" "1" "1:0/2"
+              "(define-node (defstruct wrapped-runtime (value (let ((n 1)) n))) :kind :wrapped-runtime)")
+             ("nested-runtime.lisp" "2,4" "2:0/2,4:0/2"
+              "(eval-when (:compile-toplevel :load-toplevel :execute)"
+              "  (defstruct eval-runtime (value (if flag 1 2)))"
+              "  (progn"
+              "    (define-node"
+              "      (defstruct progn-runtime (value (let ((n 1)) n)))"
+              "      :kind :progn-runtime)))")
+             ("constructor-runtime.lisp" "1" "1:0/2"
+              "(defstruct (key-runtime (:constructor make-key-runtime (&key (value (make-hash-table))))) value)"))))
+    (ensure-directories-exist (merge-pathnames (first (first fixtures)) source-directory))
     (flet ((write-fixture (path lines)
              (with-open-file
                  (stream path
@@ -221,56 +274,10 @@
                          :external-format :utf-8)
                (dolist (line lines)
                  (write-line line stream)))))
-      (write-fixture direct-file
-                     (list
-                      "(defstruct (point (:constructor make-point (value))) (value 0 :type (integer 0 *)))"))
-      (write-fixture wrapped-file
-                     (list
-                      "(define-node"
-                      "  (defstruct (document (:constructor make-document))"
-                      "    (max-nesting-depth +default-max-nesting-depth+ :type (integer 1 *)))"
-                      "  :kind :document)"))
-      (write-fixture
-       inline-context-file
-       (list
-        "(defstruct (%ip-context"
-        "             (:constructor %ip-make-context (text boundary-map reference-index limit)))"
-        "  (limit +default-max-inline-delimiter-depth+ :type (integer 1 *)))"))
-      (write-fixture
-       render-frame-file
-       (list
-        "(defstruct (%mw-render-frame"
-        "             (:constructor %mw-make-render-frame"
-        "                 (&key (line-start-p t) (line-indent 0) prefix)))"
-        "  (line-start-p t)"
-        "  (line-indent 0)"
-        "  (prefix \"\" :type string))"))
-      (write-fixture
-       block-parse-result-file
-       (list
-        "(defstruct (block-parse-result"
-        "             (:constructor make-block-parse-result"
-        "                 (&key document inline-fragments reference-index)))"
-        "  document"
-        "  (inline-fragments nil :type list)"
-        "  (reference-index (make-hash-table :test (quote equal)) :type hash-table))"))
-      (write-fixture
-       entities-file
-       (list
-        "(defparameter *html5-entities*"
-        "  (let ((table (make-hash-table :test (quote equal))))"
-        "    (dolist (entry (quote ((\"amp;\" #x26))))"
-        "      (setf (gethash (first entry) table) (second entry)))"
-        "    table))"
-        "(defparameter +ip-html-close-patterns+ #(1 2))"
-        "(defparameter +ip-html-opener-markers+ #(3 4))"))
-      (write-fixture
-       (merge-pathnames "markdown-writer-escape-data.lisp" source-directory)
-       (list
-        "(defparameter +mw-escape-bracket-characters+"
-        "  (quote (#\\[ #\\])))"
-        "(defparameter +mw-escape-punctuation-characters+"
-        "  (quote (#\\` #\\* #\\_ #\\< #\\~)))"))
+      (dolist (fixture fixtures)
+        (write-fixture
+         (merge-pathnames (first fixture) source-directory)
+         (cdddr fixture)))
       (with-open-file
           (stream summary-file
                   :direction :output
@@ -280,18 +287,21 @@
         (format stream
                 "file~Cline-covered~Cline-total~Cbranch-covered~Cbranch-total~Cuncovered-lines~Cbranch-locations~%"
                 #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
-        (progn
-        (dolist (file
-                 (list "direct.lisp" "wrapped.lisp" "inline-context.lisp"
-                       "render-frame.lisp" "block-parse-result.lisp"))
-          (format stream "~A~C0~C1~C0~C2~C1~C1:0/2~%"
-                  file #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab))
-        (format stream
-                "html-entities-data.lisp~C0~C7~C0~C2~C1-7~C1:0/2~%"
-                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
-        (format stream "~A~C0~C2~C0~C2~C1,3~C1:0/1,3:0/1~%"
-                "markdown-writer-escape-data.lisp"
-                #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)))
+        (dolist (fixture fixtures)
+          (let* ((lines (cdddr fixture))
+                 (branch-locations (third fixture))
+                 (branch-count (* 2 (1+ (count #\, branch-locations)))))
+            (format stream
+                    "~A~C0~C~D~C0~C~D~C~A~C~A~%"
+                    (first fixture)
+                    #\Tab
+                    (length lines)
+                    #\Tab
+                    branch-count
+                    #\Tab
+                    (second fixture)
+                    #\Tab
+                    branch-locations)))))
       (let* ((status nil)
              (report
                (with-output-to-string (output)
@@ -305,21 +315,43 @@
                                                "--exclusions"
                                                (namestring exclusions-file))
                                          :output
-                                         output)))))
-        (unless (= status 0)
-          (error "Expected declaration forms to be excluded, got status ~D:~%~A"
+                                         output))))
+             (expected-failures
+               '("runtime-parameter.lisp"
+                 "direct-runtime.lisp"
+                 "wrapped-runtime.lisp"
+                 "nested-runtime.lisp"
+                 "constructor-runtime.lisp"))
+             (expected-safe
+               '("literal-parameter.lisp"
+                 "direct-literal.lisp"
+                 "direct-constant.lisp"
+                 "wrapped-constant.lisp"
+                 "nested-constant.lisp"
+                 "constructor-literal.lisp"
+                 "constructor-constant.lisp")))
+        (unless (= status 1)
+          (error "Expected runtime declarations to fail coverage, got status ~D:~%~A"
                  status
                  report))
-        (unless (and (search "| direct.lisp | 0.0% | n/a | 1 |" report)
-                     (search "| wrapped.lisp | 0.0% | n/a | 1 |" report)
-                     (search "| inline-context.lisp | 0.0% | n/a | 1 |" report)
-                     (search "| render-frame.lisp | 0.0% | n/a | 1 |" report)
-                     (search "| block-parse-result.lisp | 0.0% | n/a | 1 |" report)
-                     (search "| html-entities-data.lisp | 0.0% | n/a | 1-7 |" report)
-                     (search "| markdown-writer-escape-data.lisp | 0.0% | n/a | 1,3 |" report)
-                     (search "coverage gate: PASS (all 7 files at or above threshold)" report))
-          (error "Declaration exclusions were not reported as expected:~%~A" report))
-        (format t "coverage gate regression passed: declaration forms, generated entity data, and literal inline parser and writer character data are excluded.~%")))))
+        (dolist (file expected-failures)
+          (unless (search (format nil "  ~A: line " file) report)
+            (error "Runtime declaration ~A was not reported uncovered:~%~A"
+                   file
+                   report)))
+        (dolist (file expected-safe)
+          (when (search (format nil "  ~A: " file) report)
+            (error "Literal or constant declaration ~A was not excluded:~%~A"
+                   file
+                   report)))
+        (unless (and
+                 (search "| literal-parameter.lisp | 0.0% | n/a | 1 |" report)
+                 (search "| runtime-parameter.lisp | 0.0% | 0.0% | 1 |" report)
+                 (search "| nested-constant.lisp | 0.0% | n/a | 3 |" report)
+                 (search "coverage gate: FAIL (5 of 12 files below threshold)" report))
+          (error "Declaration coverage did not preserve safe controls and reject runtime forms:~%~A"
+                 report))
+        (format t "coverage gate regression passed: literal and constant declarations excluded; direct, wrapped, nested, and constructor runtime initializers remain uncovered.~%"))))
 (let* ((script
         (or *load-truename*
             *compile-file-truename*
