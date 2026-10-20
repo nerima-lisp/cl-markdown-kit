@@ -128,7 +128,24 @@
            (delimiter-nodes (inline-parser-test-parse delimiter-text)))
       (expect (mapcar #'cl-markdown-kit:text-value backtick-nodes)
               :to-equal (list backticks))
-      (expect (plusp (length delimiter-nodes)) :to-be-truthy)))
+      (let ((expected-node-count 600))
+        (expect (length delimiter-nodes) :to-equal expected-node-count)
+        (expect
+         (loop for pair on delimiter-nodes by (function cddr)
+               always
+                 (and (= (length pair) 2)
+                      (let ((emphasis-node (first pair))
+                            (text-node (second pair)))
+                        (and (cl-markdown-kit:emphasis-p emphasis-node)
+                             (equal
+                              (mapcar (function cl-markdown-kit:text-value)
+                                      (cl-markdown-kit:emphasis-children
+                                       emphasis-node))
+                              (list "a **a"))
+                             (cl-markdown-kit:text-p text-node)
+                             (string= (cl-markdown-kit:text-value text-node)
+                                      "a **a")))))
+         :to-be-truthy))))
 
 (it "counts unmatched delimiter openers against the depth limit"
     (let* ((limit 4096)
@@ -155,7 +172,7 @@
                       (1+ limit)))
               :to-be-truthy)))
 
-(it "parses deeply nested bracket links without reparsing each inner range"
+(it "parses deeply nested bracket links with expected structure"
     (let* ((count 1000)
            (source (concatenate 'string
                                 (make-string count :initial-element #\[)
@@ -163,14 +180,43 @@
                                 (with-output-to-string (output)
                                   (loop repeat count
                                         do (write-string "](u)" output)))))
-           (completed-p
-             (handler-case
-                 (progn
-                   (sb-ext:with-timeout 2
-                     (inline-parser-test-parse source))
-                   t)
-               (sb-ext:timeout () nil))))
-      (expect completed-p :to-be-truthy)))
+           (expected-prefix
+             (make-string (1- count) :initial-element #\[))
+           (expected-suffix
+             (with-output-to-string (output)
+               (loop repeat (1- count)
+                     do (write-string "](u)" output)))))
+      (multiple-value-bind (nodes completed-p)
+          (handler-case
+              (values (sb-ext:with-timeout 2
+                        (inline-parser-test-parse source))
+                      t)
+            (sb-ext:timeout () (values nil nil)))
+        (expect completed-p :to-be-truthy)
+        (when completed-p
+          (expect (length nodes) :to-equal 3)
+          (when (= (length nodes) 3)
+            (let* ((prefix (first nodes))
+                   (link (second nodes))
+                   (suffix (third nodes))
+                   (link-children (cl-markdown-kit:node-children link))
+                   (link-shape-p
+                     (and (cl-markdown-kit:text-p prefix)
+                          (cl-markdown-kit:link-p link)
+                          (cl-markdown-kit:text-p suffix)
+                          (= (length link-children) 1)
+                          (cl-markdown-kit:text-p (first link-children)))))
+              (expect link-shape-p :to-be-truthy)
+              (when link-shape-p
+                (expect (list (cl-markdown-kit:text-value prefix)
+                              (cl-markdown-kit:link-destination link)
+                              (mapcar (function cl-markdown-kit:text-value)
+                                      link-children)
+                              (cl-markdown-kit:text-value suffix))
+                        :to-equal (list expected-prefix
+                                        "u"
+                                        (list "a")
+                                        expected-suffix)))))))))
 
 (it "parses soft breaks, backslash hard breaks, and raw HTML comments"
     (let* ((soft (inline-parser-test-parse (format nil "a~%b")))
@@ -268,7 +314,7 @@
               :to-be-truthy)
       (expect (handler-case
                   (progn (cl-markdown-kit::parse-inline "xx" boundary-map index) nil)
-                (error () t))
+                (simple-error () t))
               :to-be-truthy)))
 
 (it "keeps only complete atoms and pairs inside a rendered range"
