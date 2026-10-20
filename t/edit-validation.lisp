@@ -28,25 +28,25 @@
            (source-less (cl-markdown-kit:make-document))
            (source-less-condition
              (test-condition (lambda () (cl-markdown-kit:replace-section source-less "" "")))))
-      (expect (typep foreign-condition 'error) :to-be-truthy)
-      (expect (typep inline-condition 'error) :to-be-truthy)
-      (expect (typep document-condition 'error) :to-be-truthy)
-      (expect (typep invalid-edit-condition 'error) :to-be-truthy)
-      (expect (typep noninteger-edit-condition 'error) :to-be-truthy)
-      (expect (typep source-less-condition 'error) :to-be-truthy)
+      (expect (typep foreign-condition 'simple-error) :to-be-truthy)
+      (expect (typep inline-condition 'simple-error) :to-be-truthy)
+      (expect (typep document-condition 'simple-error) :to-be-truthy)
+      (expect (typep invalid-edit-condition 'simple-error) :to-be-truthy)
+      (expect (typep noninteger-edit-condition 'simple-error) :to-be-truthy)
+      (expect (typep source-less-condition 'simple-error) :to-be-truthy)
       (setf (cl-markdown-kit:document-source document) nil)
       (expect (cl-markdown-kit::%edit-document-source document) :to-equal source)
       (setf (cl-markdown-kit:node-span paragraph)
             (cl-parser-kit:make-span :source "foreign" :start 0 :end 1))
       (expect (typep (test-condition (lambda ()
                         (cl-markdown-kit:replace-node document paragraph "changed")))
-                     'error)
+                     'simple-error)
               :to-be-truthy)
       (setf (cl-markdown-kit:node-span missing-span-node) nil)
       (expect (typep (test-condition (lambda ()
                         (cl-markdown-kit:replace-node missing-span-document
                                                       missing-span-node "changed")))
-                     'error)
+                     'simple-error)
               :to-be-truthy)
       (let* ((bad-document (cl-markdown-kit:parse-string source))
              (bad-node (second (cl-markdown-kit:document-children bad-document))))
@@ -54,7 +54,7 @@
               (cl-parser-kit:make-span :source (cl-markdown-kit:document-source bad-document) :start -1 :end 1))
         (expect (typep (test-condition (lambda ()
                           (cl-markdown-kit:replace-node bad-document bad-node "changed")))
-                       'error)
+                       'simple-error)
                 :to-be-truthy))))
 
   (it "validates task state inputs and supports unchecking"
@@ -71,11 +71,11 @@
               :to-equal (test-source nil "- [ ] checked" "- ordinary"))
       (expect (typep (test-condition (lambda ()
                         (cl-markdown-kit:set-task-checked document ordinary t)))
-                     'error)
+                     'simple-error)
               :to-be-truthy)
       (expect (typep (test-condition (lambda ()
                         (cl-markdown-kit:set-task-checked document foreign-task t)))
-                     'error)
+                     'simple-error)
               :to-be-truthy)
       (expect (typep (test-condition (lambda ()
                         (cl-markdown-kit:set-task-checked document task :checked)))
@@ -97,7 +97,7 @@
         (expect (typep (test-condition (lambda ()
                           (cl-markdown-kit:set-task-checked
                            invalid-marker-document invalid-task t)))
-                       'error)
+                       'simple-error)
                 :to-be-truthy))))
 
   (it "retries a section insertion after adding required block separation"
@@ -281,7 +281,7 @@
                   (cl-markdown-kit::%perform-edit
                    document 0 (length source) replacement nil nil)))))
         (expect (typep parse-condition
-                       'cl-markdown-kit:markdown-resource-limit-error)
+                       'cl-markdown-kit:markdown-nesting-depth-exceeded)
                 :to-be-truthy)
         (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
                  parse-condition)
