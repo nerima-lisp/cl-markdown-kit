@@ -91,7 +91,7 @@
       (expect (hash-table-count table) :to-equal (length data))
       (expect (loop for entry in data
                     for name = (car entry)
-                    for expected = (map string
+                    for expected = (map 'string
                                         (lambda (codepoint)
                                           (code-char codepoint))
                                         (cdr entry))
