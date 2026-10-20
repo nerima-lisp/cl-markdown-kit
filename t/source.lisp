@@ -239,35 +239,35 @@
               :to-equal :cr)
       (expect (source-contract-signals-p
                (lambda () (cl-markdown-kit::make-boundary-map "" #()))
-               simple-error)
+               (quote simple-error))
               :to-be-truthy)
       (expect (source-contract-signals-p
                (lambda ()
                  (cl-markdown-kit::make-boundary-map "x" #(0)))
-               type-error)
+               (quote type-error))
               :to-be-truthy)
       (expect (source-contract-signals-p
                (lambda () (cl-markdown-kit:make-source-buffer 7))
-               type-error)
+               (quote type-error))
               :to-be-truthy)
       (expect (source-contract-signals-p
                (lambda () (cl-markdown-kit:source-buffer-span empty-buffer 1 0))
-               simple-error)
+               (quote simple-error))
               :to-be-truthy)
       (expect (cl-markdown-kit::source-boundary-offset
                (cl-markdown-kit::boundary-map-boundary composed-map 2))
               :to-equal 3)
       (expect (source-contract-signals-p
                (lambda () (cl-markdown-kit::boundary-map-boundary (cl-markdown-kit::source-buffer-boundary-map mapped-buffer) 4))
-               simple-error)
+               (quote simple-error))
               :to-be-truthy)
       (expect (source-contract-signals-p
                (lambda () (cl-markdown-kit::boundary-map-boundary composed-map 4))
-               simple-error)
+               (quote simple-error))
               :to-be-truthy)
       (with-open-file (stream "/dev/null" :direction :input
                                        :element-type '(unsigned-byte 8))
         (expect (source-contract-signals-p
                (lambda () (cl-markdown-kit:make-source-buffer stream))
-               type-error)
+               (quote type-error))
                 :to-be-truthy)))))

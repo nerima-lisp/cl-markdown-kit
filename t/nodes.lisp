@@ -142,7 +142,8 @@
                         concrete-nodes)
                 :to-equal
                 (list
-                 (quote (:front-matter-p t :gfm-p t))
+                 (list :front-matter-p t :gfm-p t
+                     :max-input-size cl-markdown-kit:+default-max-input-size+)
                  (quote (:opening-delimiter "---" :closing-delimiter "---"))
                  nil
                  (list :kind :ordered :tight-p t :start-number 4

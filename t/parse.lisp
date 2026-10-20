@@ -145,7 +145,7 @@
                   (lambda ()
                  (cl-markdown-kit::make-block-parse-result
                   :reference-index nil))
-                  type-error)
+                  (quote type-error))
               :to-be-truthy)))
   (it "enforces input-size limits before parsing, reading further, or decoding octets"
     (let ((*parser-contract-block-result* nil)
@@ -250,53 +250,53 @@
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda () (cl-markdown-kit:parse :invalid))
-                  type-error)
+                  (quote type-error))
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda () (cl-markdown-kit:parse-string 1))
-                  type-error)
+                  (quote type-error))
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda () (cl-markdown-kit:parse-stream 1))
-                  type-error)
+                  (quote type-error))
                  :to-be-truthy)
          (expect (with-output-to-string (stream)
                    (parser-contract-signals-p
                   (lambda ()
                       (cl-markdown-kit:parse-stream stream))
-                  type-error))
+                  (quote type-error)))
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda () (cl-markdown-kit:parse-octets "x"))
-                  type-error)
+                  (quote type-error))
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda ()
                     (cl-markdown-kit:parse-string "x"
                                                   :max-nesting-depth 0))
-                  type-error)
+                  (quote type-error))
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda ()
                     (cl-markdown-kit:parse-string
                      "x" :max-inline-delimiter-depth 0))
-                  type-error)
+                  (quote type-error))
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda ()
                     (cl-markdown-kit:parse-string "" :gfm :invalid))
-                  type-error)
+                  (quote type-error))
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda ()
                     (cl-markdown-kit:parse-string
                      "x" :max-nesting-depth "invalid"))
-                  type-error)
+                  (quote type-error))
                  :to-be-truthy)
          (expect (parser-contract-signals-p
                   (lambda ()
                     (cl-markdown-kit::%set-inline-children (cl-markdown-kit:make-front-matter) nil))
-                  simple-error)
+                  (quote simple-error))
                  :to-be-truthy)))))
 
   (cl-weave:it-each ((:parse-string "string")
@@ -338,9 +338,9 @@
                     (call-with-parser-contract-stubs
                      (lambda ()
                        (parser-contract-call-entry-point
-                        entry-point input :max-input-size 7)))))
+                        entry-point input :max-input-size 14)))))
               (expect (cl-markdown-kit:document-max-input-size limited-document)
-                      :to-equal 7)))))))
+                      :to-equal 14)))))))
 
   (cl-weave:it-each ((:parse-string "string")
      (:parse-stream "stream")
