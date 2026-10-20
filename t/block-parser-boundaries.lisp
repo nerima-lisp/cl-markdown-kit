@@ -56,6 +56,25 @@
                    :to-be-truthy)
                   (expect (depth-condition-matches-p condition limit (1+ limit))
                           :to-be-truthy))))
+          (it "uses the public parse-blocks defaults"
+              (let* ((source
+                       (format nil
+                               "---~%title: defaults~%---~%~%| header |~%| --- |~%| body |"))
+                     (result
+                       (cl-markdown-kit:parse-blocks
+                        (cl-markdown-kit:make-source-buffer source)))
+                     (document
+                       (cl-markdown-kit::block-parse-result-document result))
+                     (children (cl-markdown-kit:document-children document))
+                     (front-matter (first children))
+                     (table (second children)))
+                (expect
+                 (and (= (length children) 2)
+                      (cl-markdown-kit:front-matter-p front-matter)
+                      (typep table 'cl-markdown-kit:table)
+                      (= (cl-markdown-kit:document-max-nesting-depth document)
+                         cl-markdown-kit::+default-max-nesting-depth+))
+                 :to-be-truthy)))
           (it
            "handles tab stops and partial indentation removal with source boundaries"
            (let* ((tab-line
