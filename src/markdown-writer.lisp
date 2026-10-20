@@ -11,8 +11,6 @@
                   *mw-minimize-inline-escapes-p*
                   *mw-heading-closing-hash-allowed-p*))
 
-(defparameter +mw-escape-punctuation-characters+
-  (quote (#\` #\* #\_ #\< #\~)))
+(sb-ext:defglobal +mw-escape-punctuation-characters+ '(#\` #\* #\_ #\< #\~))
 
-(defparameter +mw-escape-bracket-characters+
-  (quote (#\[ #\])))
+(sb-ext:defglobal +mw-escape-bracket-characters+ '(#\[ #\]))
