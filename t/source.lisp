@@ -19,6 +19,11 @@
       (progn (funcall function) nil)
     (serious-condition (condition)
       (typep condition expected-type))))
+(defun source-contract-capture-resource-limit-error (function)
+  (handler-case
+      (progn (funcall function) nil)
+    (cl-markdown-kit:markdown-resource-limit-error (condition)
+      condition)))
 
 (describe "Source buffer contract"
   (it "constructs public source formats and spans"
@@ -270,4 +275,100 @@
         (expect (source-contract-signals-p
                (lambda () (cl-markdown-kit:make-source-buffer stream))
                (quote type-error))
-                :to-be-truthy)))))
+                :to-be-truthy))))
+  (it "counts original input units and enforces source size boundaries"
+    (let* ((bom (or (code-char #xfeff)
+                    (error "No BOM character available")))
+           (bom-crlf-source
+             (concatenate (quote string)
+                          (string bom)
+                          (string #\Return)
+                          (string #\Newline)))
+           (bom-crlf-buffer
+             (cl-markdown-kit:make-source-buffer
+              bom-crlf-source :max-input-size 3))
+           (bom-crlf-error
+             (source-contract-capture-resource-limit-error
+              (lambda ()
+                (cl-markdown-kit:make-source-buffer
+                 bom-crlf-source :max-input-size 2))))
+           (exact-stream-buffer
+             (with-input-from-string (exact-stream "abc")
+               (cl-markdown-kit:make-source-buffer
+                exact-stream :max-input-size 3)))
+           (stream (make-string-input-stream "abcde"))
+           (stream-error
+             (source-contract-capture-resource-limit-error
+              (lambda ()
+                (cl-markdown-kit:make-source-buffer
+                 stream :max-input-size 3))))
+           (bom-crlf-octets
+             (make-array 5
+                         :element-type (quote (unsigned-byte 8))
+                         :initial-contents (quote (239 187 191 13 10))))
+           (bom-crlf-octet-buffer
+             (cl-markdown-kit:make-source-buffer
+              bom-crlf-octets :max-input-size 5))
+           (bom-crlf-octet-error
+             (source-contract-capture-resource-limit-error
+              (lambda ()
+                (cl-markdown-kit:make-source-buffer
+                 bom-crlf-octets :max-input-size 4))))
+           (invalid-octets
+             (make-array 5
+                         :element-type (quote (unsigned-byte 8))
+                         :initial-contents (quote (255 255 255 255 255))))
+           (decode-order-error
+             (source-contract-capture-resource-limit-error
+              (lambda ()
+                (cl-markdown-kit:make-source-buffer
+                 invalid-octets :max-input-size 4)))))
+      (flet ((resource-limit-fields (condition)
+               (expect
+                (typep condition
+                       (quote cl-markdown-kit:markdown-resource-limit-error))
+                :to-be-truthy)
+               (when (typep condition
+                            (quote cl-markdown-kit:markdown-resource-limit-error))
+                 (list
+                  (cl-markdown-kit:markdown-resource-limit-error-limit-name
+                   condition)
+                  (cl-markdown-kit:markdown-resource-limit-error-limit condition)
+                  (cl-markdown-kit:markdown-resource-limit-error-actual condition)
+                  (cl-markdown-kit:markdown-resource-limit-error-context
+                   condition)))))
+        (expect (cl-markdown-kit:+default-max-input-size+)
+                :to-equal 16777216)
+        (expect (cl-markdown-kit:source-buffer-source bom-crlf-buffer)
+                :to-equal bom-crlf-source)
+        (expect (cl-markdown-kit:source-buffer-normalized-text bom-crlf-buffer)
+                :to-equal (format nil "~%"))
+        (expect (resource-limit-fields bom-crlf-error)
+                :to-equal (list :input-size 2 3 "make-source-buffer"))
+        (expect (cl-markdown-kit:source-buffer-source exact-stream-buffer)
+                :to-equal "abc")
+        (expect (resource-limit-fields stream-error)
+                :to-equal (list :input-size 3 4 "make-source-buffer"))
+        (expect (read-char stream nil nil) :to-equal #\e)
+        (expect (cl-markdown-kit:source-buffer-normalized-text
+                 bom-crlf-octet-buffer)
+                :to-equal (format nil "~%"))
+        (expect (resource-limit-fields bom-crlf-octet-error)
+                :to-equal (list :input-size 4 5 "make-source-buffer"))
+        (expect (typep decode-order-error
+                       (quote cl-markdown-kit:markdown-resource-limit-error))
+                :to-be-truthy)
+        (expect
+         (source-contract-signals-p
+          (lambda ()
+            (cl-markdown-kit:make-source-buffer
+             "x" :max-input-size nil))
+          (quote type-error))
+         :to-be-truthy)
+        (expect
+         (source-contract-signals-p
+          (lambda ()
+            (cl-markdown-kit:make-source-buffer
+             "x" :max-input-size 0))
+          (quote type-error))
+         :to-be-truthy)))))

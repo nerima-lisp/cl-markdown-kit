@@ -128,7 +128,7 @@ BOUNDARIES has one entry for each text boundary, including both ends."
   (and (plusp (length string))
        (= (char-code (char string 0)) #xfeff)))
 
-(defun %read-character-stream (stream &optional max-input-size context)
+(defun %read-character-stream (stream max-input-size context)
   (unless (input-stream-p stream)
     (error 'type-error :datum stream :expected-type '(satisfies input-stream-p)))
   (unless (nth-value 0 (subtypep (stream-element-type stream) 'character))
@@ -138,19 +138,18 @@ BOUNDARIES has one entry for each text boundary, including both ends."
     (let ((count 0))
       (loop for character = (read-char stream nil nil)
             while character
-            do (when max-input-size
-                 (incf count)
-                 (when (> count max-input-size)
-                   (error 'markdown-resource-limit-error
-                          :limit-name :input-size
-                          :limit max-input-size
-                          :actual count
-                          :context context)))
+            do (incf count)
+               (when (> count max-input-size)
+                 (error 'markdown-resource-limit-error
+                        :limit-name :input-size
+                        :limit max-input-size
+                        :actual count
+                        :context context))
                (write-char character output)))))
 
-(defun %decode-source-input (source &optional max-input-size context)
+(defun %decode-source-input (source max-input-size context)
   (flet ((check-input-size (actual)
-           (when (and max-input-size (> actual max-input-size))
+           (when (> actual max-input-size)
              (error 'markdown-resource-limit-error
                     :limit-name :input-size
                     :limit max-input-size
@@ -257,7 +256,7 @@ BOUNDARIES has one entry for each text boundary, including both ends."
       (values text normalized-line-starts source-line-starts
               (%newline-style line-endings) line-endings))))
 
-(defun %build-source-buffer-from-input (source &optional max-input-size context)
+(defun %build-source-buffer-from-input (source max-input-size context)
   (multiple-value-bind (decoded input-kind encoding octet-bom-p)
       (%decode-source-input source max-input-size context)
     (let* ((source-text (copy-seq decoded))
@@ -273,12 +272,21 @@ BOUNDARIES has one entry for each text boundary, including both ends."
                                      normalized-line-starts source-line-starts
                                      nil #() #())))
           (%make-source-buffer source-text normalized-text format boundary-map))))))
-(defun make-source-buffer (source)
+(defun make-source-buffer (source &key (max-input-size +default-max-input-size+))
   "Snapshot SOURCE and build normalized text, format metadata, and coordinates.
 
 SOURCE may be a string, character input stream, or octet vector. An initial BOM
-remains in the source snapshot and is omitted from the parser-facing text."
-  (%build-source-buffer-from-input source))
+remains in the source snapshot and is omitted from the parser-facing text.
+MAX-INPUT-SIZE must be a positive integer and defaults to
++DEFAULT-MAX-INPUT-SIZE+. Strings and character streams count input characters
+before normalization: a BOM is one character, and CR and LF in a CRLF sequence
+count separately. Octet vectors count bytes before decoding, including BOM
+bytes. Strings are checked before copying, and octets before decoding. A
+character stream consumes the first character beyond the limit, signals
+markdown-resource-limit-error, and leaves the rest unread. The condition records
+the :input-size limit, actual size, and make-source-buffer context."
+  (check-type max-input-size (integer 1 *))
+  (%build-source-buffer-from-input source max-input-size "make-source-buffer"))
 
 (defun make-source-span (boundary-map start end)
   "Create a cl-parser-kit span for [START,END) in BOUNDARY-MAP's text."

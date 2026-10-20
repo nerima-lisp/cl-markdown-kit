@@ -127,9 +127,23 @@ An initial BOM stays in the source snapshot and is omitted from normalized parse
 Thus normalized boundary zero maps to source offset 1, line 1, column 1 when a
 BOM is present.
 
+The optional `:max-input-size` keyword requires a positive integer and defaults
+to `+default-max-input-size+`, or 16,777,216. For strings and character streams,
+the limit counts characters before normalization. A BOM counts as one character,
+and CR and LF in a CRLF sequence count separately. For octet vectors, the limit
+counts bytes before decoding, including BOM and line-ending bytes. Strings are
+checked before copying, and octet vectors before decoding. A character stream
+is read through the first character beyond the limit, then signals
+`markdown-resource-limit-error` and leaves the rest unread.
+
+The condition reports the `:input-size` limit, the configured limit, the
+observed size, and the input context. `make-source-buffer` uses the context
+`"make-source-buffer"`. Parser entry points use the selected entry point name;
+`parse` reports the delegated entry point.
+
 | Function | Signature | Result |
 |---|---|---|
-| `make-source-buffer` | `(make-source-buffer source)` | A source buffer over the snapshot |
+| `make-source-buffer` | `(make-source-buffer source &key (max-input-size +default-max-input-size+))` | A bounded source buffer over the snapshot |
 | `source-buffer-source` | `(source-buffer-source buffer)` | Exact decoded source string, including BOM |
 | `source-buffer-normalized-text` | `(source-buffer-normalized-text buffer)` | Parser-facing text with LF line endings |
 | `source-buffer-format` | `(source-buffer-format buffer)` | A `source-format` record |
@@ -206,17 +220,9 @@ exposes these settings through `document-front-matter-p`, `document-gfm-p`,
 integers. Source-preserving edit operations reuse the front-matter and GFM
 settings when reparsing edited source.
 
-`max-input-size` defaults to `+default-max-input-size+`, which is 16,777,216.
-For strings and character streams, the limit counts characters. For octet
-vectors, it counts octets and is checked before decoding. A stream parser reads
-through the first character beyond the limit, then signals
-`markdown-resource-limit-error`; the rest of the stream remains unread. The
-condition reports `:input-size`, the configured limit, and the observed size.
-Read those values with `markdown-resource-limit-error-limit-name`,
+Read the condition fields with `markdown-resource-limit-error-limit-name`,
 `markdown-resource-limit-error-limit`, `markdown-resource-limit-error-actual`,
-and `markdown-resource-limit-error-context`. The context reader returns the
-selected entry point name as a string. Errors raised through `parse` use the
-delegated entry point value: `parse-string`, `parse-stream`, or `parse-octets`.
+and `markdown-resource-limit-error-context`.
 
 All limits must be positive integers. `max-nesting-depth` defaults to 256 open
 block-container levels. `max-inline-delimiter-depth` defaults to a combined

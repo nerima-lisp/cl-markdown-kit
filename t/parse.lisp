@@ -166,6 +166,9 @@
                    (capture-resource-limit-error
                     (lambda ()
                       (cl-markdown-kit:parse-string "abcd" :max-input-size 3)))))
+             (expect (typep condition
+                             (quote cl-markdown-kit:markdown-resource-limit-error))
+                     :to-be-truthy)
              (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
                       condition)
                      :to-equal :input-size)
@@ -186,6 +189,9 @@
                       (lambda ()
                         (cl-markdown-kit:parse-stream stream :max-input-size 3)))))
                (progn
+                 (expect (typep condition
+                               (quote cl-markdown-kit:markdown-resource-limit-error))
+                         :to-be-truthy)
                  (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
                           condition)
                          :to-equal :input-size)
@@ -214,6 +220,9 @@
                                      :initial-contents '(255 255 255 255))
                        :max-input-size 3)))))
              (progn
+               (expect (typep condition
+                              (quote cl-markdown-kit:markdown-resource-limit-error))
+                       :to-be-truthy)
                (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
                         condition)
                        :to-equal :input-size)

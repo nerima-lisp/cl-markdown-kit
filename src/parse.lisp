@@ -79,9 +79,7 @@
   "Parse STRING using the selected parser options.
 
 FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
-an optional BOM becomes a front-matter node. GFM controls extension parsing.
-MAX-INPUT-SIZE must be positive, counts characters, and defaults to
-+DEFAULT-MAX-INPUT-SIZE+."
+an optional BOM becomes a front-matter node. GFM controls extension parsing."
   (check-type string string)
   (let ((input-limit (%positive-limit max-input-size)))
     (%parse-source-buffer
@@ -95,11 +93,7 @@ MAX-INPUT-SIZE must be positive, counts characters, and defaults to
   "Parse CHARACTER-STREAM using the selected parser options.
 
 FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
-an optional BOM becomes a front-matter node. GFM controls extension parsing.
-MAX-INPUT-SIZE must be positive, counts characters, and defaults to
-+DEFAULT-MAX-INPUT-SIZE+. On overflow, the parser consumes the first character
-beyond the limit, signals markdown-resource-limit-error, and leaves the rest of
-the stream unread."
+an optional BOM becomes a front-matter node. GFM controls extension parsing."
   (check-type character-stream stream)
   (let ((input-limit (%positive-limit max-input-size)))
     (%parse-source-buffer
@@ -114,9 +108,7 @@ the stream unread."
   "Decode and parse OCTET-VECTOR using the selected parser options.
 
 FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
-an optional BOM becomes a front-matter node. GFM controls extension parsing.
-MAX-INPUT-SIZE must be positive, counts octets, and defaults to
-+DEFAULT-MAX-INPUT-SIZE+. The size check runs before decoding."
+an optional BOM becomes a front-matter node. GFM controls extension parsing."
   (unless (typep octet-vector '(vector (unsigned-byte 8)))
     (error 'type-error :datum octet-vector
            :expected-type '(vector (unsigned-byte 8))))
@@ -132,9 +124,7 @@ MAX-INPUT-SIZE must be positive, counts octets, and defaults to
   "Parse SOURCE, dispatching by type.
 
 FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
-an optional BOM becomes a front-matter node. GFM controls extension parsing.
-MAX-INPUT-SIZE must be positive, counts characters for strings and character
-streams and octets for byte vectors, and defaults to +DEFAULT-MAX-INPUT-SIZE+."
+an optional BOM becomes a front-matter node. GFM controls extension parsing."
   (cond
     ((stringp source)
      (parse-string source
