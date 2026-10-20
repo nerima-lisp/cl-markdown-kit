@@ -374,8 +374,10 @@
       overrideOutputs = ctx: {
         packages.docs = ctx.generated.packages.docs.overrideAttrs (old: {
           buildPhase = ''
+            runHook preBuild
             ${ctx.pkgs.coreutils}/bin/timeout --kill-after=30s 90s \
-              ${ctx.pkgs.bash}/bin/bash -e -c ${ctx.pkgs.lib.escapeShellArg old.buildPhase}
+              mkdocs build --strict --config-file mkdocs.yml --site-dir "$out"
+            runHook postBuild
           '';
         });
         checks.docs = ctx.generated.checks.docs.overrideAttrs (old: {
