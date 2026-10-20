@@ -78,7 +78,10 @@
   "Parse STRING using the selected parser options.
 
 FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
-an optional BOM becomes a front-matter node. GFM controls extension parsing."
+an optional BOM becomes a front-matter node. GFM controls extension parsing.
+MAX-INPUT-SIZE counts characters and defaults to +DEFAULT-MAX-INPUT-SIZE+.
+See the MAKE-SOURCE-BUFFER docstring and the Source buffers and boundaries
+section of the Nodes reference for detailed counting rules."
   (check-type string string)
   (let ((input-limit (%positive-limit max-input-size)))
     (%parse-source-buffer
@@ -92,7 +95,12 @@ an optional BOM becomes a front-matter node. GFM controls extension parsing."
   "Parse CHARACTER-STREAM using the selected parser options.
 
 FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
-an optional BOM becomes a front-matter node. GFM controls extension parsing."
+an optional BOM becomes a front-matter node. GFM controls extension parsing.
+MAX-INPUT-SIZE counts characters and defaults to +DEFAULT-MAX-INPUT-SIZE+.
+It consumes the first character beyond the limit before signaling
+MARKDOWN-RESOURCE-LIMIT-ERROR, leaving the rest unread. See the
+MAKE-SOURCE-BUFFER docstring and the Source buffers and boundaries
+section of the Nodes reference for detailed counting rules."
   (check-type character-stream stream)
   (let ((input-limit (%positive-limit max-input-size)))
     (%parse-source-buffer
@@ -107,7 +115,10 @@ an optional BOM becomes a front-matter node. GFM controls extension parsing."
   "Decode and parse OCTET-VECTOR using the selected parser options.
 
 FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
-an optional BOM becomes a front-matter node. GFM controls extension parsing."
+an optional BOM becomes a front-matter node. GFM controls extension parsing.
+MAX-INPUT-SIZE counts octets and defaults to +DEFAULT-MAX-INPUT-SIZE+.
+See the MAKE-SOURCE-BUFFER docstring and the Source buffers and boundaries
+section of the Nodes reference for detailed counting rules."
   (unless (typep octet-vector '(vector (unsigned-byte 8)))
     (error 'type-error :datum octet-vector
            :expected-type '(vector (unsigned-byte 8))))
@@ -123,7 +134,11 @@ an optional BOM becomes a front-matter node. GFM controls extension parsing."
   "Parse SOURCE, dispatching by type.
 
 FRONT-MATTER defaults to T. When enabled, a leading --- delimited block after
-an optional BOM becomes a front-matter node. GFM controls extension parsing."
+an optional BOM becomes a front-matter node. GFM controls extension parsing.
+MAX-INPUT-SIZE counts characters for strings and character streams, and octets
+for byte vectors. It defaults to +DEFAULT-MAX-INPUT-SIZE+.
+See the MAKE-SOURCE-BUFFER docstring and the Source buffers and boundaries
+section of the Nodes reference for detailed counting rules."
   (cond
     ((stringp source)
      (parse-string source
