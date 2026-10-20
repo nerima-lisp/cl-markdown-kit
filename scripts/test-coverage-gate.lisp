@@ -531,7 +531,12 @@
                                 ("runtime-multiline-then-constant.lisp" 6 "1-6" nil
                                  ((1 3 "defstruct")
                                   (4 4 "defconstant")
-                                  (5 6 "defstruct"))))))
+                                  (5 6 "defstruct")))
+                                ("defun-constant-keyword-defaults.lisp" 12 "1-5,7-11" nil
+                                 ((1 1 "defconstant")
+                                  (2 2 "defconstant")
+                                  (3 5 "defun")
+                                  (7 11 "defun"))))))
                        (cl-user::*coverage-reader-eval-marker* nil)
                        (fixtures (append unsafe-fixtures safe-fixtures)))
                   (ensure-directories-exist
@@ -661,9 +666,9 @@
                             (unless (member expected-key constant-keys :test (function equal))
                               (error "The constant after a multiline form was not discovered: ~S."
                                      expected-key)))))
-                      (unless (search "coverage gate: FAIL (16 of 20 files below threshold)"
+                      (unless (search "coverage gate: FAIL (16 of 21 files below threshold)"
                                       report)
-                        (error "Expected sixteen unsafe fixtures to fail and four source controls to pass:~%~A"
+                        (error "Expected sixteen unsafe fixtures to fail and five source controls to pass:~%~A"
                                report))
                       (format t "coverage gate regression passed: runtime declarations and condition report functions remain uncovered; source fixtures are read from disk.~%"))))))))
       (uiop:delete-directory-tree

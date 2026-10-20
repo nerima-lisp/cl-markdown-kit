@@ -5,7 +5,7 @@
 (:kind top-level-form :head "defstruct" :reason "Structure declarations are excluded only when every slot and constructor default is a literal or a symbol declared by a top-level DEFCONSTANT form; runtime defaults remain subject to coverage." :reproduction "scripts/coverage-reproductions/defstruct.lisp")
 (:kind top-level-form :head "declaim" :reason "Compiler declarations configure compilation and have no runtime coverage location." :reproduction "scripts/coverage-reproductions/declaim.lisp")
 (:kind defun-header :head "defun" :name "make-source-boundary" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
-(:kind defun-header :head "defun" :name "make-source-buffer" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
+(:kind defun-header :head "defun" :name "make-source-buffer" :reason "Keyword defaults are literals or top-level constants; runtime expressions remain subject to coverage." :reproduction "scripts/coverage-reproductions/defun-constant-keyword-defaults.lisp")
 (:kind defun-header :head "defun" :name "make-source-format" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
 (:kind defun-header :head "defun" :name "parse-string" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
 (:kind defun-header :head "defun" :name "parse-stream" :reason "Literal keyword defaults have no executable source location." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
@@ -23,3 +23,4 @@
 (:kind top-level-form :head "verify-node-dispatches-at-compile-time" :reason "Compile-time dispatch assertions expand to NIL and have no runtime coverage location." :reproduction "scripts/coverage-reproductions/verify-node-dispatches-at-compile-time.lisp")
 (:kind top-level-form :head "defparameter" :reason "Literal defparameter initializers have no executable expression to cover; non-literal initializers remain subject to coverage." :reproduction "scripts/coverage-reproductions/html5-entity-data.lisp")
 (:kind defun-header :head "defun" :name "make-block-parse-result" :reason "The lambda list and literal NIL default are signature metadata without executable source locations." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
+(:kind defun-header :head "defun" :name "parse-blocks" :reason "Keyword defaults are literals or top-level constants; runtime expressions remain subject to coverage." :reproduction "scripts/coverage-reproductions/defun-constant-keyword-defaults.lisp")
