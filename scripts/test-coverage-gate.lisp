@@ -249,6 +249,7 @@
               "(defstruct (key-constant (:constructor make-key-constant (&key (value +key-default+)))) value)")
              ("runtime-parameter.lisp" "1" "1:0/2"
               "(defparameter +ip-html-close-patterns+ (progn 1))")
+             ("runtime-entity-data.lisp" "1" "1:0/2" "(defparameter +html5-entity-data+ (progn 1))")
              ("literal-parameter.lisp" "1" "1:0/2"
               "(defparameter +ip-html-close-patterns+ (quote (1 2)))")
              ("direct-runtime.lisp" "1" "1:0/2"
@@ -333,9 +334,9 @@
                  "direct-runtime.lisp"
                  "wrapped-runtime.lisp"
                  "nested-runtime.lisp"
-                 "constructor-runtime.lisp"))
-             (expected-safe
-               '("literal-parameter.lisp"
+                 "constructor-runtime.lisp"
+                 "runtime-entity-data.lisp"))
+             (expected-safe '("literal-parameter.lisp"
                  "direct-literal.lisp"
                  "direct-constant.lisp"
                  "wrapped-constant.lisp"
@@ -360,7 +361,7 @@
                  (search "| literal-parameter.lisp | 0.0% | n/a | 1 |" report)
                  (search "| runtime-parameter.lisp | 0.0% | 0.0% | 1 |" report)
                  (search "| nested-constant.lisp | 0.0% | n/a | 3 |" report)
-                 (search "coverage gate: FAIL (5 of 12 files below threshold)" report))
+                 (search "coverage gate: FAIL (6 of 13 files below threshold)" report))
           (error "Declaration coverage did not preserve safe controls and reject runtime forms:~%~A"
                  report))
         (format t "coverage gate regression passed: literal and constant declarations excluded; direct, wrapped, nested, and constructor runtime initializers remain uncovered.~%"))))
