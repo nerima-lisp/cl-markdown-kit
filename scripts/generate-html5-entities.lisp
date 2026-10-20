@@ -123,8 +123,6 @@
       (write-line ")" output))
     (write-line "  ))" output)
     (terpri output)
-    (write-line "(defparameter *html5-entities* nil)" output)
-    (terpri output)
     (write-line "(defun build-html5-entity-table ()" output)
     (format output
             "  (let ((table (make-hash-table :test 'equal :size ~D)))~%"
@@ -132,7 +130,11 @@
     (write-line "    (dolist (entry +html5-entity-data+)" output)
     (write-line "      (setf (gethash (car entry) table)" output)
     (write-line "            (map 'string #'code-char (cdr entry))))" output)
-    (write-line "    table))" output)))
+    (write-line "    table))" output)
+    (terpri output)
+    (write-line
+     "(defparameter *html5-entities* (build-html5-entity-table))"
+     output)))
 
 (defun string-to-utf8-octets (string)
   (sb-ext:string-to-octets string :external-format :utf-8))
@@ -163,11 +165,8 @@
 (defun command-mode ()
   (let ((arguments (cdr sb-ext:*posix-argv*)))
     (cond
-      ((member "--help" arguments :test #'string=)
-        (write-line "usage: generate-html5-entities.lisp [--check]"
-                    *standard-output*)
-        :help)
-      ((member "-h" arguments :test #'string=)
+      ((or (member "--help" arguments :test #'string=)
+           (member "-h" arguments :test #'string=))
         (write-line "usage: generate-html5-entities.lisp [--check]"
                     *standard-output*)
         :help)

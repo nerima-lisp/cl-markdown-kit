@@ -9,8 +9,7 @@
         (or (zerop (length string))
             (and point
                  (or (position #\. string :start (1+ point))
-                     (= point (1- (length string)))))
-            (and (null point) (zerop (length string))))
+                     (= point (1- (length string))))))
       (return-from parse-decimal
         nil))
     (let* ((whole
