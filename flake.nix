@@ -55,6 +55,7 @@
       url = "github:nerima-lisp/cl-process-kit/v3.4.0";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-nix-forge.follows = "cl-weave/cl-nix-forge";
+      inputs.cl-codec-kit.follows = "cl-codec-kit";
       inputs.treefmt-nix.follows = "treefmt-nix";
     };
     cl-yaml-kit = {
@@ -64,6 +65,8 @@
       inputs.cl-weave.follows = "cl-weave";
       inputs.cl-codec-kit.follows = "cl-codec-kit";
       inputs.cl-json-kit.follows = "cl-json-kit";
+      inputs.cl-regex-kit.inputs.cl-codec-kit.follows = "cl-codec-kit";
+      inputs.cl-regex-kit.inputs.cl-cli.inputs.cl-codec-kit.follows = "cl-codec-kit";
       inputs.cl-regex-kit.inputs.cl-parser-kit.follows = "cl-parser-kit";
       inputs.treefmt-nix.follows = "treefmt-nix";
       inputs.cl-regex-kit.inputs.cl-cli.inputs.cl-nix-forge.inputs.treefmt-nix.follows = "treefmt-nix";
