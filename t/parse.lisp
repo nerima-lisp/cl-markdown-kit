@@ -128,6 +128,23 @@
              (expect (reverse *parser-contract-inline-calls*)
                      :to-equal '(("paragraph" 34 t) ("heading" 34 t)
                                  ("cell" 34 t)))))))))
+  (it "builds a fresh reference index when omitted"
+    (let* ((first-result (cl-markdown-kit::make-block-parse-result))
+           (second-result (cl-markdown-kit::make-block-parse-result))
+           (first-index
+             (cl-markdown-kit::block-parse-result-reference-index first-result))
+           (second-index
+             (cl-markdown-kit::block-parse-result-reference-index second-result)))
+      (expect (hash-table-p first-index) :to-be-truthy)
+      (expect (zerop (hash-table-count first-index)) :to-be-truthy)
+      (expect (not (eq first-index second-index)) :to-be-truthy)
+      (expect (cl-markdown-kit::block-parse-result-inline-fragments first-result)
+              :to-equal nil)
+      (expect (parser-contract-signals-p
+               (lambda ()
+                 (cl-markdown-kit::make-block-parse-result
+                  :reference-index nil)))
+              :to-be-truthy)))
 
   (it "dispatches supported input types and rejects invalid inputs and limits"
     (let ((*parser-contract-block-result* nil)
