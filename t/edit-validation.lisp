@@ -291,4 +291,41 @@
                 :to-equal 8)
         (expect (cl-markdown-kit:markdown-resource-limit-error-actual
                  parse-condition)
-                :to-equal 9)))))
+                :to-equal 9))))
+  (it "rejects an edit candidate above the document input-size limit"
+    (let* ((source "# A")
+           (document (cl-markdown-kit:parse-string
+                      source :max-input-size 5))
+           (candidate (make-string 101 :initial-element #\x))
+           (condition
+             (test-condition
+              (lambda ()
+                (cl-markdown-kit::%perform-edit
+                 document 0 (length source) candidate nil nil)))))
+      (expect (length candidate) :to-equal 101)
+      (expect (typep condition
+                     (quote cl-markdown-kit:markdown-resource-limit-error))
+              :to-be-truthy)
+      (expect (cl-markdown-kit:markdown-resource-limit-error-limit-name
+               condition)
+              :to-equal :input-size)
+      (expect (cl-markdown-kit:markdown-resource-limit-error-limit condition)
+              :to-equal 5)
+      (expect (cl-markdown-kit:markdown-resource-limit-error-actual condition)
+              :to-equal 6)))
+  (it "accepts an edit candidate above the default input-size limit"
+    (let* ((default-limit cl-markdown-kit:+default-max-input-size+)
+           (raised-limit (1+ default-limit))
+           (source "# A")
+           (document (cl-markdown-kit:parse-string
+                      source :max-input-size raised-limit))
+           (replacement
+             (make-string (- raised-limit 4) :initial-element #\Space))
+           (edited
+             (cl-markdown-kit:replace-section-body
+              document "/A" replacement)))
+      (expect (cl-markdown-kit:document-max-input-size document)
+              :to-equal raised-limit)
+      (expect (length replacement) :to-equal (- raised-limit 4))
+      (expect (length edited) :to-equal raised-limit)
+      (expect (> (length edited) default-limit) :to-be-truthy))))

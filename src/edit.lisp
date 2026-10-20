@@ -315,7 +315,8 @@
                          :gfm (document-gfm-p document)
                          :max-nesting-depth (document-max-nesting-depth document)
                          :max-inline-delimiter-depth
-                         (document-max-inline-delimiter-depth document)))
+                         (document-max-inline-delimiter-depth document)
+                         :max-input-size (document-max-input-size document)))
          (candidate-target-range
            (if target-range
                (%map-edit-range target-range start end replacement-length
