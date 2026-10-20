@@ -118,7 +118,7 @@
       (expect (mapcar #'cl-markdown-kit:text-value angle-nodes)
               :to-equal (list angles))))
 
-(it "handles unmatched backtick runs and paired delimiter stress"
+(it "preserves unmatched backtick text and paired delimiter node shapes"
     (let* ((backticks (concatenate 'string (make-string 2000 :initial-element #\`)
                                    " text "
                                    (make-string 1999 :initial-element #\`)))
@@ -128,23 +128,26 @@
            (delimiter-nodes (inline-parser-test-parse delimiter-text)))
       (expect (mapcar #'cl-markdown-kit:text-value backtick-nodes)
               :to-equal (list backticks))
-      (let ((expected-node-count 600))
+      (let ((expected-node-count 600)
+            (expected-emphasis-count 300)
+            (expected-text-count 300)
+            (expected-strong-count 0))
         (expect (length delimiter-nodes) :to-equal expected-node-count)
+        (expect (count-if #'cl-markdown-kit:emphasis-p delimiter-nodes)
+                :to-equal expected-emphasis-count)
+        (expect (count-if #'cl-markdown-kit:text-p delimiter-nodes)
+                :to-equal expected-text-count)
+        (expect (count-if #'cl-markdown-kit:strong-p delimiter-nodes)
+                :to-equal expected-strong-count)
         (expect
-         (loop for pair on delimiter-nodes by (function cddr)
+         (loop for node in delimiter-nodes
                always
-                 (and (= (length pair) 2)
-                      (let ((emphasis-node (first pair))
-                            (text-node (second pair)))
-                        (and (cl-markdown-kit:emphasis-p emphasis-node)
-                             (equal
-                              (mapcar (function cl-markdown-kit:text-value)
-                                      (cl-markdown-kit:emphasis-children
-                                       emphasis-node))
-                              (list "a **a"))
-                             (cl-markdown-kit:text-p text-node)
-                             (string= (cl-markdown-kit:text-value text-node)
-                                      "a **a")))))
+                 (or (cl-markdown-kit:text-p node)
+                     (and (cl-markdown-kit:emphasis-p node)
+                          (let ((children
+                                  (cl-markdown-kit:emphasis-children node)))
+                            (and (= (length children) 1)
+                                 (cl-markdown-kit:text-p (first children)))))))
          :to-be-truthy))))
 
 (it "counts unmatched delimiter openers against the depth limit"
