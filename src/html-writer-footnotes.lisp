@@ -37,19 +37,8 @@
     (walk-node-tree document
      (lambda (frame)
        (let* ((node (node-tree-frame-node frame))
-              (phase (node-tree-frame-phase frame))
-              (parent (node-tree-frame-parent frame)))
+              (phase (node-tree-frame-phase frame)))
          (when (eq phase :enter)
-           (unless (or (inline-node-p node) (block-node-p node))
-             (error 'markdown-unsupported-node-error
-                    :object node
-                    :message (format nil "Unsupported HTML node: ~S" node)))
-           (when (and (list-item-p node) (not (list-node-p parent)))
-             (error 'markdown-unsupported-node-error
-                    :object node
-                    :message
-                    (format nil "Unsupported HTML list item outside a list: ~S"
-                            node)))
            (dolist (child (node-children node))
              (unless (node-p child)
                (error 'markdown-unsupported-node-error

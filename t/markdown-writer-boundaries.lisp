@@ -407,4 +407,17 @@
                   :to-be-truthy)
           (let ((message (cl-markdown-kit:markdown-kit-error-message condition)))
             (expect (search "Unsupported Markdown node:" message) :to-be-truthy)
-            (expect (search message (princ-to-string condition)) :to-be-truthy))))))
+            (expect (search message (princ-to-string condition)) :to-be-truthy))))
+      (let* ((node (cl-markdown-kit:make-block-node))
+             (condition
+               (test-condition
+                (lambda ()
+                  (cl-markdown-kit:write-markdown
+                   (cl-markdown-kit:make-document :children (list node)))))))
+        (expect (typep condition
+                       'cl-markdown-kit:markdown-unsupported-node-error)
+                :to-be-truthy)
+        (expect (eq
+                 (cl-markdown-kit:markdown-unsupported-node-error-object condition)
+                 node)
+                :to-be-truthy))))

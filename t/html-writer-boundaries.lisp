@@ -65,6 +65,20 @@
                   :to-be-truthy)
           (expect (search "Unsupported Markdown tree object:" reported)
                   :to-be-truthy)))))
+  (html-writer-it "signals abstract block nodes as unsupported"
+    (let* ((node (cl-markdown-kit:make-block-node))
+           (condition
+             (test-condition
+              (lambda ()
+                (cl-markdown-kit:write-html
+                 (cl-markdown-kit:make-document :children (list node)))))))
+      (expect (typep condition
+                     'cl-markdown-kit:markdown-unsupported-node-error)
+              :to-be-truthy)
+      (expect (eq
+               (cl-markdown-kit:markdown-unsupported-node-error-object condition)
+               node)
+              :to-be-truthy)))
 
 (html-writer-it "rejects unsupported nodes, invalid options, and non-output streams"
     (expect

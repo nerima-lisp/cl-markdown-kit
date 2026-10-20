@@ -21,7 +21,7 @@
                               (%mw-render-session-child-index context)
                               child-index)
                         (when (eq phase :enter)
-                          (unless (or (inline-node-p node) (block-node-p node))
+                          (unless (member (node-family node) '(:inline :block))
                             (error 'markdown-unsupported-node-error
                                    :object node
                                    :message (format nil "Unsupported Markdown node: ~S"

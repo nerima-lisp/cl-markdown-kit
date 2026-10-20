@@ -16,16 +16,29 @@
              (grandparent (node-tree-frame-grandparent frame))
              (child-index (node-tree-frame-child-index frame))
              (last-child-p (node-tree-frame-last-child-p frame)))
+         (when (and (eq phase :enter)
+                    (list-item-p node)
+                    (not (list-node-p parent)))
+           (error 'markdown-unsupported-node-error
+                  :object node
+                  :message
+                  (format nil "Unsupported HTML list item outside a list: ~S"
+                          node)))
          (setf (%html-writer-context-tree-parent context) parent
                (%html-writer-context-tree-grandparent context) grandparent
                (%html-writer-context-tree-child-index context) child-index
                (%html-writer-context-tree-last-child-p context) last-child-p)
          (let ((action
-                 (cond
-                   ((inline-node-p node)
+                 (case (node-family node)
+                   (:inline
                     (%hw-render-inline-event context node phase))
-                   ((block-node-p node)
-                    (%hw-render-block-event context node phase)))))
+                   (:block
+                    (%hw-render-block-event context node phase))
+                   (otherwise
+                    (error 'markdown-unsupported-node-error
+                           :object node
+                           :message (format nil "Unsupported HTML node: ~S"
+                                            node))))))
            (if (eq phase :enter) action nil))))))
 
 (defun write-html-to-stream (document stream &key (raw-html :omit) unsafe-urls

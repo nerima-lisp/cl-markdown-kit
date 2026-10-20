@@ -46,8 +46,7 @@ The `:unsafe-urls` option defaults to `nil` and accepts a boolean.
 `write-html` and `write-html-to-stream` signal
 `markdown-unsupported-node-error` for an unsupported node, non-node child, or
 `list-item` outside a list. Read the rejected node or child with
-`markdown-unsupported-node-error-object`. HTML validates the tree before
-writing output.
+`markdown-unsupported-node-error-object`.
 
 The `:raw-html` option accepts `:omit` (the default), `:escape`, or
 `:pass-through`. With `:raw-html :pass-through`, the GFM tagfilter applies when
