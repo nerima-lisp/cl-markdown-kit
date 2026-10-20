@@ -302,7 +302,9 @@ does not change the core AST or the `:front-matter` parse option.
 (write-markdown-to-stream document stream)
 ```
 
-`write-html` returns a string and its stream variant writes the same output.
+`write-html` returns a string and `write-html-to-stream` writes the same output
+and returns its stream. `write-markdown` returns a string and
+`write-markdown-to-stream` writes the same output and returns its stream.
 `:raw-html` is `:omit` (the default), `:escape`, or `:pass-through`. Omit
 emits no raw block or inline HTML. Escape mode writes raw HTML as text;
 pass-through emits it with GFM tagfilter applied when `:gfm` is true. `:gfm`
