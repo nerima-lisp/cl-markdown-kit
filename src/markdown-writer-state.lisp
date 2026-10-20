@@ -30,9 +30,13 @@
     (%mw-render-session
      (:constructor %mw-make-render-session
                    (&key (frames (make-hash-table :test #'eq))
-                         (results (make-hash-table :test #'eq)))))
+                         (results (make-hash-table :test #'eq))
+                         output-stream
+                         child-index)))
   frames
   results
+  output-stream
+  child-index
   parent
   previous-sibling
   next-sibling)
@@ -143,6 +147,16 @@
   (%mw-capture-render-frame frame
                             (lambda (stream)
                               (%mw-write-string text stream))))
+
+(defun %mw-release-render-results (context children)
+  (let ((results (%mw-render-session-results context)))
+    (dolist (child children)
+      (remhash child results))))
+
+(defun %mw-store-render-result (context node children result)
+  (setf (gethash node (%mw-render-session-results context)) result)
+  (%mw-release-render-results context children)
+  result)
 
 (defun %mw-render-child-results (children results)
   (with-output-to-string (stream)

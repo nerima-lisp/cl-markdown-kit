@@ -192,14 +192,22 @@
                 (%mw-trailing-newline-count previous-content)))
         do (write-char #\Newline stream)))
 
+(defun %mw-render-list-item-result (context item results)
+  (let* ((list-node (%mw-render-session-parent context))
+         (separator
+           (if (list-node-tight-p list-node)
+               (format nil "~%")
+               (format nil "~%~%")))
+         (marker
+           (%mw-list-marker list-node
+                            (%mw-render-session-child-index context)))
+         (continuation-prefix
+           (make-string (length marker) :initial-element #\Space)))
+    (%mw-render-list-item-content item results separator continuation-prefix)))
+
 (defun %mw-render-list (node results)
   (let* ((items (list-node-items node))
-         (tight-p (list-node-tight-p node))
-         (separator-count (if tight-p 1 2))
-         (child-separator
-           (if tight-p
-               (format nil "~%")
-               (format nil "~%~%"))))
+         (separator-count (if (list-node-tight-p node) 1 2)))
     (with-output-to-string (stream)
       (let ((previous-content ""))
         (loop for item in items
@@ -207,17 +215,12 @@
               for marker = (%mw-list-marker node index)
               for continuation-prefix = (make-string
                                          (length marker)
-                                         :initial-element
-                                         #\Space)
+                                         :initial-element #\Space)
               for task-marker = (when (task-list-item-p item)
                                   (if (task-list-item-checked-p item)
                                       "[x] "
                                       "[ ] "))
-              for content = (%mw-render-list-item-content
-                             item
-                             results
-                             child-separator
-                             continuation-prefix)
+              for content = (or (gethash item results) "")
               do (when (plusp index)
                    (%mw-write-list-item-separator
                     stream
@@ -236,7 +239,7 @@
     (write-char #\| stream)
     (dolist (cell (table-row-cells row))
       (write-char #\Space stream)
-      (write-string (%mw-render-child-results (table-cell-children cell) results) stream)
+      (write-string (or (gethash cell results) "") stream)
       (write-string " |" stream))))
 
 (defun %mw-alignment-marker (alignment)
@@ -252,17 +255,17 @@
     (if (null rows)
         ""
         (with-output-to-string (stream)
-          (write-string (%mw-render-table-row (first rows) results) stream)
+          (write-string (or (gethash (first rows) results) "") stream)
           (write-char #\Newline stream)
           (write-char #\| stream)
           (loop for cell in (table-row-cells (first rows))
                 for alignment in alignments
-                do (write-char #\Space stream) (write-string
-                                                (%mw-alignment-marker alignment)
-                                                stream) (write-string " |" stream))
+                do (write-char #\Space stream)
+                   (write-string (%mw-alignment-marker alignment) stream)
+                   (write-string " |" stream))
           (dolist (row (rest rows))
             (write-char #\Newline stream)
-            (write-string (%mw-render-table-row row results) stream))))))
+            (write-string (or (gethash row results) "") stream))))))
 
 (defun %mw-normalize-newlines (text)
   (with-output-to-string (stream)
@@ -279,7 +282,7 @@
 (defun %mw-render-block-result (context node frame kind)
   (let ((results (%mw-render-session-results context)))
     (ecase kind
-      (:document (%mw-render-blocks (document-children node) results))
+      (:document nil)
       (:front-matter
        (let ((raw-text (%mw-normalize-newlines (front-matter-raw-text node))))
          (with-output-to-string (stream)
@@ -297,7 +300,7 @@
              ">"
              (%mw-prefix-lines (%mw-render-blocks children results) "> "))))
       (:list-node (%mw-render-list node results))
-      ((:list-item :task-list-item) "")
+      ((:list-item :task-list-item) (%mw-render-list-item-result context node results))
       (:paragraph (%mw-render-paragraph node results))
       (:heading
        (concatenate 'string
@@ -350,23 +353,33 @@
   (let ((frame (gethash node (%mw-render-session-frames context))))
     (case phase
       (:enter
-        (when (heading-p node)
-          (let ((prefix
+       (when (heading-p node)
+         (let ((prefix
                  (concatenate 'string
                               (make-string (heading-level node) :initial-element #\#)
                               (if (null (heading-children node))
                                   ""
                                   " "))))
-            (setf (%mw-render-frame-prefix frame) prefix)
-            (%mw-advance-render-frame frame prefix)))
-        :descend)
+           (setf (%mw-render-frame-prefix frame) prefix)
+           (%mw-advance-render-frame frame prefix)))
+       :descend)
       (:leave
-        (setf (gethash node (%mw-render-session-results context)) (%mw-render-block-result
-                                                                   context
-                                                                   node
-                                                                   frame
-                                                                   kind))
-        nil))))
+       (let* ((result
+                (%mw-render-block-result context node frame kind))
+              (parent (%mw-render-session-parent context)))
+         (cond
+           ((document-p node) nil)
+           ((and parent (document-p parent))
+            (let ((stream (%mw-render-session-output-stream context)))
+              (when (%mw-render-session-previous-sibling context)
+                (write-char #\Newline stream)
+                (write-char #\Newline stream))
+              (write-string (or result "") stream))
+            (%mw-release-render-results context (node-children node)))
+           (t
+            (%mw-store-render-result
+             context node (node-children node) result)))
+         nil)))))
 
 (define-node-dispatch (%mw-render-block-event (context node phase))
                       :operation

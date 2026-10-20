@@ -176,18 +176,18 @@
   (let ((frame (gethash node (%mw-render-session-frames context))))
     (case phase
       (:enter
-        (when (%mw-inline-wrapper-p node)
-          (let ((prefix (%mw-inline-wrapper-prefix node kind)))
-            (setf (%mw-render-frame-prefix frame) prefix)
-            (%mw-advance-render-frame frame prefix)))
-        :descend)
+       (when (%mw-inline-wrapper-p node)
+         (let ((prefix (%mw-inline-wrapper-prefix node kind)))
+           (setf (%mw-render-frame-prefix frame) prefix)
+           (%mw-advance-render-frame frame prefix)))
+       :descend)
       (:leave
-        (setf (gethash node (%mw-render-session-results context)) (%mw-render-inline-result
-                                                                   context
-                                                                   node
-                                                                   frame
-                                                                   kind))
-        nil))))
+       (%mw-store-render-result
+        context
+        node
+        (node-children node)
+        (%mw-render-inline-result context node frame kind))
+       nil))))
 
 (define-node-dispatch (%mw-render-inline-event (context node phase))
                       :operation
