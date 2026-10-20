@@ -24,3 +24,5 @@
 (:kind top-level-form :head "defparameter" :reason "Literal defparameter initializers have no executable expression to cover; non-literal initializers remain subject to coverage." :reproduction "scripts/coverage-reproductions/html5-entity-data.lisp")
 (:kind defun-header :head "defun" :name "make-block-parse-result" :reason "The lambda list and literal NIL default are signature metadata without executable source locations." :reproduction "scripts/coverage-reproductions/defun-header.lisp")
 (:kind defun-header :head "defun" :name "parse-blocks" :reason "Keyword defaults are literals or top-level constants; runtime expressions remain subject to coverage." :reproduction "scripts/coverage-reproductions/defun-constant-keyword-defaults.lisp")
+
+(:kind defun-header :head "defun" :name "insert-section" :reason "The lambda list has only literal default values." :reproduction "scripts/coverage-reproductions/defun-header.lisp")

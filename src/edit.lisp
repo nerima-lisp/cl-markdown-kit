@@ -500,11 +500,8 @@
                    (heading-record-section-span (car (last children))))
                   selected-end)))))))))
 
-(defun %default-insert-position ()
-  :after)
-
 (defun insert-section (document address markdown
-                       &key (position (%default-insert-position)))
+                       &key (position :after))
   (check-type document document)
   (check-type markdown string)
   (check-type position (member :before :after :last-child))
